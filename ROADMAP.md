@@ -14,13 +14,13 @@
 - [x] `.envrc`（use flake）、.gitignore、Git 仓库初始化
 - 验证：`nix develop -c cargo build` 全 workspace 零警告
 
-## Phase 1 — 数据解析 ✅（待真实资源回归）
+## Phase 1 — 数据解析 ✅（真实资产回归已完成）
 - [x] `.NET` BinaryReader（7-bit varint dotnet string）`src/data/reader.rs`
 - [x] `.bin` 地图 BinaryPacker（magic/查表/属性 0–7/RLE innerText）`src/data/binary_packer.rs`
 - [x] `.meta` 图集 + `.data` RLE 页纹理解码 `src/data/atlas.rs`
 - [x] `Sprites.xml` SpriteBank `src/data/spritebank.rs`
-- [ ] 用真实资产（`references/Celeste/Content/`）做解析自检：实体清单、图集帧数、动画帧数
-- [ ] 补充 `.data` 纹理、`.meta` 图集、`Dialog`、字体、存档等其余资源解析
+- [x] 用真实资产（`references/Celeste/Content/`）做解析自检：`0-Intro.bin` → 9 实体/4 类型；`Gameplay.meta` → 6824 帧 + RGBA 提取；`Sprites.xml` → player 动画（`src/bin/inspect.rs`）
+- [ ] 补充 `.data` 纹理、`Dialog`、字体、存档等其余资源解析
 - [ ] 将原版 `Content/` 转换为 `map/`、`resources/` 的工具（官方内容不参与分发）
 
 ## Phase 2 — 引擎核心 ✅（待联调）
