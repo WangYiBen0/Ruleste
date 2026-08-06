@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     fenix.url = "github:nix-community/fenix";
+    crane.url = "github:ipetkov/crane";
   };
 
   outputs =
@@ -11,6 +12,7 @@
       self,
       nixpkgs,
       fenix,
+      crane,
     }:
     let
       lib = nixpkgs.lib;
@@ -19,31 +21,33 @@
         "aarch64-linux"
       ];
       forEachSystem = f: lib.genAttrs systems f;
+
+      # Pinned Rust toolchain via fenix, including the wasm32-unknown-unknown
+      # target required to build the Wasm entity plugins.
+      toolchain = system:
+        fenix.packages.${system}.combine [
+          (fenix.packages.${system}.stable.withComponents [
+            "cargo"
+            "rustc"
+            "rust-src"
+            "rust-analyzer"
+            "clippy"
+          ])
+          fenix.packages.${system}.targets.wasm32-unknown-unknown.stable.rust-std
+        ];
     in
     {
       devShells = forEachSystem (
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          # Pinned Rust toolchain via fenix, including the wasm32-unknown-unknown
-          # target required to build the Wasm entity plugins.
-          toolchain = fenix.packages.${system}.combine [
-            (fenix.packages.${system}.stable.withComponents [
-              "cargo"
-              "rustc"
-              "rust-src"
-              "rust-analyzer"
-              "clippy"
-            ])
-            fenix.packages.${system}.targets.wasm32-unknown-unknown.stable.rust-std
-          ];
         in
         {
           default = pkgs.mkShell {
             name = "ruleste";
 
             packages = [
-              toolchain
+              (toolchain system)
               pkgs.pkg-config
               # SDL3 for windowing/input/audio abstraction (use-pkg-config).
               pkgs.sdl3
@@ -63,5 +67,73 @@
           };
         }
       );
+
+      packages = forEachSystem (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          craneLib = (crane.mkLib pkgs).overrideToolchain (toolchain system);
+          # cleanCargoSource respects .gitignore, keeping the 3.4 GB
+          # references/ tree out of the build inputs.
+          src = craneLib.cleanCargoSource ./.;
+          commonArgs = {
+            pname = "ruleste";
+            version = "0.1.0";
+            src = src;
+            strictDeps = true;
+            buildInputs = [ pkgs.sdl3 ];
+            nativeBuildInputs = [ pkgs.pkg-config ];
+            doCheck = false;
+          };
+          # Host binary: `ruleste` game + `ruleste-inspect` asset tool.
+          host = craneLib.buildPackage (
+            commonArgs
+            // {
+              cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+            }
+          );
+          # Wasm plugin for the player entity, packaged under share/ so the
+          # game can find it next to the map/resource dirs.
+          wasm = craneLib.buildPackage (
+            commonArgs
+            // {
+              pname = "ruleste-player";
+              CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+              cargoExtraArgs = "-p ruleste-player";
+              cargoArtifacts = craneLib.buildDepsOnly (
+                commonArgs
+                // {
+                  pname = "ruleste-player";
+                  CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+                  cargoExtraArgs = "-p ruleste-player";
+                }
+              );
+              installPhase = ''
+                mkdir -p $out/share/ruleste/plugins
+                cp target/wasm32-unknown-unknown/release/ruleste_player.wasm \
+                  $out/share/ruleste/plugins/ruleste_player.wasm
+              '';
+              doInstallCargoArtifacts = false;
+            }
+          );
+        in
+        {
+          default = pkgs.symlinkJoin {
+            name = "ruleste";
+            paths = [
+              host
+              wasm
+            ];
+          };
+          wasm-plugin = wasm;
+        }
+      );
+
+      apps = forEachSystem (system: {
+        default = {
+          type = "app";
+          program = "${self.packages.${system}.default}/bin/ruleste";
+        };
+      });
     };
 }

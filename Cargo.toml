@@ -12,6 +12,7 @@ edition = "2021"
 rust-version = "1.85"
 description = "A from-scratch Rust reimplementation of Celeste (SDL3, no game engine frameworks)."
 license = "MIT"
+default-run = "ruleste"
 
 [dependencies]
 ruleste-plugin-api = { path = "crates/ruleste-plugin-api", default-features = false }
