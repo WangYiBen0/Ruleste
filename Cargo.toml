@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ruleste-plugin-api",
+    "plugins/player",
+]
+
+[package]
+name = "ruleste"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "A from-scratch Rust reimplementation of Celeste (SDL3, no game engine frameworks)."
+license = "MIT"
+
+[dependencies]
+ruleste-plugin-api = { path = "crates/ruleste-plugin-api", default-features = false }
+sdl3 = { version = "0.18", features = ["use-pkg-config", "unsafe_textures"] }
+wasmtime = "47"
+bytemuck = { version = "1", features = ["derive"] }
+anyhow = "1"
+roxmltree = "0.20"
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+lto = "thin"

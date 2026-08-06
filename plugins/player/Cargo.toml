@@ -1,0 +1,12 @@
+[package]
+name = "ruleste-player"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Built-in player entity plugin for Ruleste."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }

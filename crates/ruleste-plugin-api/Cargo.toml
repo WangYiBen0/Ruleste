@@ -1,0 +1,13 @@
+[package]
+name = "ruleste-plugin-api"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Shared ABI crate between the Ruleste host and the Wasm entity plugins."
+
+[dependencies]
+bytemuck = { version = "1", features = ["derive"] }
+
+[features]
+default = ["plugin"]
+plugin = []
