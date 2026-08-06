@@ -54,8 +54,8 @@ pub struct SpriteBank {
 
 impl SpriteBank {
     pub fn from_xml(xml: &str) -> anyhow::Result<SpriteBank> {
-        let doc = roxmltree::Document::parse(xml)
-            .map_err(|e| anyhow::anyhow!("spritebank xml: {e}"))?;
+        let doc =
+            roxmltree::Document::parse(xml).map_err(|e| anyhow::anyhow!("spritebank xml: {e}"))?;
         let root = doc.root_element();
         let mut sprites = HashMap::new();
         for node in root.children().filter(|n| n.is_element()) {

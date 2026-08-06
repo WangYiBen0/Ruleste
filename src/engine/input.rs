@@ -5,8 +5,9 @@
 use std::collections::HashSet;
 
 use ruleste_plugin_api::types::input as act;
-use sdl3::event::{Event, EventPump};
+use sdl3::event::Event;
 use sdl3::keyboard::Keycode;
+use sdl3::EventPump;
 
 #[derive(Debug, Clone, Default)]
 pub struct Binding {
@@ -39,7 +40,10 @@ impl Default for Input {
         set(act::MOVE_RIGHT as usize, &[Keycode::Right]);
         set(act::MOVE_UP as usize, &[Keycode::Up]);
         set(act::MOVE_DOWN as usize, &[Keycode::Down]);
-        set(act::CLIMB as usize, &[Keycode::Z, Keycode::V, Keycode::LShift]);
+        set(
+            act::CLIMB as usize,
+            &[Keycode::Z, Keycode::V, Keycode::LShift],
+        );
         set(act::JUMP as usize, &[Keycode::C]);
         set(act::DASH as usize, &[Keycode::X]);
         set(act::START as usize, &[Keycode::Return]);
@@ -65,10 +69,16 @@ impl Input {
     pub fn pump(&mut self, pump: &mut EventPump) {
         for event in pump.poll_iter() {
             match event {
-                Event::KeyDown { keycode: Some(kc), repeat, .. } if !repeat => {
+                Event::KeyDown {
+                    keycode: Some(kc),
+                    repeat,
+                    ..
+                } if !repeat => {
                     self.keys_down.insert(kc);
                 }
-                Event::KeyUp { keycode: Some(kc), .. } => {
+                Event::KeyUp {
+                    keycode: Some(kc), ..
+                } => {
                     self.keys_down.remove(&kc);
                 }
                 _ => {}

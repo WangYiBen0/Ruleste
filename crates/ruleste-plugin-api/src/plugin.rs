@@ -111,24 +111,7 @@ pub extern "C" fn ruleste_dealloc(ptr: u32, len: u32) {
 }
 
 /// Describes the fixed entry points a plugin module must export.
-pub mod export {
-    pub const META: &str = "ruleste_plugin_meta";
-    pub const ENTITY_TYPES: &str = "ruleste_plugin_entity_types";
-    pub const INIT: &str = "ruleste_entity_init";
-    pub const UPDATE: &str = "ruleste_entity_update";
-    pub const DRAW: &str = "ruleste_entity_draw";
-    pub const DESTROY: &str = "ruleste_entity_destroy";
-    pub const SERIALIZE: &str = "ruleste_entity_serialize";
-    pub const DESERIALIZE: &str = "ruleste_entity_deserialize";
-}
-
-/// Common plugin events a plugin can emit through `host_emit`.
-pub mod event {
-    /// A dashed effect or gameplay sound the host may want to know about.
-    pub const PLAYER_DASH: u32 = 0;
-    pub const PLAYER_JUMP: u32 = 1;
-    pub const PLAYER_DEATH: u32 = 2;
-}
+pub use crate::{event, export};
 
 /// Convenience stubs that satisfy the host runtime's expectations for plugins
 /// that don't implement every optional stage.

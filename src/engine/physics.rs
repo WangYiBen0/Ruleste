@@ -75,24 +75,13 @@ impl SolidGrid {
     /// separately; on collision the entity snaps to the tile boundary.
     ///
     /// Returns the flags describing what was hit.
-    pub fn actor_move(
-        &self,
-        world: &mut World,
-        id: u32,
-        dx: f32,
-        dy: f32,
-    ) -> u32 {
+    pub fn actor_move(&self, world: &mut World, id: u32, dx: f32, dy: f32) -> u32 {
         let mut flags = 0;
         if !world.is_alive(id) {
             return flags;
         }
         let e = world.get(id).expect("alive");
-        let (ox, oy, w, h) = (
-            e.hitbox_offset.x,
-            e.hitbox_offset.y,
-            e.hitbox.x,
-            e.hitbox.y,
-        );
+        let (ox, oy, w, h) = (e.hitbox_offset.x, e.hitbox_offset.y, e.hitbox.x, e.hitbox.y);
 
         if dx != 0.0 {
             let sign = dx.signum();
@@ -141,7 +130,11 @@ impl SolidGrid {
                     } else {
                         ((ny + oy) / TILE).ceil() * TILE - oy
                     };
-                    flags |= if sign > 0.0 { MOVE_GROUND } else { MOVE_CEILING };
+                    flags |= if sign > 0.0 {
+                        MOVE_GROUND
+                    } else {
+                        MOVE_CEILING
+                    };
                     break;
                 }
                 cur = ny;

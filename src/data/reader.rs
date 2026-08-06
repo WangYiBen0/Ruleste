@@ -51,7 +51,7 @@ impl<'a> Reader<'a> {
         self.pos >= self.bytes.len()
     }
 
-    fn take(&mut self, n: usize) -> ReadResult<&'a [u8]> {
+    pub(crate) fn take(&mut self, n: usize) -> ReadResult<&'a [u8]> {
         if self.remaining() < n {
             return Err(ReadError::new(format!(
                 "tried to read {n} bytes but only {} remain",

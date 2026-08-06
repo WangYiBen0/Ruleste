@@ -109,7 +109,6 @@ impl Element {
         self.children.iter().find(|c| c.name == name)
     }
 
-    #[must_use]
     pub fn children_named<'e>(&'e self, name: &'e str) -> impl Iterator<Item = &'e Element> {
         self.children.iter().filter(move |c| c.name == name)
     }
@@ -165,6 +164,12 @@ fn read_element(reader: &mut Reader<'_>, table: &[String]) -> ReadResult<Element
             2 => Attr::Short(reader.read_i16()?),
             3 => Attr::Int(reader.read_i32()?),
             4 => Attr::Float(reader.read_f32()?),
+            5 => Attr::String(
+                table
+                    .get(reader.read_i16()? as usize)
+                    .ok_or_else(|| ReadError::new("attr value index out of bounds"))?
+                    .clone(),
+            ),
             6 => Attr::String(reader.read_dotnet_string()?.to_string()),
             7 => {
                 let len = reader.read_i16()? as usize;
@@ -195,7 +200,7 @@ fn rle_decode(bytes: &[u8]) -> String {
     while i + 1 < bytes.len() {
         let count = bytes[i] as usize;
         let ch = bytes[i + 1] as char;
-        out.extend(std::iter::repeat(ch).take(count));
+        out.extend(std::iter::repeat_n(ch, count));
         i += 2;
     }
     out

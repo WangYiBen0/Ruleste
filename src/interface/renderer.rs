@@ -3,17 +3,14 @@
 use std::collections::HashMap;
 
 use ruleste_plugin_api::types::Vec2;
-use sdl3::event::EventPump;
 use sdl3::pixels::{Color as SdlColor, PixelFormat};
-use sdl3::rect::FRect;
-use sdl3::render::{Texture, TextureAccess, WindowCanvas};
+use sdl3::render::{FRect, Texture, TextureAccess, WindowCanvas};
 use sdl3::video::{Window, WindowBuilder};
-use sdl3::Sdl;
+use sdl3::{EventPump, Sdl};
 
 use crate::data::atlas::Atlas;
 use crate::data::spritebank::SpriteBank;
 use crate::engine::ecs::World;
-use crate::engine::level::Level;
 use crate::engine::physics::SolidGrid;
 use crate::engine::sprites::SpriteAnimator;
 
@@ -41,7 +38,7 @@ impl Renderer {
             WINDOW_HEIGHT * PIXEL_SCALE,
         );
         let window = builder.build()?;
-        let canvas = sdl3::render::create_renderer(window.clone(), None)?;
+        let mut canvas = sdl3::render::create_renderer(window.clone(), None)?;
         let pump = sdl.event_pump()?;
         canvas.set_scale(PIXEL_SCALE as f32, PIXEL_SCALE as f32)?;
         Ok(Renderer {
@@ -86,10 +83,8 @@ impl Renderer {
                 }
                 let x = tx as f32 * 8.0 - self.camera.x;
                 let y = ty as f32 * 8.0 - self.camera.y;
-                self.canvas
-                    .set_draw_color(color)
-                    .and_then(|_| self.canvas.fill_rect(FRect::new(x, y, 8.0, 8.0)))
-                    .ok();
+                self.canvas.set_draw_color(color);
+                let _ = self.canvas.fill_rect(FRect::new(x, y, 8.0, 8.0));
             }
         }
     }
@@ -143,19 +138,10 @@ impl Renderer {
                 frame.clip.w as f32,
                 frame.clip.h as f32,
             );
-            let dst = FRect::new(
-                dst_x,
-                dst_y,
-                frame.clip.w as f32,
-                frame.clip.h as f32,
-            );
+            let dst = FRect::new(dst_x, dst_y, frame.clip.w as f32, frame.clip.h as f32);
             let color = entity.sprite.color;
-            let _ = self.canvas.set_draw_color(SdlColor::RGBA(
-                color.r,
-                color.g,
-                color.b,
-                color.a,
-            ));
+            self.canvas
+                .set_draw_color(SdlColor::RGBA(color.r, color.g, color.b, color.a));
             // copy_ex tints via the texture's color modulation; for now draw
             // the raw frame.
             let _ = self.canvas.copy_ex(

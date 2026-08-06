@@ -75,7 +75,7 @@ impl<'a> SpriteAnimator<'a> {
         }
         let prefix = sprite.texture_prefix(anim);
         let count = self.subtexture_count(&prefix);
-        let frames = if anim.frames.is_empty() {
+        let frames: Vec<String> = if anim.frames.is_empty() {
             (0..count)
                 .map(|i| self.subtexture_key(&prefix, i))
                 .collect()
@@ -118,9 +118,10 @@ impl<'a> SpriteAnimator<'a> {
         if index == 0 && self.atlas.frame_index.contains_key(prefix) {
             return prefix.to_string();
         }
-        let base = index.to_string();
+        let base: String = index.to_string();
         for pad in 0..=6 {
-            let key = format!("{prefix}{:0>width$}", base, width = base.len() + pad);
+            let width: usize = base.len() + pad;
+            let key = format!("{prefix}{:0>width$}", base, width = width);
             if self.atlas.frame_index.contains_key(&key) {
                 return key;
             }
@@ -132,9 +133,10 @@ impl<'a> SpriteAnimator<'a> {
         if index == 0 && self.atlas.frame_index.contains_key(prefix) {
             return true;
         }
-        let base = index.to_string();
+        let base: String = index.to_string();
         (0..=6).any(|pad| {
-            let key = format!("{prefix}{:0>width$}", base, width = base.len() + pad);
+            let width: usize = base.len() + pad;
+            let key = format!("{prefix}{:0>width$}", base, width = width);
             self.atlas.frame_index.contains_key(&key)
         })
     }

@@ -19,12 +19,13 @@ impl MtimeWatcher {
     /// already tracked.
     pub fn watch(&mut self, path: impl Into<PathBuf>) -> bool {
         let path = path.into();
-        let mtime = std::fs::metadata(&path).ok().and_then(|m| m.modified().ok());
-        let was_changed = match self.files.insert(path, mtime) {
+        let mtime = std::fs::metadata(&path)
+            .ok()
+            .and_then(|m| m.modified().ok());
+        match self.files.insert(path, mtime) {
             Some(prev) => prev != mtime,
             None => true,
-        };
-        was_changed
+        }
     }
 
     /// Marks a file as up-to-date at its current mtime.
@@ -39,7 +40,7 @@ impl MtimeWatcher {
             .iter()
             .filter(|(path, seen)| {
                 let current = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
-                *seen != current
+                **seen != current
             })
             .map(|(path, _)| path.clone())
             .collect()

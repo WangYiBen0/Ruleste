@@ -39,7 +39,7 @@ use std::path::Path;
 
 use crate::data::reader::{ReadError, ReadResult, Reader};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct FrameRect {
     pub x: i16,
     pub y: i16,
@@ -96,15 +96,12 @@ impl AtlasMeta {
             }
             pages.push(Page { name, frames });
         }
-        Ok(AtlasMeta {
-            source_dir,
-            pages,
-        })
+        Ok(AtlasMeta { source_dir, pages })
     }
 
     pub fn from_file(path: &Path) -> ReadResult<AtlasMeta> {
-        let bytes =
-            std::fs::read(path).map_err(|e| ReadError::new(format!("read {}: {e}", path.display())))?;
+        let bytes = std::fs::read(path)
+            .map_err(|e| ReadError::new(format!("read {}: {e}", path.display())))?;
         Self::from_bytes(&bytes)
     }
 
@@ -142,11 +139,11 @@ impl AtlasPage {
         let mut dst = 0usize;
 
         while dst < total_pixels * 4 {
-            let run_len = r.read_u8()? as usize * 4; // pixels in this run
-            if run_len == 0 {
+            let run_pixels = r.read_u8()? as usize;
+            if run_pixels == 0 {
                 return Err(ReadError::new("zero-length pixel run"));
             }
-            let run_bytes = run_len * 4;
+            let run_bytes = run_pixels * 4;
             if dst + run_bytes > rgba.len() {
                 return Err(ReadError::new("pixel run overflows texture"));
             }
@@ -207,9 +204,8 @@ impl Atlas {
         let mut pages = Vec::with_capacity(meta.pages.len());
         for page in &meta.pages {
             let data_path = dir.join(format!("{}.data", page.name));
-            let bytes = std::fs::read(&data_path).map_err(|e| {
-                ReadError::new(format!("read {}: {e}", data_path.display()))
-            })?;
+            let bytes = std::fs::read(&data_path)
+                .map_err(|e| ReadError::new(format!("read {}: {e}", data_path.display())))?;
             let mut decoded = AtlasPage::decode(page.name.clone(), &bytes)?;
             decoded.frames = page.frames.clone();
             pages.push(decoded);

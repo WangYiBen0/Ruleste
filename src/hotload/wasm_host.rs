@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use anyhow::{anyhow, Context, Result};
-use ruleste_plugin_api::plugin::export;
+use ruleste_plugin_api::export;
 use ruleste_plugin_api::types::Color;
 use wasmtime::{Caller, Engine, Extern, Instance, Linker, Memory, Module, Store, TypedFunc};
 
@@ -79,9 +79,8 @@ struct Plugin {
     funcs: PluginFuncs,
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default)]
 struct PluginFuncs {
-    init: Option<TypedFunc<(u32, u32, u32), ()>>,
     update: Option<TypedFunc<(u32, f32), ()>>,
     draw: Option<TypedFunc<(u32,), ()>>,
     destroy: Option<TypedFunc<(u32,), ()>>,
@@ -134,21 +133,36 @@ impl WasmHost {
     }
 
     pub fn load_plugin(&mut self, path: &Path) -> Result<()> {
+        let plugin = self.build_plugin(path)?;
+        eprintln!(
+            "ruleste: loaded plugin {:?} (types: {:?})",
+            plugin.name, plugin.types
+        );
+        self.plugins.push(plugin);
+        Ok(())
+    }
+
+    fn build_plugin(&mut self, path: &Path) -> Result<Plugin> {
         let module = Module::from_file(&self.engine, path)
-            .with_context(|| format!("compile {}", path.display()))?;
-        let mut linker = self.build_linker(&self.engine)?;
+            .map_err(|e| anyhow!("compile {}: {e}", path.display()))?;
+        let linker = self.build_linker(&self.engine)?;
         let instance = linker
             .instantiate(&mut self.store, &module)
-            .with_context(|| format!("instantiate {}", path.display()))?;
+            .map_err(|e| anyhow!("instantiate {}: {e}", path.display()))?;
 
         let name = self.read_plugin_name(&instance)?;
         let types = self.read_plugin_types(&instance)?;
         let funcs = PluginFuncs {
-            init: instance.get_typed_func(&mut self.store, export::INIT).ok(),
-            update: instance.get_typed_func(&mut self.store, export::UPDATE).ok(),
+            update: instance
+                .get_typed_func(&mut self.store, export::UPDATE)
+                .ok(),
             draw: instance.get_typed_func(&mut self.store, export::DRAW).ok(),
-            destroy: instance.get_typed_func(&mut self.store, export::DESTROY).ok(),
-            serialize: instance.get_typed_func(&mut self.store, export::SERIALIZE).ok(),
+            destroy: instance
+                .get_typed_func(&mut self.store, export::DESTROY)
+                .ok(),
+            serialize: instance
+                .get_typed_func(&mut self.store, export::SERIALIZE)
+                .ok(),
             deserialize: instance
                 .get_typed_func(&mut self.store, export::DESERIALIZE)
                 .ok(),
@@ -158,20 +172,14 @@ impl WasmHost {
         }
 
         let mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
-        let meta = (name.clone(), types.clone());
-        self.plugins.push(Plugin {
+        Ok(Plugin {
             name,
             types,
             path: path.to_path_buf(),
             mtime,
             instance: Some(instance),
             funcs,
-        });
-        eprintln!(
-            "ruleste: loaded plugin {:?} (types: {:?})",
-            meta.0, meta.1
-        );
-        Ok(())
+        })
     }
 
     pub fn plugin_for_type(&self, entity_type: &str) -> Option<usize> {
@@ -194,25 +202,11 @@ impl WasmHost {
             e.entity_type = entity_type.to_string();
             e.spawn = spawn.clone();
             e.sprite.sprite = entity_type.to_string();
-            e
+            e.id
         };
-        let instance = self.plugins[idx].instance.expect("plugin loaded");
-        self.call_init(&instance, id, &spawn)?;
+        let instance = self.plugins[idx].instance.as_ref().expect("plugin loaded");
+        call_init(&mut self.store, instance, id, &spawn)?;
         Ok(Some(id))
-    }
-
-    fn call_init(&mut self, instance: &Instance, id: u32, spawn: &[u8]) -> Result<()> {
-        let Some(init) = instance
-            .get_typed_func::<(u32, u32, u32), ()>(&mut self.store, export::INIT)
-            .ok()
-        else {
-            return Ok(());
-        };
-        let ptr = self.write_buffer(instance, spawn)?;
-        let result = init.call(&mut self.store, (id, ptr, spawn.len() as u32));
-        self.free_buffer(instance, ptr, spawn.len())?;
-        result?;
-        Ok(())
     }
 
     /// Runs every plugin's per-entity update, then flushes the event queue.
@@ -230,7 +224,7 @@ impl WasmHost {
             })
             .collect();
         for (id, idx) in jobs {
-            let Some(update) = self.plugins[idx].funcs.update else {
+            let Some(update) = &self.plugins[idx].funcs.update else {
                 continue;
             };
             if let Err(e) = update.call(&mut self.store, (id, dt)) {
@@ -253,7 +247,7 @@ impl WasmHost {
             })
             .collect();
         for (id, idx) in jobs {
-            let Some(draw) = self.plugins[idx].funcs.draw else {
+            let Some(draw) = &self.plugins[idx].funcs.draw else {
                 continue;
             };
             if let Err(e) = draw.call(&mut self.store, (id,)) {
@@ -265,10 +259,10 @@ impl WasmHost {
     pub fn despawn(&mut self, id: u32) {
         let entity = self.store.data().world.get(id).cloned();
         if let Some(entity) = entity {
-            if let Some(idx) = self.plugins.iter().position(|p| p.name == entity.plugin)
-                && let Some(destroy) = self.plugins[idx].funcs.destroy
-            {
-                let _ = destroy.call(&mut self.store, (id,));
+            if let Some(idx) = self.plugins.iter().position(|p| p.name == entity.plugin) {
+                if let Some(destroy) = &self.plugins[idx].funcs.destroy {
+                    let _ = destroy.call(&mut self.store, (id,));
+                }
             }
             self.store.data_mut().world.despawn(id);
         }
@@ -296,7 +290,7 @@ impl WasmHost {
     fn reload_plugin(&mut self, idx: usize) -> Result<()> {
         let path = self.plugins[idx].path.clone();
         let owner = self.plugins[idx].name.clone();
-        let instance = self.plugins[idx].instance.expect("plugin present");
+        let instance = self.plugins[idx].instance.as_ref().expect("plugin present");
 
         // Snapshot the state of every entity this plugin owns. The plugin's
         // serializer hands us a pointer/length; we copy the bytes out before
@@ -310,12 +304,14 @@ impl WasmHost {
             .map(|e| (e.id, e.spawn.clone()))
             .collect();
         let mut states = HashMap::new();
-        if let Some(serialize) = self.plugins[idx].funcs.serialize {
+        if let Some(serialize) = &self.plugins[idx].funcs.serialize {
             for (id, _) in &owned {
                 let mut len: u32 = 0;
-                match serialize.call(&mut self.store, (*id, std::ptr::addr_of_mut!(len))) {
+                match serialize.call(&mut self.store, (*id, std::ptr::addr_of_mut!(len) as u32)) {
                     Ok(ptr) if ptr != 0 => {
-                        if let Some(bytes) = read_bytes_at(&self.store, ptr, len as usize) {
+                        if let Some(bytes) =
+                            read_bytes_at(instance, &mut self.store, ptr, len as usize)
+                        {
                             states.insert(*id, bytes);
                         }
                     }
@@ -325,30 +321,24 @@ impl WasmHost {
             }
         }
 
-        self.plugins[idx].instance = None;
-        self.load_plugin(&path)?;
-        let new_idx = self
-            .plugins
-            .iter()
-            .position(|p| p.name == owner)
-            .unwrap_or(idx);
-        let instance = self.plugins[new_idx].instance.expect("reloaded");
+        self.plugins[idx] = self.build_plugin(&path)?;
+        let instance = self.plugins[idx].instance.as_ref().expect("reloaded");
 
         for (id, spawn) in &owned {
-            if let Err(e) = self.call_init(&instance, *id, spawn) {
+            if let Err(e) = call_init(&mut self.store, instance, *id, spawn) {
                 eprintln!("ruleste: re-init entity {id} after reload: {e}");
                 continue;
             }
-            if let Some(restore) = self.plugins[new_idx].funcs.deserialize
-                && let Some(buf) = states.get(id)
-            {
-                let ptr = self.write_buffer(&instance, buf)?;
-                let result = restore.call(&mut self.store, (*id, ptr, buf.len() as u32));
-                self.free_buffer(&instance, ptr, buf.len())?;
-                result?;
+            if let Some(restore) = &self.plugins[idx].funcs.deserialize {
+                if let Some(buf) = states.get(id) {
+                    let ptr = write_buffer(&mut self.store, instance, buf)?;
+                    let result = restore.call(&mut self.store, (*id, ptr, buf.len() as u32));
+                    free_buffer(&mut self.store, instance, ptr, buf.len() as u32)?;
+                    result?;
+                }
             }
         }
-        eprintln!("ruleste: hot-reloaded plugin {:?}", self.plugins[new_idx].name);
+        eprintln!("ruleste: hot-reloaded plugin {owner:?}");
         Ok(())
     }
 
@@ -357,76 +347,145 @@ impl WasmHost {
     // ---------------------------------------------------------------------
 
     fn build_linker(&self, engine: &Engine) -> Result<Linker<GameState>> {
-        let linker = Linker::<GameState>::new(engine);
-        let l = linker
-            .func_wrap("env", "host_position_get", |mut caller: Caller<'_, GameState>, id: u32, out: u32| {
-                let (x, y) = world_get(&caller, id, |e| (e.position.x, e.position.y)).unwrap_or((0.0, 0.0));
+        let mut linker = Linker::<GameState>::new(engine);
+
+        linker.func_wrap(
+            "env",
+            "host_position_get",
+            |mut caller: Caller<'_, GameState>, id: u32, out: u32| {
+                let (x, y) =
+                    world_get(&caller, id, |e| (e.position.x, e.position.y)).unwrap_or((0.0, 0.0));
                 write_vec2(&mut caller, out, x, y);
-            })
-            .func_wrap("env", "host_position_set", |mut caller: Caller<'_, GameState>, id: u32, x: f32, y: f32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_position_set",
+            |mut caller: Caller<'_, GameState>, id: u32, x: f32, y: f32| {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
                     e.position = ruleste_plugin_api::types::Vec2::new(x, y);
                 }
-            })
-            .func_wrap("env", "host_speed_get", |mut caller: Caller<'_, GameState>, id: u32, out: u32| {
-                let (x, y) = world_get(&caller, id, |e| (e.speed.x, e.speed.y)).unwrap_or((0.0, 0.0));
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_speed_get",
+            |mut caller: Caller<'_, GameState>, id: u32, out: u32| {
+                let (x, y) =
+                    world_get(&caller, id, |e| (e.speed.x, e.speed.y)).unwrap_or((0.0, 0.0));
                 write_vec2(&mut caller, out, x, y);
-            })
-            .func_wrap("env", "host_speed_set", |mut caller: Caller<'_, GameState>, id: u32, x: f32, y: f32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_speed_set",
+            |mut caller: Caller<'_, GameState>, id: u32, x: f32, y: f32| {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
                     e.speed = ruleste_plugin_api::types::Vec2::new(x, y);
                 }
-            })
-            .func_wrap("env", "host_hitbox_set", |mut caller: Caller<'_, GameState>, id: u32, w: f32, h: f32, ox: f32, oy: f32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_hitbox_set",
+            |mut caller: Caller<'_, GameState>, id: u32, w: f32, h: f32, ox: f32, oy: f32| {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
                     e.hitbox = ruleste_plugin_api::types::Vec2::new(w, h);
                     e.hitbox_offset = ruleste_plugin_api::types::Vec2::new(ox, oy);
                 }
-            })
-            .func_wrap("env", "host_depth_get", |caller: Caller<'_, GameState>, id: u32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_depth_get",
+            |caller: Caller<'_, GameState>, id: u32| {
                 caller.data().world.get(id).map_or(0, |e| e.depth)
-            })
-            .func_wrap("env", "host_depth_set", |mut caller: Caller<'_, GameState>, id: u32, depth: i32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_depth_set",
+            |mut caller: Caller<'_, GameState>, id: u32, depth: i32| {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
                     e.depth = depth;
                 }
-            })
-            .func_wrap("env", "host_visible_get", |caller: Caller<'_, GameState>, id: u32| {
-                caller.data().world.get(id).map_or(true, |e| e.visible)
-            })
-            .func_wrap("env", "host_visible_set", |mut caller: Caller<'_, GameState>, id: u32, visible: bool| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_visible_get",
+            |caller: Caller<'_, GameState>, id: u32| {
+                caller
+                    .data()
+                    .world
+                    .get(id)
+                    .map_or(1i32, |e| i32::from(e.visible))
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_visible_set",
+            |mut caller: Caller<'_, GameState>, id: u32, visible: i32| {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
-                    e.visible = visible;
+                    e.visible = visible != 0;
                 }
-            })
-            .func_wrap("env", "host_sprite_play", |mut caller: Caller<'_, GameState>, id: u32, name: u32, len: u32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_sprite_play",
+            |mut caller: Caller<'_, GameState>, id: u32, name: u32, len: u32| {
                 let s = read_string(&mut caller, name, len);
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
                     e.sprite.animation = s;
                     e.sprite.frame = 0.0;
                 }
-            })
-            .func_wrap("env", "host_sprite_animation", |mut caller: Caller<'_, GameState>, id: u32, out: u32, cap: u32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_sprite_animation",
+            |mut caller: Caller<'_, GameState>, id: u32, out: u32, cap: u32| {
                 let s = world_get(&caller, id, |e| e.sprite.animation.clone()).unwrap_or_default();
                 write_string(&mut caller, out, cap, &s) as u32
-            })
-            .func_wrap("env", "host_sprite_frame_get", |caller: Caller<'_, GameState>, id: u32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_sprite_frame_get",
+            |caller: Caller<'_, GameState>, id: u32| {
                 caller.data().world.get(id).map_or(0.0, |e| e.sprite.frame)
-            })
-            .func_wrap("env", "host_sprite_frame_set", |mut caller: Caller<'_, GameState>, id: u32, frame: f32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_sprite_frame_set",
+            |mut caller: Caller<'_, GameState>, id: u32, frame: f32| {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
                     e.sprite.frame = frame;
                 }
-            })
-            .func_wrap("env", "host_sprite_rate_get", |caller: Caller<'_, GameState>, id: u32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_sprite_rate_get",
+            |caller: Caller<'_, GameState>, id: u32| {
                 caller.data().world.get(id).map_or(1.0, |e| e.sprite.rate)
-            })
-            .func_wrap("env", "host_sprite_rate_set", |mut caller: Caller<'_, GameState>, id: u32, rate: f32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_sprite_rate_set",
+            |mut caller: Caller<'_, GameState>, id: u32, rate: f32| {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
                     e.sprite.rate = rate;
                 }
-            })
-            .func_wrap("env", "host_sprite_color_set", |mut caller: Caller<'_, GameState>, id: u32, packed: u32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_sprite_color_set",
+            |mut caller: Caller<'_, GameState>, id: u32, packed: u32| {
                 let color = Color::new(
                     (packed >> 24) as u8,
                     (packed >> 16) as u8,
@@ -436,91 +495,132 @@ impl WasmHost {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
                     e.sprite.color = color;
                 }
-            })
-            .func_wrap("env", "host_sprite_flip_x_get", |caller: Caller<'_, GameState>, id: u32| {
-                caller.data().world.get(id).map_or(false, |e| e.sprite.flip_x)
-            })
-            .func_wrap("env", "host_sprite_flip_x_set", |mut caller: Caller<'_, GameState>, id: u32, flip: bool| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_sprite_flip_x_get",
+            |caller: Caller<'_, GameState>, id: u32| {
+                caller
+                    .data()
+                    .world
+                    .get(id)
+                    .map_or(0i32, |e| i32::from(e.sprite.flip_x))
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_sprite_flip_x_set",
+            |mut caller: Caller<'_, GameState>, id: u32, flip: i32| {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
-                    e.sprite.flip_x = flip;
+                    e.sprite.flip_x = flip != 0;
                 }
-            })
-            .func_wrap("env", "host_sprite_flip_y_get", |caller: Caller<'_, GameState>, id: u32| {
-                caller.data().world.get(id).map_or(false, |e| e.sprite.flip_y)
-            })
-            .func_wrap("env", "host_sprite_flip_y_set", |mut caller: Caller<'_, GameState>, id: u32, flip: bool| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_sprite_flip_y_get",
+            |caller: Caller<'_, GameState>, id: u32| {
+                caller
+                    .data()
+                    .world
+                    .get(id)
+                    .map_or(0i32, |e| i32::from(e.sprite.flip_y))
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_sprite_flip_y_set",
+            |mut caller: Caller<'_, GameState>, id: u32, flip: i32| {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
-                    e.sprite.flip_y = flip;
+                    e.sprite.flip_y = flip != 0;
                 }
-            })
-            .func_wrap("env", "host_input_axis", |caller: Caller<'_, GameState>, action: i32| {
-                caller.data().input.axis(action)
-            })
-            .func_wrap("env", "host_input_button", |caller: Caller<'_, GameState>, action: i32| {
-                caller.data().input.button(action)
-            })
-            .func_wrap("env", "host_input_pressed", |caller: Caller<'_, GameState>, action: i32| {
-                caller.data().input.pressed(action)
-            })
-            .func_wrap("env", "host_input_released", |caller: Caller<'_, GameState>, action: i32| {
-                caller.data().input.released(action)
-            })
-            .func_wrap("env", "host_collide_check", |mut caller: Caller<'_, GameState>, id: u32, ox: f32, oy: f32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_input_axis",
+            |caller: Caller<'_, GameState>, action: i32| caller.data().input.axis(action),
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_input_button",
+            |caller: Caller<'_, GameState>, action: i32| {
+                i32::from(caller.data().input.button(action))
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_input_pressed",
+            |caller: Caller<'_, GameState>, action: i32| {
+                i32::from(caller.data().input.pressed(action))
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_input_released",
+            |caller: Caller<'_, GameState>, action: i32| {
+                i32::from(caller.data().input.released(action))
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_collide_check",
+            |mut caller: Caller<'_, GameState>, id: u32, ox: f32, oy: f32| {
                 let state = caller.data_mut();
-                state.solids.entity_collide(&state.world, id, ox, oy)
-            })
-            .func_wrap("env", "host_actor_move", |mut caller: Caller<'_, GameState>, id: u32, h: f32, v: f32| {
+                i32::from(state.solids.entity_collide(&state.world, id, ox, oy))
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_actor_move",
+            |mut caller: Caller<'_, GameState>, id: u32, h: f32, v: f32| {
                 let state = caller.data_mut();
                 state.solids.actor_move(&mut state.world, id, h, v)
-            })
-            .func_wrap("env", "host_actor_is_grounded", |mut caller: Caller<'_, GameState>, id: u32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_actor_is_grounded",
+            |mut caller: Caller<'_, GameState>, id: u32| {
                 let state = caller.data_mut();
-                state.solids.is_grounded(&state.world, id)
-            })
-            .func_wrap("env", "host_play_sound", |mut caller: Caller<'_, GameState>, name: u32, len: u32| {
+                i32::from(state.solids.is_grounded(&state.world, id))
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_play_sound",
+            |mut caller: Caller<'_, GameState>, name: u32, len: u32| {
                 let s = read_string(&mut caller, name, len);
                 caller.data_mut().audio.play(&s, 1.0);
-            })
-            .func_wrap("env", "host_log", |mut caller: Caller<'_, GameState>, msg: u32, len: u32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_log",
+            |mut caller: Caller<'_, GameState>, msg: u32, len: u32| {
                 let s = read_string(&mut caller, msg, len);
                 eprintln!("[plugin] {s}");
-            })
-            .func_wrap("env", "host_emit", |mut caller: Caller<'_, GameState>, id: u32, event: u32, data: u32, len: u32| {
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_emit",
+            |mut caller: Caller<'_, GameState>, id: u32, event: u32, data: u32, len: u32| {
                 let buf = read_bytes(&mut caller, data, len);
                 caller.data_mut().events.push(GameEvent {
                     entity: id,
                     kind: event,
                     data: buf,
                 });
-            });
-        Ok(l.to_owned())
+            },
+        )?;
+        Ok(linker)
     }
 
     // ---------------------------------------------------------------------
     // buffer helpers
     // ---------------------------------------------------------------------
-
-    /// Allocates room in plugin memory via the plugin's own allocator and
-    /// copies `data` in. Returns the plugin-side pointer.
-    fn write_buffer(&mut self, instance: &Instance, data: &[u8]) -> Result<u32> {
-        let alloc = instance
-            .get_typed_func::<u32, u32>(&mut self.store, SCRATCH_ALLOC)
-            .context("plugin missing ruleste_alloc export")?;
-        let ptr = alloc.call(&mut self.store, data.len() as u32)?;
-        let memory = instance
-            .get_memory(&mut self.store, "memory")
-            .context("plugin has no memory export")?;
-        memory.write(&mut self.store, ptr as usize, data)?;
-        Ok(ptr)
-    }
-
-    fn free_buffer(&mut self, instance: &Instance, ptr: u32, len: u32) -> Result<()> {
-        let dealloc = instance
-            .get_typed_func::<(u32, u32), ()>(&mut self.store, SCRATCH_DEALLOC)
-            .context("plugin missing ruleste_dealloc export")?;
-        dealloc.call(&mut self.store, (ptr, len))?;
-        Ok(())
-    }
 
     fn read_plugin_name(&mut self, instance: &Instance) -> Result<String> {
         let Some(func) = instance
@@ -530,7 +630,7 @@ impl WasmHost {
             return Ok(String::new());
         };
         let ptr = func.call(&mut self.store, ())?;
-        Ok(read_cstring(&self.store, ptr).unwrap_or_default())
+        Ok(read_cstring(instance, &mut self.store, ptr).unwrap_or_default())
     }
 
     fn read_plugin_types(&mut self, instance: &Instance) -> Result<Vec<String>> {
@@ -541,8 +641,8 @@ impl WasmHost {
             return Ok(Vec::new());
         };
         let mut len: u32 = 0;
-        let ptr = func.call(&mut self.store, std::ptr::addr_of_mut!(len))?;
-        let bytes = read_bytes_at(&self.store, ptr, len as usize).unwrap_or_default();
+        let ptr = func.call(&mut self.store, (std::ptr::addr_of_mut!(len) as u32,))?;
+        let bytes = read_bytes_at(instance, &mut self.store, ptr, len as usize).unwrap_or_default();
         let text = String::from_utf8_lossy(&bytes);
         Ok(text
             .split(',')
@@ -566,7 +666,9 @@ fn plugin_memory(caller: &mut Caller<'_, GameState>) -> Option<Memory> {
 }
 
 fn read_bytes(caller: &mut Caller<'_, GameState>, ptr: u32, len: u32) -> Vec<u8> {
-    let mem = plugin_memory(caller).unwrap_or_default();
+    let Some(mem) = plugin_memory(caller) else {
+        return Vec::new();
+    };
     let mut buf = vec![0u8; len as usize];
     if mem.read(caller, ptr as usize, &mut buf).is_err() {
         return Vec::new();
@@ -598,17 +700,69 @@ fn write_string(caller: &mut Caller<'_, GameState>, ptr: u32, cap: u32, s: &str)
     n
 }
 
-fn read_cstring<T>(store: &Store<T>, ptr: u32) -> Option<String> {
-    let memory = store.get_export("memory")?.into_memory()?;
-    let data = memory.data(&store);
+fn read_cstring<T>(instance: &Instance, store: &mut Store<T>, ptr: u32) -> Option<String> {
+    let memory = instance.get_memory(&mut *store, "memory")?;
+    let data = memory.data(&*store);
     let bytes = data.get(ptr as usize..)?;
     let end = bytes.iter().position(|&b| b == 0)?;
     Some(String::from_utf8_lossy(&bytes[..end]).into_owned())
 }
 
-fn read_bytes_at<T>(store: &Store<T>, ptr: u32, len: usize) -> Option<Vec<u8>> {
-    let memory = store.get_export("memory")?.into_memory()?;
-    let data = memory.data(&store);
+fn read_bytes_at<T>(
+    instance: &Instance,
+    store: &mut Store<T>,
+    ptr: u32,
+    len: usize,
+) -> Option<Vec<u8>> {
+    let memory = instance.get_memory(&mut *store, "memory")?;
+    let data = memory.data(&*store);
     let bytes = data.get(ptr as usize..)?.get(..len)?;
     Some(bytes.to_vec())
+}
+
+/// Calls the plugin's `entity_init` export, copying `spawn` into plugin memory.
+fn call_init(
+    store: &mut Store<GameState>,
+    instance: &Instance,
+    id: u32,
+    spawn: &[u8],
+) -> Result<()> {
+    let Some(init) = instance
+        .get_typed_func::<(u32, u32, u32), ()>(&mut *store, export::INIT)
+        .ok()
+    else {
+        return Ok(());
+    };
+    let ptr = write_buffer(store, instance, spawn)?;
+    let result = init.call(&mut *store, (id, ptr, spawn.len() as u32));
+    free_buffer(store, instance, ptr, spawn.len() as u32)?;
+    result?;
+    Ok(())
+}
+
+/// Allocates room in plugin memory via the plugin's own allocator and
+/// copies `data` in. Returns the plugin-side pointer.
+fn write_buffer(store: &mut Store<GameState>, instance: &Instance, data: &[u8]) -> Result<u32> {
+    let alloc = instance
+        .get_typed_func::<u32, u32>(&mut *store, SCRATCH_ALLOC)
+        .map_err(|e| anyhow!("plugin missing {SCRATCH_ALLOC} export: {e}"))?;
+    let ptr = alloc.call(&mut *store, data.len() as u32)?;
+    let memory = instance
+        .get_memory(&mut *store, "memory")
+        .ok_or_else(|| anyhow!("plugin has no memory export"))?;
+    memory.write(&mut *store, ptr as usize, data)?;
+    Ok(ptr)
+}
+
+fn free_buffer(
+    store: &mut Store<GameState>,
+    instance: &Instance,
+    ptr: u32,
+    len: u32,
+) -> Result<()> {
+    let dealloc = instance
+        .get_typed_func::<(u32, u32), ()>(&mut *store, SCRATCH_DEALLOC)
+        .map_err(|e| anyhow!("plugin missing {SCRATCH_DEALLOC} export: {e}"))?;
+    dealloc.call(&mut *store, (ptr, len))?;
+    Ok(())
 }

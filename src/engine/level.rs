@@ -39,14 +39,19 @@ impl Level {
     pub fn from_bin(bin: MapBin) -> anyhow::Result<Level> {
         let root = &bin.root;
         let name = root.attr_str("name", "unknown");
-        let width = root.attr_f32("width", 320.0);
-        let height = root.attr_f32("height", 180.0);
 
-        let solids = parse_grid(root.child("solids"));
-        let bg = parse_grid(root.child("bg"));
+        let level = root
+            .child("levels")
+            .and_then(|levels| levels.children.first())
+            .ok_or_else(|| anyhow::anyhow!("map {:?} has no levels", name))?;
+        let width = level.attr_f32("width", 320.0);
+        let height = level.attr_f32("height", 180.0);
+
+        let solids = parse_grid(level.child("solids"));
+        let bg = parse_grid(level.child("bg"));
 
         let mut entities = Vec::new();
-        if let Some(ents) = root.child("entities") {
+        if let Some(ents) = level.child("entities") {
             for child in &ents.children {
                 entities.push(EntitySpawn {
                     name: child.name.clone(),
