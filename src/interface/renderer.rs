@@ -40,16 +40,22 @@ impl Renderer {
         let sdl = sdl3::init()?;
         let video = sdl.video()?;
         println!("SDL3 video driver: {}", video.current_video_driver());
-        let builder = WindowBuilder::new(
+        let mut builder = WindowBuilder::new(
             &video,
             "Ruleste",
             WINDOW_WIDTH * PIXEL_SCALE,
             WINDOW_HEIGHT * PIXEL_SCALE,
         );
-        let window = builder.build()?;
+        let window = builder.resizable().build()?;
         let mut canvas = sdl3::render::create_renderer(window.clone(), None)?;
         let pump = sdl.event_pump()?;
-        canvas.set_scale(PIXEL_SCALE as f32, PIXEL_SCALE as f32)?;
+        // Render at the fixed internal resolution and let SDL scale it to the
+        // window. Resizable windows tile in Niri (fixed-size ones auto-float).
+        canvas.set_logical_size(
+            WINDOW_WIDTH,
+            WINDOW_HEIGHT,
+            sdl3::sys::render::SDL_RendererLogicalPresentation::LETTERBOX,
+        )?;
         Ok(Renderer {
             sdl,
             canvas,
