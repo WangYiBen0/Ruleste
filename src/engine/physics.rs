@@ -17,6 +17,7 @@ pub struct SolidGrid {
     pub width: usize,
     pub height: usize,
     solid: Vec<bool>,
+    tile_ids: Vec<Option<char>>,
 }
 
 impl SolidGrid {
@@ -24,18 +25,21 @@ impl SolidGrid {
         let height = rows.len();
         let width = rows.iter().map(|r| r.len()).max().unwrap_or(0);
         let mut solid = vec![false; width * height];
+        let mut tile_ids = vec![None; width * height];
         for (y, row) in rows.iter().enumerate() {
             for (x, ch) in row.chars().enumerate() {
-                // The autotiler encodes empty tiles as '0'; anything else is
-                // solid by default. The real per-tile solidity is refined once
-                // the autotiler is implemented.
-                solid[y * width + x] = ch != '0';
+                let idx = y * width + x;
+                if ch != '0' {
+                    solid[idx] = true;
+                    tile_ids[idx] = Some(ch);
+                }
             }
         }
         SolidGrid {
             width,
             height,
             solid,
+            tile_ids,
         }
     }
 
@@ -44,6 +48,14 @@ impl SolidGrid {
             return true;
         }
         self.solid[ty as usize * self.width + tx as usize]
+    }
+
+    /// Returns the tile character at `(tx, ty)`, or `None` if empty / out of bounds.
+    pub fn tile_id_at(&self, tx: i32, ty: i32) -> Option<char> {
+        if tx < 0 || ty < 0 || tx >= self.width as i32 || ty >= self.height as i32 {
+            return None;
+        }
+        self.tile_ids[ty as usize * self.width + tx as usize]
     }
 
     #[must_use]

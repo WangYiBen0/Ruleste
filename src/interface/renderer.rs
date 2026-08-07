@@ -10,8 +10,8 @@ use sdl3::{EventPump, Sdl};
 
 use crate::data::atlas::Atlas;
 use crate::data::spritebank::SpriteBank;
+use crate::engine::autotiler::TileGrid;
 use crate::engine::ecs::World;
-use crate::engine::physics::SolidGrid;
 use crate::engine::sprites::SpriteAnimator;
 
 pub const WINDOW_WIDTH: u32 = 320;
@@ -72,19 +72,40 @@ impl Renderer {
         Ok(())
     }
 
-    /// Draws the solid grid as debug-colored tiles (no autotiler yet).
-    pub fn draw_solids(&mut self, solids: &SolidGrid) {
-        let color = SdlColor::RGB(64, 64, 80);
-        let (w, h) = solids.size();
-        for ty in 0..h {
-            for tx in 0..w {
-                if !solids.solid_at(tx as i32, ty as i32) {
+    /// Draws the solid grid using autotiled textures from the atlas.
+    /// Falls back to debug-colored rectangles if the tileset frame is not found.
+    pub fn draw_solids(&mut self, tile_grid: &TileGrid, atlas: &Atlas) {
+        let fallback_color = SdlColor::RGB(64, 64, 80);
+        for ty in 0..tile_grid.height {
+            for tx in 0..tile_grid.width {
+                let Some((tileset_path, col, row)) = tile_grid.tile_at(tx, ty) else {
                     continue;
-                }
+                };
                 let x = tx as f32 * 8.0 - self.camera.x;
                 let y = ty as f32 * 8.0 - self.camera.y;
-                self.canvas.set_draw_color(color);
-                let _ = self.canvas.fill_rect(FRect::new(x, y, 8.0, 8.0));
+
+                // Look up the tileset frame in the atlas.
+                if let Some(&(page_idx, frame_idx)) = atlas.frame_index.get(tileset_path) {
+                    let page = &atlas.pages[page_idx];
+                    let frame = &page.frames[frame_idx];
+                    let Some(texture) = self.atlas_textures.get(&page_idx) else {
+                        continue;
+                    };
+                    // The tileset frame contains the full tileset texture.
+                    // Each cell is 8x8, arranged in a grid.
+                    let src = FRect::new(
+                        frame.clip.x as f32 + col as f32 * 8.0,
+                        frame.clip.y as f32 + row as f32 * 8.0,
+                        8.0,
+                        8.0,
+                    );
+                    let dst = FRect::new(x, y, 8.0, 8.0);
+                    let _ = self.canvas.copy_ex(texture, src, dst, 0.0, None, false, false);
+                } else {
+                    // Fallback: debug color for missing tilesets.
+                    self.canvas.set_draw_color(fallback_color);
+                    let _ = self.canvas.fill_rect(FRect::new(x, y, 8.0, 8.0));
+                }
             }
         }
     }

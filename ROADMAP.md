@@ -29,7 +29,7 @@
 - [x] 物理：`SolidGrid`（TILE=8）、`actor_move` 碰撞结算（GROUND/WALL/CEILING 标志）、`entity_collide` `src/engine/physics.rs`
 - [x] 关卡：`.bin` → `Level`（solids/bg/实体列表、x/y 补齐）`src/engine/level.rs`
 - [x] SpriteAnimator：动画帧推进、loop/goto、子图零填充寻址 `src/engine/sprites.rs`
-- [ ] 自动拼接（autotiler）——类似 Monocle 的贴图拼接，替换当前调试色块
+- [x] 自动拼接（autotiler）——解析 ForegroundTiles.xml，3×3 邻域 mask 匹配，tileset 纹理渲染 `src/engine/autotiler.rs`
 - [ ] 相机与房间滚动（跟随玩家、边界）
 
 ## Phase 3 — Wasm 宿主与内建插件 🔶 进行中

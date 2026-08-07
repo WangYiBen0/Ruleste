@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use ruleste::data::atlas::Atlas;
 use ruleste::data::spritebank::SpriteBank;
+use ruleste::engine::autotiler::Autotiler;
 use ruleste::engine::input::Input;
 use ruleste::engine::level::Level;
 use ruleste::engine::sprites::SpriteAnimator;
@@ -20,6 +21,9 @@ fn main() -> anyhow::Result<()> {
     let sprite_path = args
         .next()
         .unwrap_or_else(|| "references/Celeste/Content/Graphics/Sprites.xml".to_string());
+    let autotiler_path = args
+        .next()
+        .unwrap_or_else(|| "references/Celeste/Content/Graphics/ForegroundTiles.xml".to_string());
     let plugin_dir = args
         .next()
         .unwrap_or_else(|| "target/wasm32-unknown-unknown/release".to_string());
@@ -28,6 +32,8 @@ fn main() -> anyhow::Result<()> {
     let atlas = Atlas::load(Path::new(&atlas_path))?;
     let sprite_bank = SpriteBank::load(Path::new(&sprite_path))?;
     let level = Level::load(Path::new(&map_path))?;
+    let autotiler = Autotiler::load(Path::new(&autotiler_path))?;
+    let tile_grid = autotiler.generate(&level.solids);
 
     println!("Initializing SDL3 renderer...");
     let mut renderer = Renderer::new()?;
@@ -102,8 +108,8 @@ fn main() -> anyhow::Result<()> {
 
         // Render frame
         renderer.canvas.clear();
+        renderer.draw_solids(&tile_grid, &atlas);
         let state = wasm_host.game_state();
-        renderer.draw_solids(&state.solids);
         renderer.draw_entities(&state.world, &atlas, &sprite_bank, &mut sprite_animator);
         renderer.present();
 
