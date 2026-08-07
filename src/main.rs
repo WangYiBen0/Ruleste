@@ -81,15 +81,22 @@ fn main() -> anyhow::Result<()> {
     let mut wasm_host = WasmHost::new(world, input, solids, Path::new(&plugin_dir))?;
     wasm_host.load_plugins()?;
 
+    let spawn_recipes: Vec<(String, Vec<u8>)> = level
+        .entities
+        .iter()
+        .map(|e| (e.name.clone(), e.data.to_bytes()))
+        .collect();
+    wasm_host.set_respawn_entities(&spawn_recipes);
+
     println!("Spawning {} level entities...", level.entities.len());
     let mut unhandled: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-    for entity in &level.entities {
-        match wasm_host.spawn_entity(&entity.name, entity.data.to_bytes()) {
+    for (name, spawn) in &spawn_recipes {
+        match wasm_host.spawn_entity(name, spawn.clone()) {
             Ok(Some(_)) => {}
             Ok(None) => {
-                *unhandled.entry(&entity.name).or_default() += 1;
+                *unhandled.entry(name.as_str()).or_default() += 1;
             }
-            Err(e) => eprintln!("Failed to spawn entity {:?}: {e}", entity.name),
+            Err(e) => eprintln!("Failed to spawn entity {name:?}: {e}"),
         }
     }
     for (name, count) in &unhandled {
@@ -164,6 +171,7 @@ fn main() -> anyhow::Result<()> {
         let state = wasm_host.game_state();
         renderer.draw_entities(&state.world, &atlas, &sprite_bank, &mut sprite_animator);
         renderer.draw_lines(&state.draw_commands);
+        renderer.draw_images(&state.draw_images, &atlas);
         renderer.present();
 
         // Debug: dump a rendered frame as a PPM and exit.

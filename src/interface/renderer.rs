@@ -11,7 +11,7 @@ use sdl3::{EventPump, Sdl};
 use crate::data::atlas::Atlas;
 use crate::data::spritebank::SpriteBank;
 use crate::engine::autotiler::TileGrid;
-use crate::engine::draw::Line;
+use crate::engine::draw::{Image, Line};
 use crate::engine::ecs::World;
 use crate::engine::sprites::SpriteAnimator;
 
@@ -225,6 +225,54 @@ impl Renderer {
                 sdl3::render::FPoint::new(x1, y1),
                 sdl3::render::FPoint::new(x2, y2),
             );
+        }
+    }
+
+    /// Draws plugin-submitted atlas-frame blits. `(x, y)` is the center of the
+    /// frame's untrimmed box in world coordinates; the frame's offset is
+    /// honored like entity sprites.
+    pub fn draw_images(&mut self, images: &[Image], atlas: &Atlas) {
+        for image in images {
+            let Some((page_idx, frame_idx)) = atlas.frame_index.get(&image.frame_id) else {
+                continue;
+            };
+            let page = &atlas.pages[*page_idx];
+            let frame = &page.frames[*frame_idx];
+            let Some(texture) = self.atlas_textures.get(page_idx) else {
+                continue;
+            };
+            let w = frame.offset.w as f32;
+            let h = frame.offset.h as f32;
+            let cx = image.x - self.camera.x;
+            let cy = image.y - self.camera.y;
+            // Top-left of the full frame, then the trimmed clip inside it.
+            let dst = FRect::new(
+                cx - w * 0.5 * image.scale_x + frame.offset.x as f32,
+                cy - h * 0.5 * image.scale_y + frame.offset.y as f32,
+                frame.clip.w as f32 * image.scale_x,
+                frame.clip.h as f32 * image.scale_y,
+            );
+            let src = FRect::new(
+                frame.clip.x as f32,
+                frame.clip.y as f32,
+                frame.clip.w as f32,
+                frame.clip.h as f32,
+            );
+            let color = image.color;
+            self.canvas
+                .set_draw_color(SdlColor::RGBA(color.r, color.g, color.b, color.a));
+            let res = self.canvas.copy_ex(
+                texture,
+                src,
+                dst,
+                f64::from(image.rotation.to_radians()),
+                None,
+                image.flip_x,
+                image.flip_y,
+            );
+            if let Err(e) = res {
+                eprintln!("ruleste: copy_ex failed for {:?}: {e}", image.frame_id);
+            }
         }
     }
 

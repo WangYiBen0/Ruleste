@@ -63,6 +63,10 @@ impl Level {
         if let Some(ents) = level.child("entities") {
             for child in &ents.children {
                 let mut data = attrs_to_map(child);
+                // The entity type name is always available to plugins, so a
+                // plugin handling several entity types can tell them apart.
+                data.attrs
+                    .push(("_entity_type".to_string(), MapAttr::Str(child.name.clone())));
                 // Entity nodes are the entity element's children, mirroring
                 // `LevelData.CreateEntityData` (each child's x/y form a node).
                 data.nodes = child

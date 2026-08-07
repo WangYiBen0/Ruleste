@@ -10,7 +10,7 @@
 //! `ruleste_alloc`/`ruleste_dealloc`, so the host never guesses at the plugin's
 //! heap layout.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -19,13 +19,17 @@ use ruleste_plugin_api::export;
 use ruleste_plugin_api::types::Color;
 use wasmtime::{Caller, Engine, Extern, Instance, Linker, Memory, Module, Store, TypedFunc};
 
-use crate::engine::draw::Line;
+use crate::engine::draw::{Image, Line};
 use crate::engine::ecs::World;
 use crate::engine::input::Input;
 use crate::engine::physics::SolidGrid;
 
 pub const SCRATCH_ALLOC: &str = "ruleste_alloc";
 pub const SCRATCH_DEALLOC: &str = "ruleste_dealloc";
+
+/// How long a death freezes the room before it reloads (mirrors the original's
+/// respawn delay).
+pub const DEATH_FREEZE_TIME: f32 = 1.2;
 
 #[derive(Debug, Clone)]
 pub struct GameEvent {
@@ -59,6 +63,14 @@ pub struct GameState {
     pub events: Vec<GameEvent>,
     /// Geometry submitted by plugins during their draw hook this frame.
     pub draw_commands: Vec<Line>,
+    /// Atlas-frame blits submitted by plugins during their draw hook.
+    pub draw_images: Vec<Image>,
+    /// Seconds remaining on the death freeze; positive while the player is
+    /// dead and the room is frozen before respawning.
+    pub death_timer: f32,
+    /// Entities that have been consumed this session (e.g. a collected
+    /// strawberry) and must not be re-created on respawn. Keyed by spawn blob.
+    pub collected: HashSet<Vec<u8>>,
 }
 
 impl GameState {
@@ -70,6 +82,9 @@ impl GameState {
             audio: AudioBus::default(),
             events: Vec::new(),
             draw_commands: Vec::new(),
+            draw_images: Vec::new(),
+            death_timer: 0.0,
+            collected: HashSet::new(),
         }
     }
 }
@@ -97,6 +112,8 @@ pub struct WasmHost {
     store: Store<GameState>,
     plugins: Vec<Plugin>,
     pub plugin_dir: PathBuf,
+    /// The level's spawn recipes, used to rebuild the room after a death.
+    respawn_entities: Vec<(String, Vec<u8>)>,
 }
 
 impl WasmHost {
@@ -113,7 +130,13 @@ impl WasmHost {
             store,
             plugins: Vec::new(),
             plugin_dir: plugin_dir.into(),
+            respawn_entities: Vec::new(),
         })
+    }
+
+    /// Records the level's entities so the room can be rebuilt on death.
+    pub fn set_respawn_entities(&mut self, entities: &[(String, Vec<u8>)]) {
+        self.respawn_entities = entities.to_vec();
     }
 
     pub fn game_state(&mut self) -> &mut GameState {
@@ -217,7 +240,26 @@ impl WasmHost {
     }
 
     /// Runs every plugin's per-entity update, then flushes the event queue.
+    ///
+    /// While the player is dead (`death_timer > 0`) the room is frozen: entity
+    /// updates are skipped, mirroring how the original engine stops time during
+    /// the death freeze. When the timer elapses the room is rebuilt.
     pub fn update(&mut self, dt: f32) {
+        let mut respawn = false;
+        {
+            let state = self.store.data_mut();
+            if state.death_timer > 0.0 {
+                state.death_timer -= dt;
+                respawn = state.death_timer <= 0.0;
+            }
+        }
+        if respawn {
+            self.respawn();
+            return;
+        }
+        if self.store.data().death_timer > 0.0 {
+            return;
+        }
         let jobs: Vec<(u32, usize)> = self
             .store
             .data()
@@ -238,10 +280,51 @@ impl WasmHost {
                 eprintln!("ruleste: plugin update error (entity {id}): {e}");
             }
         }
+        // A plugin may have requested a death this frame; freeze now instead of
+        // respawning until the timer elapses (handled at the top of `update`).
+    }
+
+    /// Triggers a death: freezes the room and schedules a respawn.
+    pub fn kill_player(&mut self) {
+        self.store.data_mut().death_timer = DEATH_FREEZE_TIME;
+        let ids: Vec<u32> = self
+            .store
+            .data()
+            .world
+            .iter()
+            .filter(|e| e.entity_type == "player")
+            .map(|e| e.id)
+            .collect();
+        for id in ids {
+            if let Some(e) = self.store.data_mut().world.get_mut(id) {
+                e.visible = false;
+            }
+        }
+    }
+
+    /// Rebuilds the room from the recorded spawn recipes, skipping entities
+    /// that were consumed this session.
+    pub fn respawn(&mut self) {
+        self.store.data_mut().death_timer = 0.0;
+        let ids: Vec<u32> = self.store.data().world.iter().map(|e| e.id).collect();
+        for id in ids {
+            self.despawn(id);
+        }
+        let collected = self.store.data().collected.clone();
+        let recipes = self.respawn_entities.clone();
+        for (entity_type, spawn) in &recipes {
+            if collected.contains(spawn) {
+                continue;
+            }
+            if let Err(e) = self.spawn_entity(entity_type, spawn.clone()) {
+                eprintln!("ruleste: respawn of {entity_type} failed: {e}");
+            }
+        }
     }
 
     pub fn draw(&mut self) {
         self.store.data_mut().draw_commands.clear();
+        self.store.data_mut().draw_images.clear();
         let jobs: Vec<(u32, usize)> = self
             .store
             .data()
@@ -422,6 +505,29 @@ impl WasmHost {
         )?;
         linker.func_wrap(
             "env",
+            "host_hitbox_get",
+            |mut caller: Caller<'_, GameState>, id: u32, out: u32| {
+                let buf = caller
+                    .data()
+                    .world
+                    .get(id)
+                    .map(|e| {
+                        let mut b = [0f32; 4];
+                        b[0] = e.hitbox.x;
+                        b[1] = e.hitbox.y;
+                        b[2] = e.hitbox_offset.x;
+                        b[3] = e.hitbox_offset.y;
+                        b
+                    })
+                    .unwrap_or([0f32; 4]);
+                if let Some(mem) = plugin_memory(&mut caller) {
+                    let bytes: Vec<u8> = buf.iter().flat_map(|v| v.to_le_bytes()).collect();
+                    let _ = mem.write(caller, out as usize, &bytes);
+                }
+            },
+        )?;
+        linker.func_wrap(
+            "env",
             "host_depth_get",
             |caller: Caller<'_, GameState>, id: u32| {
                 caller.data().world.get(id).map_or(0, |e| e.depth)
@@ -464,6 +570,16 @@ impl WasmHost {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
                     e.sprite.animation = s;
                     e.sprite.frame = 0.0;
+                }
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_sprite_bank_set",
+            |mut caller: Caller<'_, GameState>, id: u32, name: u32, len: u32| {
+                let s = read_string(&mut caller, name, len);
+                if let Some(e) = caller.data_mut().world.get_mut(id) {
+                    e.sprite.sprite = s;
                 }
             },
         )?;
@@ -657,6 +773,73 @@ impl WasmHost {
                     y1,
                     x2,
                     y2,
+                    color: Color {
+                        r: r as u8,
+                        g: g as u8,
+                        b: b as u8,
+                        a: a as u8,
+                    },
+                });
+            },
+        )?;
+        // --- Kill the player: freeze the room, then respawn ---
+        linker.func_wrap("env", "host_die", |mut caller: Caller<'_, GameState>| {
+            let state = caller.data_mut();
+            if state.death_timer <= 0.0 {
+                state.death_timer = DEATH_FREEZE_TIME;
+                let ids: Vec<u32> = state
+                    .world
+                    .iter()
+                    .filter(|e| e.entity_type == "player")
+                    .map(|e| e.id)
+                    .collect();
+                for id in ids {
+                    if let Some(e) = state.world.get_mut(id) {
+                        e.visible = false;
+                    }
+                }
+            }
+        })?;
+        // --- Consume an entity this session (won't respawn on death) ---
+        linker.func_wrap(
+            "env",
+            "host_collect",
+            |mut caller: Caller<'_, GameState>, id: u32| {
+                let state = caller.data_mut();
+                if let Some(e) = state.world.get(id).cloned() {
+                    state.collected.insert(e.spawn.clone());
+                    state.world.despawn(id);
+                }
+            },
+        )?;
+        // --- Blit an atlas frame at an arbitrary world position ---
+        linker.func_wrap(
+            "env",
+            "host_draw_image",
+            |mut caller: Caller<'_, GameState>,
+             frame_ptr: u32,
+             frame_len: u32,
+             x: f32,
+             y: f32,
+             rotation: f32,
+             scale_x: f32,
+             scale_y: f32,
+             flip_x: i32,
+             flip_y: i32,
+             r: u32,
+             g: u32,
+             b: u32,
+             a: u32| {
+                let frame_id = read_string(&mut caller, frame_ptr, frame_len);
+                caller.data_mut().draw_images.push(Image {
+                    frame_id,
+                    x,
+                    y,
+                    rotation,
+                    scale_x,
+                    scale_y,
+                    flip_x: flip_x != 0,
+                    flip_y: flip_y != 0,
                     color: Color {
                         r: r as u8,
                         g: g as u8,

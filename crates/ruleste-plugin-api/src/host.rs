@@ -15,11 +15,13 @@ extern "C" {
     fn host_speed_get(id: EntityId, out: *mut Vec2);
     fn host_speed_set(id: EntityId, x: f32, y: f32);
     fn host_hitbox_set(id: EntityId, w: f32, h: f32, ox: f32, oy: f32);
+    fn host_hitbox_get(id: EntityId, out: *mut f32);
     fn host_depth_get(id: EntityId) -> i32;
     fn host_depth_set(id: EntityId, depth: i32);
     fn host_visible_get(id: EntityId) -> bool;
     fn host_visible_set(id: EntityId, visible: bool);
     fn host_sprite_play(id: EntityId, name: *const u8, len: u32);
+    fn host_sprite_bank_set(id: EntityId, name: *const u8, len: u32);
     fn host_sprite_animation(id: EntityId, out: *mut u8, out_cap: u32) -> u32;
     fn host_sprite_frame_get(id: EntityId) -> f32;
     fn host_sprite_frame_set(id: EntityId, frame: f32);
@@ -41,6 +43,23 @@ extern "C" {
     fn host_log(msg: *const u8, len: u32);
     fn host_emit(id: EntityId, event: u32, data: *const u8, len: u32);
     fn host_draw_line(x1: f32, y1: f32, x2: f32, y2: f32, r: u32, g: u32, b: u32, a: u32);
+    fn host_draw_image(
+        frame_ptr: *const u8,
+        frame_len: u32,
+        x: f32,
+        y: f32,
+        rotation: f32,
+        scale_x: f32,
+        scale_y: f32,
+        flip_x: i32,
+        flip_y: i32,
+        r: u32,
+        g: u32,
+        b: u32,
+        a: u32,
+    );
+    fn host_die();
+    fn host_collect(id: EntityId);
     fn host_entities_by_type(
         type_name: *const u8,
         type_len: u32,
@@ -107,6 +126,45 @@ pub fn draw_line(x1: f32, y1: f32, x2: f32, y2: f32, color: Color) {
             color.b as u32,
             color.a as u32,
         );
+    }
+}
+
+/// Blits an atlas frame (e.g. `danger/spikes/default_up00`) centered at the
+/// given world position, with optional rotation (degrees, clockwise) and
+/// scale. Only meaningful during the `ruleste_entity_draw` hook.
+pub fn draw_image(frame_id: &str, x: f32, y: f32, rotation: f32, scale_x: f32, scale_y: f32) {
+    unsafe {
+        host_draw_image(
+            frame_id.as_ptr(),
+            frame_id.len() as u32,
+            x,
+            y,
+            rotation,
+            scale_x,
+            scale_y,
+            0,
+            0,
+            255,
+            255,
+            255,
+            255,
+        );
+    }
+}
+
+/// Kills the player: the host freezes the room and respawns it shortly after.
+/// Equivalent to `Player.Die()` in the original engine.
+pub fn die() {
+    unsafe {
+        host_die();
+    }
+}
+
+/// Permanently consumes the entity this session: it despawns immediately and
+/// is not re-created when the room respawns. Used by collectibles.
+pub fn collect(id: EntityId) {
+    unsafe {
+        host_collect(id);
     }
 }
 
@@ -224,6 +282,15 @@ impl Sprite {
     pub fn play(&self, name: &str) {
         unsafe {
             host_sprite_play(self.id, name.as_ptr(), name.len() as u32);
+        }
+    }
+
+    /// Selects which SpriteBank sprite this entity's animations come from.
+    /// The host defaults this to the entity type name; use this to point at a
+    /// differently-named SpriteBank entry (e.g. `goldenBerry` -> `goldberry`).
+    pub fn set_bank(&self, name: &str) {
+        unsafe {
+            host_sprite_bank_set(self.id, name.as_ptr(), name.len() as u32);
         }
     }
 
@@ -369,5 +436,15 @@ impl Hitbox {
         unsafe {
             host_hitbox_set(self.id, w, h, ox, oy);
         }
+    }
+
+    /// Reads the collision rect: `(w, h, ox, oy)`.
+    #[must_use]
+    pub fn get(&self) -> (f32, f32, f32, f32) {
+        let mut buf = [0f32; 4];
+        unsafe {
+            host_hitbox_get(self.id, buf.as_mut_ptr());
+        }
+        (buf[0], buf[1], buf[2], buf[3])
     }
 }

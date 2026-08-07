@@ -902,7 +902,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-spikes"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
 name = "ruleste-spring"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-strawberry"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
