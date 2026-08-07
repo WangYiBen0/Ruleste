@@ -50,6 +50,8 @@ cargo run
 4. **插件安全性**：热加载/重载 Wasm 时注意状态恢复，避免悬垂指针和不一致问题。
 5. **插件互操作**：插件之间可能产生联动，比如 `throwables` 插件可拓展 `player` 插件的操作，而 `theo`、`jellyfish` 插件亦可拓展 `throwables`。
 6. **SDL3 环境**：非 Nix 环境下需确保 `PKG_CONFIG_PATH` 包含 `sdl3.pc` 路径（Windows 使用 vcpkg）。
+7. **SDL3 像素格式（本构建的坑）**：软件渲染器下，`SDL_PIXELFORMAT_RGBA8888` 纹理的内存字节序实际是 `A,B,G,R`（与标准 SDL 约定相反）。上传 `(r,g,b,a)` 字节序数据（如 `atlas.rs` 解码的 `page.rgba`）时，纹理必须声明为 `ABGR8888` 才会正确渲染；声明 `RGBA8888` 会导致颜色经变换错乱（如泥土色 (143,86,59) 显示成 (143,33,48)）。此外 `SDL_RenderReadPixels` 返回 `ARGB8888`（内存字节序 `B,G,R,A`）表面，直接按 RGB 读取会得到 R/B 互换的错误颜色。新增像素相关功能时用 `RULESTE_DUMP_FRAME`（PPM dump）验证。
+8. **窗口关闭**：`Input::pump` 只处理按键，不消费 `Quit`/`Escape`；主循环先 poll 事件检查退出，再把其余事件喂给 `Input`。
 
 ## AI 代理职责
 本仓库期望 AI 协助以下工作：
