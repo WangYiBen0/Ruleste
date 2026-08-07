@@ -38,8 +38,8 @@
 - [x] 热重载：mtime 监听 + `serialize/deserialize` 状态迁移 `src/hotload/watcher.rs`
 - [x] 插件 ABI：`ruleste_plugin_meta/entity_types/entity_*`、宏 `ruleste_meta!`/`ruleste_entity_types!`/`ruleste_noop_*` `crates/ruleste-plugin-api`
 - [x] 内建 `player` 插件：走动/跑、跳跃（落地缓冲 + 可变跳 + 贴墙跳）、蹲伏、贴墙滑、冲刺；动画名按 `PlayerSprite.cs`；状态可序列化 `plugins/player`
-- [x] 实体-实体交互：`host_entities_by_type`/`host_drain_events`/`host_entity_alive` FFI 已就绪；待 Spring 插件验证跨插件交互
-- [ ] 其余内建插件：`booster`、`spring`、`dream_block`、`crystal`、`spikes`、`crush` 等（按关卡实体优先级排序）
+- [x] 实体-实体交互：`host_entities_by_type`/`host_drain_events`/`host_entity_alive` FFI + Spring 插件验证跨插件交互
+- [ ] 其余内建插件：`booster`、`dream_block`、`crystal`、`spikes`、`crush` 等（按关卡实体优先级排序）
 - [x] 地图实体 → 插件的自动实例化：按 `ruleste_plugin_entity_types` 派发，未覆盖类型告警
 - [x] 插件安全：宿主对插件 panic/越界/OOM 的隔离与报错
   - `spawn_entity`: `call_init` trap → 回滚 ECS，日志告警
