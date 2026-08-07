@@ -29,6 +29,14 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new() -> anyhow::Result<Renderer> {
+        // Software renderer by default: it is verified to display correctly on
+        // X11 and Wayland (including Niri) with this SDL3 build, and avoids
+        // GPU-driver quirks. GPU drivers (e.g. vulkan) also work, but note
+        // that `SDL_RenderReadPixels` only returns valid data on the software
+        // path. Users can override with SDL_RENDER_DRIVER.
+        if std::env::var("SDL_RENDER_DRIVER").is_err() {
+            std::env::set_var("SDL_RENDER_DRIVER", "software");
+        }
         let sdl = sdl3::init()?;
         let video = sdl.video()?;
         println!("SDL3 video driver: {}", video.current_video_driver());
@@ -61,7 +69,7 @@ impl Renderer {
         let creator = self.canvas.texture_creator();
         for (i, page) in atlas.pages.iter().enumerate() {
             let mut texture = creator.create_texture(
-                Some(PixelFormat::RGBA8888),
+                Some(PixelFormat::ABGR8888),
                 TextureAccess::Static,
                 page.width,
                 page.height,
@@ -85,8 +93,11 @@ impl Renderer {
                 let x = tx as f32 * 8.0 - self.camera.x;
                 let y = ty as f32 * 8.0 - self.camera.y;
 
+                // The XML `path` is relative to "tilesets/", matching the
+                // atlas frame id (e.g. "tilesets/dirt").
+                let frame_id = format!("tilesets/{tileset_path}");
                 // Look up the tileset frame in the atlas.
-                if let Some(&(page_idx, frame_idx)) = atlas.frame_index.get(tileset_path) {
+                if let Some(&(page_idx, frame_idx)) = atlas.frame_index.get(&frame_id) {
                     let page = &atlas.pages[page_idx];
                     let frame = &page.frames[frame_idx];
                     let Some(texture) = self.atlas_textures.get(&page_idx) else {
@@ -101,7 +112,9 @@ impl Renderer {
                         8.0,
                     );
                     let dst = FRect::new(x, y, 8.0, 8.0);
-                    let _ = self.canvas.copy_ex(texture, src, dst, 0.0, None, false, false);
+                    let _ = self
+                        .canvas
+                        .copy_ex(texture, src, dst, 0.0, None, false, false);
                 } else {
                     // Fallback: debug color for missing tilesets.
                     self.canvas.set_draw_color(fallback_color);
@@ -179,6 +192,14 @@ impl Renderer {
     }
 
     pub fn present(&mut self) {
-        self.canvas.present();
+        let ok = self.canvas.present();
+        if !ok {
+            let msg: String = sdl3::get_error().to_string();
+            static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if n < 5 {
+                eprintln!("ruleste: SDL_RenderPresent failed ({n}): {msg}");
+            }
+        }
     }
 }

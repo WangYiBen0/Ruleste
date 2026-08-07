@@ -7,7 +7,6 @@ use std::collections::HashSet;
 use ruleste_plugin_api::types::input as act;
 use sdl3::event::Event;
 use sdl3::keyboard::Keycode;
-use sdl3::EventPump;
 
 #[derive(Debug, Clone, Default)]
 pub struct Binding {
@@ -64,10 +63,12 @@ impl Default for Input {
 }
 
 impl Input {
-    /// Polls SDL events, refreshes `held`, and computes the `pressed`/`released`
-    /// edges for this frame. Call once per frame before plugins update.
-    pub fn pump(&mut self, pump: &mut EventPump) {
-        for event in pump.poll_iter() {
+    /// Processes SDL key events, refreshes `held`, and computes the
+    /// `pressed`/`released` edges for this frame. Call once per frame before
+    /// plugins update. Quit/resize events are ignored here so the caller can
+    /// handle them separately.
+    pub fn pump(&mut self, events: impl IntoIterator<Item = Event>) {
+        for event in events {
             match event {
                 Event::KeyDown {
                     keycode: Some(kc),

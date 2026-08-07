@@ -27,6 +27,12 @@ fn main() -> anyhow::Result<()> {
     let plugin_dir = args
         .next()
         .unwrap_or_else(|| "target/wasm32-unknown-unknown/release".to_string());
+    let dump_frame = std::env::var("RULESTE_DUMP_FRAME").ok();
+    let dump_frame_at: u32 = std::env::var("RULESTE_DUMP_FRAME_AT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+    let mut frame_count: u32 = 0;
 
     println!("Loading assets...");
     let atlas = Atlas::load(Path::new(&atlas_path))?;
@@ -34,6 +40,32 @@ fn main() -> anyhow::Result<()> {
     let level = Level::load(Path::new(&map_path))?;
     let autotiler = Autotiler::load(Path::new(&autotiler_path))?;
     let tile_grid = autotiler.generate(&level.solids);
+    {
+        let solid_tiles = level
+            .solids
+            .size()
+            .0
+            .checked_mul(level.solids.size().1)
+            .unwrap_or(0);
+        let mapped = tile_grid.tileset.iter().filter(|t| !t.is_empty()).count();
+        println!(
+            "autotiler: {}x{} grid, {} solid tiles, {} tiles mapped to textures",
+            level.solids.size().0,
+            level.solids.size().1,
+            solid_tiles,
+            mapped
+        );
+        let mut tilesets: std::collections::BTreeMap<&str, usize> =
+            std::collections::BTreeMap::new();
+        for t in &tile_grid.tileset {
+            if !t.is_empty() {
+                *tilesets.entry(t).or_default() += 1;
+            }
+        }
+        for (ts, n) in &tilesets {
+            println!("  tileset {ts}: {n} tiles");
+        }
+    }
 
     println!("Initializing SDL3 renderer...");
     let mut renderer = Renderer::new()?;
@@ -74,14 +106,9 @@ fn main() -> anyhow::Result<()> {
         let dt = last_time.elapsed().as_secs_f32().min(0.1);
         last_time = frame_start;
 
-        // Poll SDL events & pump input
-        {
-            let state = wasm_host.game_state();
-            state.input.pump(&mut renderer.pump);
-        }
-
-        // Check quit events
-        for event in renderer.pump.poll_iter() {
+        // Poll SDL events once; handle quit before feeding the rest to input.
+        let events: Vec<sdl3::event::Event> = renderer.pump.poll_iter().collect();
+        for event in &events {
             if let sdl3::event::Event::Quit { .. } = event {
                 break 'running;
             }
@@ -93,6 +120,7 @@ fn main() -> anyhow::Result<()> {
                 break 'running;
             }
         }
+        wasm_host.game_state().input.pump(events);
 
         // Hot reload plugins if mtimes changed
         if let Err(e) = wasm_host.reload_plugins() {
@@ -113,6 +141,19 @@ fn main() -> anyhow::Result<()> {
         renderer.draw_entities(&state.world, &atlas, &sprite_bank, &mut sprite_animator);
         renderer.present();
 
+        // Debug: dump a rendered frame as a PPM and exit.
+        if let Some(path) = &dump_frame {
+            frame_count += 1;
+            if frame_count >= dump_frame_at {
+                if let Ok(surface) = renderer.canvas.read_pixels(None) {
+                    dump_ppm(&surface, path)?;
+                } else {
+                    eprintln!("RULESTE_DUMP_FRAME: read_pixels failed");
+                }
+                break 'running;
+            }
+        }
+
         // Frame rate limiter
         let elapsed = frame_start.elapsed();
         if elapsed < frame_duration {
@@ -120,5 +161,41 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Writes an SDL surface as an RGB PPM (P6). Used for headless frame
+/// debugging via `RULESTE_DUMP_FRAME`.
+fn dump_ppm(surface: &sdl3::surface::Surface, path: &str) -> anyhow::Result<()> {
+    let w = surface.width();
+    let h = surface.height();
+    let pitch = surface.pitch() as usize;
+
+    let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+    surface.with_lock(|bytes| {
+        // 32-bit surfaces have pitch >= w*4; 24-bit surfaces pitch == w*3.
+        let bytes_per_pixel = if pitch >= w as usize * 4 { 4 } else { 3 };
+        for y in 0..h as usize {
+            let row = &bytes[y * pitch..y * pitch + w as usize * bytes_per_pixel];
+            for x in 0..w as usize {
+                let px = &row[x * bytes_per_pixel..x * bytes_per_pixel + bytes_per_pixel];
+                match bytes_per_pixel {
+                    4 => {
+                        // SDL_RenderReadPixels returns ARGB8888 surfaces, whose
+                        // little-endian byte order is B,G,R,A.
+                        let (b, g, r) = (px[0], px[1], px[2]);
+                        rgb.extend_from_slice(&[r, g, b]);
+                    }
+                    _ => rgb.extend_from_slice(&px[..3]),
+                }
+            }
+        }
+    });
+
+    let mut out = std::fs::File::create(path)?;
+    use std::io::Write;
+    writeln!(out, "P6\n{w} {h}\n255")?;
+    out.write_all(&rgb)?;
+    println!("dumped frame to {path} ({w}x{h})");
     Ok(())
 }
