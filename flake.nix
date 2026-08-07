@@ -19,6 +19,8 @@
       systems = [
         "x86_64-linux"
         "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
       ];
       forEachSystem = f: lib.genAttrs systems f;
 
@@ -49,9 +51,7 @@
             packages = [
               (toolchain system)
               pkgs.pkg-config
-              # SDL3 for windowing/input/audio abstraction (use-pkg-config).
               pkgs.sdl3
-              # Decompilation / format-inspection helpers.
               pkgs.dotnet-sdk
               pkgs.ilspycmd
               pkgs.mono
@@ -63,7 +63,12 @@
             # sdl3-sys / pkg-config (sdl3.pc ships in the .dev output)
             PKG_CONFIG_PATH = "${pkgs.sdl3.dev}/lib/pkgconfig";
             LIBRARY_PATH = "${pkgs.sdl3}/lib";
+          }
+          // lib.optionalAttrs pkgs.stdenv.isLinux {
             LD_LIBRARY_PATH = "${pkgs.sdl3}/lib";
+          }
+          // lib.optionalAttrs pkgs.stdenv.isDarwin {
+            DYLD_LIBRARY_PATH = "${pkgs.sdl3}/lib";
           };
         }
       );
@@ -81,7 +86,16 @@
             version = "0.1.0";
             src = src;
             strictDeps = true;
-            buildInputs = [ pkgs.sdl3 ];
+            buildInputs = [ pkgs.sdl3 ] ++ lib.optionals pkgs.stdenv.isDarwin (
+              with pkgs.darwin.apple_sdk.frameworks; [
+                Cocoa
+                CoreVideo
+                Metal
+                MetalKit
+                ForceFeedback
+                IOKit
+              ]
+            );
             nativeBuildInputs = [ pkgs.pkg-config ];
             doCheck = false;
           };
@@ -92,26 +106,27 @@
               cargoArtifacts = craneLib.buildDepsOnly commonArgs;
             }
           );
-          # Wasm plugin for the player entity, packaged under share/ so the
-          # game can find it next to the map/resource dirs.
+          # Wasm plugins: player + spring (all non-wall entities).
           wasm = craneLib.buildPackage (
             commonArgs
             // {
-              pname = "ruleste-player";
+              pname = "ruleste-plugins";
               CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-              cargoExtraArgs = "-p ruleste-player";
+              cargoExtraArgs = "-p ruleste-player -p ruleste-spring";
               cargoArtifacts = craneLib.buildDepsOnly (
                 commonArgs
                 // {
-                  pname = "ruleste-player";
+                  pname = "ruleste-plugins";
                   CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-                  cargoExtraArgs = "-p ruleste-player";
+                  cargoExtraArgs = "-p ruleste-player -p ruleste-spring";
                 }
               );
               installPhase = ''
                 mkdir -p $out/share/ruleste/plugins
                 cp target/wasm32-unknown-unknown/release/ruleste_player.wasm \
                   $out/share/ruleste/plugins/ruleste_player.wasm
+                cp target/wasm32-unknown-unknown/release/ruleste_spring.wasm \
+                  $out/share/ruleste/plugins/ruleste_spring.wasm
               '';
               doInstallCargoArtifacts = false;
             }

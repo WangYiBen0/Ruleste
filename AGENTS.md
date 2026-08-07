@@ -14,15 +14,20 @@ Ruleste 是《Celeste》游戏的非官方 Rust 重实现，采用 SDL3 从零�
 
 ## 快速开始
 ```bash
-# 进入开发环境
+# 进入开发环境（Linux/macOS）
 nix develop
 
 # 构建
 cargo build
 
-# 运行游戏（需 X11/Wayland）
+# 运行游戏
 cargo run
 ```
+
+### 平台支持
+- **Linux**：SDL3 自动选择 X11 或 Wayland（可通过 `SDL_VIDEO_DRIVER=x11` 或 `wayland` 强制指定）
+- **macOS**：SDL3 使用 Cocoa 窗口，Homebrew 安装 `brew install sdl3`，或通过 Nix 开发环境
+- **Windows**：SDL3 使用 Win32 窗口，需安装 vcpkg 并 `vcpkg install sdl3`，或使用 `build-from-source` feature 自动构建
 
 ## 架构与目录结构
 - `src/` — Rust 核心实现
@@ -44,7 +49,7 @@ cargo run
 3. **Wasm 插件机制**：所有非墙体实体均为 Wasm 插件。宿主通过 FFI 提供 `get_position`、`set_component` 等组件接口和事件总线。插件导出 `entity_init`, `entity_update(entity_id, dt)`, `entity_draw`。
 4. **插件安全性**：热加载/重载 Wasm 时注意状态恢复，避免悬垂指针和不一致问题。
 5. **插件互操作**：插件之间可能产生联动，比如 `throwables` 插件可拓展 `player` 插件的操作，而 `theo`、`jellyfish` 插件亦可拓展 `throwables`。
-6. **SDL3 环境**：非 Nix 环境下需确保 `PKG_CONFIG_PATH` 包含 `sdl3.pc` 路径。
+6. **SDL3 环境**：非 Nix 环境下需确保 `PKG_CONFIG_PATH` 包含 `sdl3.pc` 路径（Windows 使用 vcpkg）。
 
 ## AI 代理职责
 本仓库期望 AI 协助以下工作：

@@ -8,9 +8,9 @@
 - 实体逻辑一律以 `plugins/` 下的 Wasm 插件实现，核心不得硬编码玩法
 
 ## Phase 0 — 项目脚手架 ✅
-- [x] `flake.nix`：fenix 固定工具链 + wasm32-unknown-unknown rust-std，`nix develop` 可复现环境
-- [x] Cargo workspace：`crates/ruleste-plugin-api`、`plugins/player`、根 crate `ruleste`
-- [x] 依赖选型：sdl3 0.18（use-pkg-config、unsafe_textures）、wasmtime 47、roxmltree、bytemuck、anyhow
+- [x] `flake.nix`：fenix 固定工具链 + wasm32-unknown-unknown rust-std，`nix develop` 可复现环境（x86_64-linux、aarch64-linux、x86_64-darwin、aarch64-darwin）
+- [x] Cargo workspace：`crates/ruleste-plugin-api`、`plugins/player`、`plugins/spring`、根 crate `ruleste`
+- [x] 依赖选型：sdl3 0.18（Unix 用 pkg-config、Windows 用 vcpkg、unsafe_textures）、wasmtime 47、roxmltree、bytemuck、anyhow
 - [x] `.envrc`（use flake）、.gitignore、Git 仓库初始化
 - 验证：`nix develop -c cargo build` 全 workspace 零警告
 
