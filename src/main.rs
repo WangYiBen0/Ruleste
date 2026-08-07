@@ -42,10 +42,18 @@ fn main() -> anyhow::Result<()> {
     wasm_host.load_plugins()?;
 
     println!("Spawning {} level entities...", level.entities.len());
+    let mut unhandled: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for entity in &level.entities {
-        if let Err(e) = wasm_host.spawn_entity(&entity.name, entity.data.to_bytes()) {
-            eprintln!("Failed to spawn entity {:?}: {e}", entity.name);
+        match wasm_host.spawn_entity(&entity.name, entity.data.to_bytes()) {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                *unhandled.entry(&entity.name).or_default() += 1;
+            }
+            Err(e) => eprintln!("Failed to spawn entity {:?}: {e}", entity.name),
         }
+    }
+    for (name, count) in &unhandled {
+        eprintln!("ruleste: warning: no plugin handles entity type {name:?} ({count} skipped)");
     }
 
     let mut sprite_animator = SpriteAnimator::new(&atlas, &sprite_bank);

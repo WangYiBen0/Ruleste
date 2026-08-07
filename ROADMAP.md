@@ -40,7 +40,7 @@
 - [x] 内建 `player` 插件：走动/跑、跳跃（落地缓冲 + 可变跳 + 贴墙跳）、蹲伏、贴墙滑、冲刺；动画名按 `PlayerSprite.cs`；状态可序列化 `plugins/player`
 - [ ] 实体-实体交互：`throwables` 插件可拓展 `player`；`theo`/`jellyfish` 拓展 `throwables`（AGENTS.md 规定的互操作链路）
 - [ ] 其余内建插件：`booster`、`spring`、`dream_block`、`crystal`、`spikes`、`crush` 等（按关卡实体优先级排序）
-- [ ] 地图实体 → 插件的自动实例化：按 `ruleste_plugin_entity_types` 派发，未覆盖类型告警
+- [x] 地图实体 → 插件的自动实例化：按 `ruleste_plugin_entity_types` 派发，未覆盖类型告警
 - [ ] 插件安全：宿主对插件 panic/越界/OOM 的隔离与报错
 
 ## Phase 4 — 渲染与画面 🔶 进行中

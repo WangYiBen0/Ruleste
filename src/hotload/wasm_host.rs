@@ -306,8 +306,11 @@ impl WasmHost {
         let mut states = HashMap::new();
         if let Some(serialize) = &self.plugins[idx].funcs.serialize {
             for (id, _) in &owned {
-                let mut len: u32 = 0;
-                match serialize.call(&mut self.store, (*id, std::ptr::addr_of_mut!(len) as u32)) {
+                let len_ptr = write_buffer(&mut self.store, instance, &[0u8; 4])?;
+                let call = serialize.call(&mut self.store, (*id, len_ptr));
+                let len = read_word(&mut self.store, instance, len_ptr)?;
+                free_buffer(&mut self.store, instance, len_ptr, 4)?;
+                match call {
                     Ok(ptr) if ptr != 0 => {
                         if let Some(bytes) =
                             read_bytes_at(instance, &mut self.store, ptr, len as usize)
@@ -640,8 +643,11 @@ impl WasmHost {
         else {
             return Ok(Vec::new());
         };
-        let mut len: u32 = 0;
-        let ptr = func.call(&mut self.store, (std::ptr::addr_of_mut!(len) as u32,))?;
+        let len_ptr = write_buffer(&mut self.store, instance, &[0u8; 4])?;
+        let call = func.call(&mut self.store, (len_ptr,));
+        let len = read_word(&mut self.store, instance, len_ptr)?;
+        free_buffer(&mut self.store, instance, len_ptr, 4)?;
+        let ptr = call?;
         let bytes = read_bytes_at(instance, &mut self.store, ptr, len as usize).unwrap_or_default();
         let text = String::from_utf8_lossy(&bytes);
         Ok(text
@@ -752,6 +758,13 @@ fn write_buffer(store: &mut Store<GameState>, instance: &Instance, data: &[u8]) 
         .ok_or_else(|| anyhow!("plugin has no memory export"))?;
     memory.write(&mut *store, ptr as usize, data)?;
     Ok(ptr)
+}
+
+/// Reads a single `u32` from plugin linear memory at `ptr`.
+fn read_word(store: &mut Store<GameState>, instance: &Instance, ptr: u32) -> Result<u32> {
+    let bytes = read_bytes_at(instance, &mut *store, ptr, 4)
+        .ok_or_else(|| anyhow!("failed to read word at {ptr:#x}"))?;
+    Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
 }
 
 fn free_buffer(
