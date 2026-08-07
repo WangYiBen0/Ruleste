@@ -5,6 +5,7 @@ members = [
     "plugins/player",
     "plugins/spring",
     "plugins/lamp",
+    "plugins/wire",
 ]
 
 [package]

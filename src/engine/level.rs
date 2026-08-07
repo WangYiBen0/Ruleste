@@ -62,9 +62,17 @@ impl Level {
         let mut entities = Vec::new();
         if let Some(ents) = level.child("entities") {
             for child in &ents.children {
+                let mut data = attrs_to_map(child);
+                // Entity nodes are the entity element's children, mirroring
+                // `LevelData.CreateEntityData` (each child's x/y form a node).
+                data.nodes = child
+                    .children
+                    .iter()
+                    .map(|n| Vec2::new(n.attr_f32("x", 0.0), n.attr_f32("y", 0.0)))
+                    .collect();
                 entities.push(EntitySpawn {
                     name: child.name.clone(),
-                    data: attrs_to_map(child),
+                    data,
                 });
             }
         }
@@ -112,7 +120,10 @@ fn attrs_to_map(el: &Element) -> MapData {
         attrs.push(("x".to_string(), MapAttr::Float(0.0)));
         attrs.push(("y".to_string(), MapAttr::Float(0.0)));
     }
-    MapData { attrs }
+    MapData {
+        attrs,
+        nodes: Vec::new(),
+    }
 }
 
 /// Associates entity types with a plugin by scanning a list of loaded plugin

@@ -1,0 +1,13 @@
+[package]
+name = "ruleste-wire"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Wire scenery entity plugin for Ruleste — validates procedural draw commands."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }

@@ -3,6 +3,7 @@
 
 pub mod autotiler;
 pub mod camera;
+pub mod draw;
 pub mod ecs;
 pub mod input;
 pub mod level;

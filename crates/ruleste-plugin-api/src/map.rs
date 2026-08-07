@@ -1,6 +1,8 @@
 use std::string::String;
 use std::vec::Vec;
 
+use crate::types::Vec2;
+
 /// Typed attribute values carried by map entities, mirroring the value types of
 /// the original `BinaryPacker` map format.
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +59,9 @@ impl MapAttr {
 #[derive(Debug, Clone, Default)]
 pub struct MapData {
     pub attrs: Vec<(String, MapAttr)>,
+    /// Entity node points (the entity element's child elements, e.g. a wire's
+    /// second endpoint). Mirrors `EntityData.Nodes`.
+    pub nodes: Vec<Vec2>,
 }
 
 impl MapData {
@@ -82,6 +87,16 @@ impl MapData {
             Some(other) => other.to_string(),
             None => default.to_string(),
         }
+    }
+
+    #[must_use]
+    pub fn nodes(&self) -> &[Vec2] {
+        &self.nodes
+    }
+
+    #[must_use]
+    pub fn get_node(&self, index: usize) -> Option<Vec2> {
+        self.nodes.get(index).copied()
     }
 
     /// Serializes this spawn data into a compact binary blob understood by
@@ -119,6 +134,11 @@ impl MapData {
                 }
             }
         }
+        out.extend_from_slice(&(self.nodes.len() as u32).to_le_bytes());
+        for node in &self.nodes {
+            out.extend_from_slice(&node.x.to_le_bytes());
+            out.extend_from_slice(&node.y.to_le_bytes());
+        }
         out
     }
 
@@ -141,7 +161,12 @@ impl MapData {
             };
             attrs.push((key, value));
         }
-        Ok(MapData { attrs })
+        let node_count = it.u32()? as usize;
+        let mut nodes = Vec::with_capacity(node_count);
+        for _ in 0..node_count {
+            nodes.push(Vec2::new(it.f32()?, it.f32()?));
+        }
+        Ok(MapData { attrs, nodes })
     }
 }
 

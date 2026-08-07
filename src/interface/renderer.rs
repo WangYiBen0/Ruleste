@@ -11,6 +11,7 @@ use sdl3::{EventPump, Sdl};
 use crate::data::atlas::Atlas;
 use crate::data::spritebank::SpriteBank;
 use crate::engine::autotiler::TileGrid;
+use crate::engine::draw::Line;
 use crate::engine::ecs::World;
 use crate::engine::sprites::SpriteAnimator;
 
@@ -206,6 +207,33 @@ impl Renderer {
                 entity.sprite.flip_y,
             );
         }
+    }
+
+    /// Draws plugin-submitted line geometry (world coordinates), transformed by
+    /// the camera. Used for procedural scenery like hanging wires.
+    pub fn draw_lines(&mut self, lines: &[Line]) {
+        for line in lines {
+            let (x1, y1) = (line.x1 - self.camera.x, line.y1 - self.camera.y);
+            let (x2, y2) = (line.x2 - self.camera.x, line.y2 - self.camera.y);
+            self.canvas.set_draw_color(SdlColor::RGBA(
+                line.color.r,
+                line.color.g,
+                line.color.b,
+                line.color.a,
+            ));
+            let _ = self.canvas.draw_line(
+                sdl3::render::FPoint::new(x1, y1),
+                sdl3::render::FPoint::new(x2, y2),
+            );
+        }
+    }
+
+    /// Clears the frame to opaque black. Must set the color explicitly:
+    /// `SDL_RenderClear` uses the current draw color, which otherwise leaks
+    /// from the last sprite/line drawn in the previous frame.
+    pub fn clear(&mut self) {
+        self.canvas.set_draw_color(SdlColor::RGB(0, 0, 0));
+        self.canvas.clear();
     }
 
     pub fn present(&mut self) {

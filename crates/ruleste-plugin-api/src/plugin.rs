@@ -4,8 +4,7 @@
 use std::vec::Vec;
 
 use crate::{host, map::MapData, types::EntityId};
-
-pub use host::{Collision, Hitbox, Input, Position, Speed, Sprite};
+pub use host::{Collision, Depth, Hitbox, Input, Position, Speed, Sprite};
 
 /// Per-entity plugin state, stored in Wasm linear memory and keyed by entity
 /// id. Values are kept across hot reloads via `serialize_state`/`restore_state`.
@@ -67,6 +66,7 @@ pub struct Entity {
     pub sprite: Sprite,
     pub collision: Collision,
     pub hitbox: Hitbox,
+    pub depth: Depth,
 }
 
 impl Entity {
@@ -78,6 +78,7 @@ impl Entity {
             sprite: Sprite::new(id),
             collision: Collision::new(id),
             hitbox: Hitbox::new(id),
+            depth: Depth::new(id),
         }
     }
 }

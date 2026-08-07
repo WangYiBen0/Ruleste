@@ -1,6 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 
-#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Pod, Zeroable)]
 #[repr(C)]
 pub struct Vec2 {
     pub x: f32,

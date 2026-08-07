@@ -156,10 +156,14 @@ fn main() -> anyhow::Result<()> {
         sprite_animator.update(&mut state.world, dt);
 
         // Render frame
-        renderer.canvas.clear();
+        renderer.clear();
         renderer.draw_solids(&tile_grid, &atlas);
+        // Run plugin draw hooks: they set sprite animations and submit custom
+        // geometry (e.g. wire cables) before the renderer snapshots the frame.
+        wasm_host.draw();
         let state = wasm_host.game_state();
         renderer.draw_entities(&state.world, &atlas, &sprite_bank, &mut sprite_animator);
+        renderer.draw_lines(&state.draw_commands);
         renderer.present();
 
         // Debug: dump a rendered frame as a PPM and exit.

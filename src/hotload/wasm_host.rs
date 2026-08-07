@@ -19,6 +19,7 @@ use ruleste_plugin_api::export;
 use ruleste_plugin_api::types::Color;
 use wasmtime::{Caller, Engine, Extern, Instance, Linker, Memory, Module, Store, TypedFunc};
 
+use crate::engine::draw::Line;
 use crate::engine::ecs::World;
 use crate::engine::input::Input;
 use crate::engine::physics::SolidGrid;
@@ -56,6 +57,8 @@ pub struct GameState {
     pub solids: SolidGrid,
     pub audio: AudioBus,
     pub events: Vec<GameEvent>,
+    /// Geometry submitted by plugins during their draw hook this frame.
+    pub draw_commands: Vec<Line>,
 }
 
 impl GameState {
@@ -66,6 +69,7 @@ impl GameState {
             solids,
             audio: AudioBus::default(),
             events: Vec::new(),
+            draw_commands: Vec::new(),
         }
     }
 }
@@ -237,6 +241,7 @@ impl WasmHost {
     }
 
     pub fn draw(&mut self) {
+        self.store.data_mut().draw_commands.clear();
         let jobs: Vec<(u32, usize)> = self
             .store
             .data()
@@ -632,6 +637,32 @@ impl WasmHost {
                     entity: id,
                     kind: event,
                     data: buf,
+                });
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_draw_line",
+            |mut caller: Caller<'_, GameState>,
+             x1: f32,
+             y1: f32,
+             x2: f32,
+             y2: f32,
+             r: u32,
+             g: u32,
+             b: u32,
+             a: u32| {
+                caller.data_mut().draw_commands.push(Line {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    color: Color {
+                        r: r as u8,
+                        g: g as u8,
+                        b: b as u8,
+                        a: a as u8,
+                    },
                 });
             },
         )?;

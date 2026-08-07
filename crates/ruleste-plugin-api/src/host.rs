@@ -40,6 +40,7 @@ extern "C" {
     fn host_play_sound(name: *const u8, len: u32);
     fn host_log(msg: *const u8, len: u32);
     fn host_emit(id: EntityId, event: u32, data: *const u8, len: u32);
+    fn host_draw_line(x1: f32, y1: f32, x2: f32, y2: f32, r: u32, g: u32, b: u32, a: u32);
     fn host_entities_by_type(
         type_name: *const u8,
         type_len: u32,
@@ -92,6 +93,23 @@ pub fn emit(id: EntityId, event: u32, data: &[u8]) {
     }
 }
 
+/// Appends a line segment (in world coordinates) to this frame's draw list.
+/// Only meaningful during the `ruleste_entity_draw` hook.
+pub fn draw_line(x1: f32, y1: f32, x2: f32, y2: f32, color: Color) {
+    unsafe {
+        host_draw_line(
+            x1,
+            y1,
+            x2,
+            y2,
+            color.r as u32,
+            color.g as u32,
+            color.b as u32,
+            color.a as u32,
+        );
+    }
+}
+
 /// Returns the IDs of all live entities whose `entity_type` matches `name`.
 pub fn entities_by_type(name: &str) -> Vec<EntityId> {
     const MAX: u32 = 128;
@@ -134,7 +152,6 @@ pub fn entity_alive(id: EntityId) -> bool {
 pub struct Position {
     id: EntityId,
 }
-
 impl Position {
     pub fn new(id: EntityId) -> Position {
         Position { id }
@@ -257,6 +274,28 @@ impl Sprite {
     pub fn flip_y(&self, flip: bool) {
         unsafe {
             host_sprite_flip_y_set(self.id, flip);
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Depth {
+    id: EntityId,
+}
+
+impl Depth {
+    pub fn new(id: EntityId) -> Depth {
+        Depth { id }
+    }
+
+    #[must_use]
+    pub fn get(&self) -> i32 {
+        unsafe { host_depth_get(self.id) }
+    }
+
+    pub fn set(&self, depth: i32) {
+        unsafe {
+            host_depth_set(self.id, depth);
         }
     }
 }

@@ -102,6 +102,14 @@ fn dump_map(path: &Path) -> anyhow::Result<()> {
         let x = e.data.get_float("x", 0.0);
         let y = e.data.get_float("y", 0.0);
         println!("    entity {:<12} at ({x:>6.1}, {y:>6.1})", e.name);
+        for (k, v) in &e.data.attrs {
+            if k != "x" && k != "y" {
+                println!("        {k} = {v:?}");
+            }
+        }
+        for (i, n) in e.data.nodes().iter().enumerate() {
+            println!("        node[{i}] = ({}, {})", n.x, n.y);
+        }
     }
     Ok(())
 }
