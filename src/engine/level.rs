@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use ruleste_plugin_api::map::{MapAttr, MapData};
+use ruleste_plugin_api::types::Vec2;
 
 use crate::data::binary_packer::{Attr, Element, MapBin};
 use crate::engine::physics::SolidGrid;
@@ -25,6 +26,9 @@ pub struct Level {
     /// Width and height in world units.
     pub width: f32,
     pub height: f32,
+    /// Camera offset (in world units) applied to the follow target.
+    /// Mirrors `Level.CameraOffset = (48, 32) * levelData.CameraOffset`.
+    pub camera_offset: Vec2,
     /// Entities to spawn into the world, in map order.
     pub entities: Vec<EntitySpawn>,
 }
@@ -47,6 +51,11 @@ impl Level {
         let width = level.attr_f32("width", 320.0);
         let height = level.attr_f32("height", 180.0);
 
+        let camera_offset = Vec2::new(
+            48.0 * level.attr_f32("cameraOffsetX", 0.0),
+            32.0 * level.attr_f32("cameraOffsetY", 0.0),
+        );
+
         let solids = parse_grid(level.child("solids"));
         let bg = parse_grid(level.child("bg"));
 
@@ -66,6 +75,7 @@ impl Level {
             bg,
             width,
             height,
+            camera_offset,
             entities,
         })
     }

@@ -30,7 +30,7 @@
 - [x] 关卡：`.bin` → `Level`（solids/bg/实体列表、x/y 补齐）`src/engine/level.rs`
 - [x] SpriteAnimator：动画帧推进、loop/goto、子图零填充寻址 `src/engine/sprites.rs`
 - [x] 自动拼接（autotiler）——解析 ForegroundTiles.xml，3×3 邻域 mask 匹配，tileset 纹理渲染 `src/engine/autotiler.rs`
-- [ ] 相机与房间滚动（跟随玩家、边界）
+- [x] 相机与房间滚动：`Camera` 跟随玩家（`player - (160,90) + cameraOffset` 夹到 `[0, bounds-320×180]`，指数平滑 `1-0.01^dt`），`Level.camera_offset` 解析 `cameraOffsetX/Y`（×48/32），渲染前 `set_camera` `src/engine/camera.rs`
 
 ## Phase 3 — Wasm 宿主与内建插件 🔶 进行中
 - [x] Wasm 宿主：`load_plugins`、实体 `spawn/update/draw/despawn`、完整 FFI（position/speed/hitbox/sprite/input/collision/sound/emit）`src/hotload/wasm_host.rs`

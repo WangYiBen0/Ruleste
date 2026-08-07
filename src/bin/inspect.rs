@@ -71,6 +71,10 @@ fn dump_map(path: &Path) -> anyhow::Result<()> {
         level.bg.size().0,
         level.bg.size().1
     );
+    println!(
+        "  camera_offset: ({}, {})",
+        level.camera_offset.x, level.camera_offset.y
+    );
 
     let mut histogram: HashMap<&str, usize> = HashMap::new();
     for e in &level.entities {

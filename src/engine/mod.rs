@@ -2,6 +2,7 @@
 //! is implemented here; entities are driven by Wasm plugins.
 
 pub mod autotiler;
+pub mod camera;
 pub mod ecs;
 pub mod input;
 pub mod level;

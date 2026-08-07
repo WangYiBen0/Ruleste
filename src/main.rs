@@ -4,11 +4,13 @@ use std::time::{Duration, Instant};
 use ruleste::data::atlas::Atlas;
 use ruleste::data::spritebank::SpriteBank;
 use ruleste::engine::autotiler::Autotiler;
+use ruleste::engine::camera::Camera;
 use ruleste::engine::input::Input;
 use ruleste::engine::level::Level;
 use ruleste::engine::sprites::SpriteAnimator;
 use ruleste::hotload::wasm_host::WasmHost;
 use ruleste::interface::renderer::Renderer;
+use ruleste_plugin_api::types::Vec2;
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
@@ -95,6 +97,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     let mut sprite_animator = SpriteAnimator::new(&atlas, &sprite_bank);
+    let mut camera = Camera::new();
 
     println!("Entering main game loop (ESC to quit)...");
     let target_fps = 60.0;
@@ -130,6 +133,24 @@ fn main() -> anyhow::Result<()> {
         // Update Wasm plugins (physics, player movement, entity logic)
         wasm_host.update(dt);
 
+        // Follow the player with the level camera.
+        let player_pos = wasm_host
+            .game_state()
+            .world
+            .iter()
+            .find(|e| e.entity_type == "player")
+            .map(|e| e.position)
+            .unwrap_or(Vec2::ZERO);
+        camera.update(
+            dt,
+            camera.target_at(
+                player_pos,
+                level.camera_offset,
+                Vec2::new(level.width, level.height),
+            ),
+        );
+        renderer.set_camera(camera.position);
+
         // Update sprite animations
         let state = wasm_host.game_state();
         sprite_animator.update(&mut state.world, dt);
@@ -147,6 +168,10 @@ fn main() -> anyhow::Result<()> {
             if frame_count >= dump_frame_at {
                 if let Ok(surface) = renderer.canvas.read_pixels(None) {
                     dump_ppm(&surface, path)?;
+                    eprintln!(
+                        "RULESTE_DUMP_FRAME: camera at ({:.1}, {:.1})",
+                        camera.position.x, camera.position.y
+                    );
                 } else {
                     eprintln!("RULESTE_DUMP_FRAME: read_pixels failed");
                 }
