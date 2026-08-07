@@ -227,12 +227,7 @@ impl Autotiler {
 
                 let matched_tiles = if all_solid {
                     // Check 2-away for center vs padding.
-                    let two_away = [
-                        (-2, 0),
-                        (2, 0),
-                        (0, -2),
-                        (0, 2),
-                    ];
+                    let two_away = [(-2, 0), (2, 0), (0, -2), (0, 2)];
                     let deep_center = two_away.iter().all(|&(dx, dy)| {
                         Self::is_solid_for(grid, tx as i32 + dx, ty as i32 + dy, tile_ch)
                     });
@@ -245,7 +240,10 @@ impl Autotiler {
                     }
                 } else {
                     // Find the first matching mask (sorted by wildcard count).
-                    def.masks.iter().find(|m| Self::mask_matches(&adj, &m.mask)).map(|m| &m.tiles)
+                    def.masks
+                        .iter()
+                        .find(|m| Self::mask_matches(&adj, &m.mask))
+                        .map(|m| &m.tiles)
                 };
 
                 if let Some(tiles) = matched_tiles {

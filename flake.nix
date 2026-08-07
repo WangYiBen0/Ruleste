@@ -26,7 +26,8 @@
 
       # Pinned Rust toolchain via fenix, including the wasm32-unknown-unknown
       # target required to build the Wasm entity plugins.
-      toolchain = system:
+      toolchain =
+        system:
         fenix.packages.${system}.combine [
           (fenix.packages.${system}.stable.withComponents [
             "cargo"
@@ -45,31 +46,33 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         {
-          default = pkgs.mkShell {
-            name = "ruleste";
+          default = pkgs.mkShell (
+            {
+              name = "ruleste";
 
-            packages = [
-              (toolchain system)
-              pkgs.pkg-config
-              pkgs.sdl3
-              pkgs.dotnet-sdk
-              pkgs.ilspycmd
-              pkgs.mono
-            ]
-            ++ lib.optionals pkgs.stdenv.isLinux [
-              pkgs.file
-            ];
+              packages = [
+                (toolchain system)
+                pkgs.pkg-config
+                pkgs.sdl3
+                pkgs.dotnet-sdk
+                pkgs.ilspycmd
+                pkgs.mono
+              ]
+              ++ lib.optionals pkgs.stdenv.isLinux [
+                pkgs.file
+              ];
 
-            # sdl3-sys / pkg-config (sdl3.pc ships in the .dev output)
-            PKG_CONFIG_PATH = "${pkgs.sdl3.dev}/lib/pkgconfig";
-            LIBRARY_PATH = "${pkgs.sdl3}/lib";
-          }
-          // lib.optionalAttrs pkgs.stdenv.isLinux {
-            LD_LIBRARY_PATH = "${pkgs.sdl3}/lib";
-          }
-          // lib.optionalAttrs pkgs.stdenv.isDarwin {
-            DYLD_LIBRARY_PATH = "${pkgs.sdl3}/lib";
-          };
+              # sdl3-sys / pkg-config (sdl3.pc ships in the .dev output)
+              PKG_CONFIG_PATH = "${pkgs.sdl3.dev}/lib/pkgconfig";
+              LIBRARY_PATH = "${pkgs.sdl3}/lib";
+            }
+            // lib.optionalAttrs pkgs.stdenv.isLinux {
+              LD_LIBRARY_PATH = "${pkgs.sdl3}/lib";
+            }
+            // lib.optionalAttrs pkgs.stdenv.isDarwin {
+              DYLD_LIBRARY_PATH = "${pkgs.sdl3}/lib";
+            }
+          );
         }
       );
 
@@ -86,8 +89,12 @@
             version = "0.1.0";
             src = src;
             strictDeps = true;
-            buildInputs = [ pkgs.sdl3 ] ++ lib.optionals pkgs.stdenv.isDarwin (
-              with pkgs.darwin.apple_sdk.frameworks; [
+            buildInputs = [
+              pkgs.sdl3
+            ]
+            ++ lib.optionals pkgs.stdenv.isDarwin (
+              with pkgs.darwin.apple_sdk.frameworks;
+              [
                 Cocoa
                 CoreVideo
                 Metal

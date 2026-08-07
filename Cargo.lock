@@ -895,6 +895,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-spring"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"

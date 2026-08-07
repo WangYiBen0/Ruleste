@@ -72,8 +72,8 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             let spring_right = sp.x + TRIGGER_W * 0.5;
 
             let overlapping_x = player_right > spring_left && player_left < spring_right;
-            let overlapping_y = player_bottom >= spring_top
-                && player_bottom <= spring_top + TRIGGER_H + 4.0;
+            let overlapping_y =
+                player_bottom >= spring_top && player_bottom <= spring_top + TRIGGER_H + 4.0;
 
             if overlapping_x && overlapping_y {
                 let grounded = host::Collision::new(player_id).is_grounded();
