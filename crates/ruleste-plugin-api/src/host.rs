@@ -136,7 +136,7 @@ pub struct Position {
 }
 
 impl Position {
-    pub(crate) fn new(id: EntityId) -> Position {
+    pub fn new(id: EntityId) -> Position {
         Position { id }
     }
 
@@ -168,7 +168,7 @@ pub struct Speed {
 }
 
 impl Speed {
-    pub(crate) fn new(id: EntityId) -> Speed {
+    pub fn new(id: EntityId) -> Speed {
         Speed { id }
     }
 
@@ -290,7 +290,7 @@ pub struct Collision {
 }
 
 impl Collision {
-    pub(crate) fn new(id: EntityId) -> Collision {
+    pub fn new(id: EntityId) -> Collision {
         Collision { id }
     }
 
@@ -320,7 +320,7 @@ pub struct Hitbox {
 }
 
 impl Hitbox {
-    pub(crate) fn new(id: EntityId) -> Hitbox {
+    pub fn new(id: EntityId) -> Hitbox {
         Hitbox { id }
     }
 

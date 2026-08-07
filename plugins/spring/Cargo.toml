@@ -1,0 +1,13 @@
+[package]
+name = "ruleste-spring"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Spring entity plugin for Ruleste — validates cross-plugin interaction."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }
