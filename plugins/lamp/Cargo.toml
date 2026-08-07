@@ -1,0 +1,13 @@
+[package]
+name = "ruleste-lamp"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Lamp scenery entity plugin for Ruleste."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }

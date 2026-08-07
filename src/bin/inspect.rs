@@ -98,8 +98,10 @@ fn dump_map(path: &Path) -> anyhow::Result<()> {
         .map(|e| e.name.as_str())
         .collect::<Vec<_>>();
     println!("  first entity types: {sample:?}");
-    if let Some(first) = level.entities.first() {
-        println!("  first entity attrs: {:?}", first.data.attrs);
+    for e in &level.entities {
+        let x = e.data.get_float("x", 0.0);
+        let y = e.data.get_float("y", 0.0);
+        println!("    entity {:<12} at ({x:>6.1}, {y:>6.1})", e.name);
     }
     Ok(())
 }

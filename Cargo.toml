@@ -4,6 +4,7 @@ members = [
     "crates/ruleste-plugin-api",
     "plugins/player",
     "plugins/spring",
+    "plugins/lamp",
 ]
 
 [package]
