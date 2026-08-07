@@ -40,6 +40,14 @@ extern "C" {
     fn host_play_sound(name: *const u8, len: u32);
     fn host_log(msg: *const u8, len: u32);
     fn host_emit(id: EntityId, event: u32, data: *const u8, len: u32);
+    fn host_entities_by_type(
+        type_name: *const u8,
+        type_len: u32,
+        out_ids: *mut EntityId,
+        max_count: u32,
+    ) -> u32;
+    fn host_drain_events(out_buf: *mut u8, buf_cap: u32) -> u32;
+    fn host_entity_alive(id: EntityId) -> i32;
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -82,6 +90,44 @@ pub fn emit(id: EntityId, event: u32, data: &[u8]) {
     unsafe {
         host_emit(id, event, data.as_ptr(), data.len() as u32);
     }
+}
+
+/// Returns the IDs of all live entities whose `entity_type` matches `name`.
+pub fn entities_by_type(name: &str) -> Vec<EntityId> {
+    const MAX: u32 = 128;
+    let mut buf = [0u32; MAX as usize];
+    let count =
+        unsafe { host_entities_by_type(name.as_ptr(), name.len() as u32, buf.as_mut_ptr(), MAX) };
+    buf[..count as usize].to_vec()
+}
+
+/// Drains the event queue. Each event is `(entity_id, kind, data)`.
+pub fn drain_events() -> Vec<(EntityId, u32, Vec<u8>)> {
+    const BUF_CAP: u32 = 16384;
+    let mut buf = vec![0u8; BUF_CAP as usize];
+    let len = unsafe { host_drain_events(buf.as_mut_ptr(), BUF_CAP) };
+    buf.truncate(len as usize);
+    let mut events = Vec::new();
+    let mut i = 0;
+    while i + 12 <= buf.len() {
+        let entity = u32::from_le_bytes(buf[i..i + 4].try_into().unwrap());
+        let kind = u32::from_le_bytes(buf[i + 4..i + 8].try_into().unwrap());
+        let data_len = u32::from_le_bytes(buf[i + 8..i + 12].try_into().unwrap()) as usize;
+        i += 12;
+        let data = if i + data_len <= buf.len() {
+            buf[i..i + data_len].to_vec()
+        } else {
+            break;
+        };
+        i += data_len;
+        events.push((entity, kind, data));
+    }
+    events
+}
+
+/// Returns `true` if the entity with the given ID is alive in the world.
+pub fn entity_alive(id: EntityId) -> bool {
+    unsafe { host_entity_alive(id) != 0 }
 }
 
 #[derive(Clone, Copy, Debug)]

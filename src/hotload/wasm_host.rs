@@ -635,6 +635,60 @@ impl WasmHost {
                 });
             },
         )?;
+        // --- Entity query: find all entities of a given type ---
+        linker.func_wrap(
+            "env",
+            "host_entities_by_type",
+            |mut caller: Caller<'_, GameState>,
+             type_ptr: u32,
+             type_len: u32,
+             out_ids_ptr: u32,
+             max_count: u32| {
+                let type_name = read_string(&mut caller, type_ptr, type_len);
+                let ids: Vec<u32> = caller
+                    .data()
+                    .world
+                    .iter()
+                    .filter(|e| e.entity_type == type_name)
+                    .map(|e| e.id)
+                    .take(max_count as usize)
+                    .collect();
+                let count = ids.len() as u32;
+                if let Some(mem) = plugin_memory(&mut caller) {
+                    let bytes: Vec<u8> = ids.iter().flat_map(|id| id.to_le_bytes()).collect();
+                    let _ = mem.write(caller, out_ids_ptr as usize, &bytes);
+                }
+                count
+            },
+        )?;
+        // --- Drain event queue ---
+        linker.func_wrap(
+            "env",
+            "host_drain_events",
+            |mut caller: Caller<'_, GameState>, out_buf: u32, buf_cap: u32| {
+                let events: Vec<GameEvent> = caller.data_mut().events.drain(..).collect();
+                let mut buf = Vec::new();
+                for ev in &events {
+                    buf.extend_from_slice(&ev.entity.to_le_bytes());
+                    buf.extend_from_slice(&ev.kind.to_le_bytes());
+                    buf.extend_from_slice(&(ev.data.len() as u32).to_le_bytes());
+                    buf.extend_from_slice(&ev.data);
+                }
+                let total = buf.len().min(buf_cap as usize);
+                if let Some(mem) = plugin_memory(&mut caller) {
+                    let _ = mem.write(caller, out_buf as usize, &buf[..total]);
+                }
+                total as u32
+            },
+        )?;
+        // --- Check if an entity is alive ---
+        linker.func_wrap(
+            "env",
+            "host_entity_alive",
+            |caller: Caller<'_, GameState>, id: u32| {
+                i32::from(caller.data().world.get(id).is_some())
+            },
+        )?;
         Ok(linker)
     }
 
