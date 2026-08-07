@@ -205,7 +205,10 @@ impl WasmHost {
             e.id
         };
         let instance = self.plugins[idx].instance.as_ref().expect("plugin loaded");
-        call_init(&mut self.store, instance, id, &spawn)?;
+        if let Err(e) = call_init(&mut self.store, instance, id, &spawn) {
+            self.store.data_mut().world.despawn(id);
+            return Err(e);
+        }
         Ok(Some(id))
     }
 
@@ -306,10 +309,16 @@ impl WasmHost {
         let mut states = HashMap::new();
         if let Some(serialize) = &self.plugins[idx].funcs.serialize {
             for (id, _) in &owned {
-                let len_ptr = write_buffer(&mut self.store, instance, &[0u8; 4])?;
+                let len_ptr = match write_buffer(&mut self.store, instance, &[0u8; 4]) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        eprintln!("ruleste: serialize alloc for entity {id}: {e}");
+                        continue;
+                    }
+                };
                 let call = serialize.call(&mut self.store, (*id, len_ptr));
-                let len = read_word(&mut self.store, instance, len_ptr)?;
-                free_buffer(&mut self.store, instance, len_ptr, 4)?;
+                let len = read_word(&mut self.store, instance, len_ptr).unwrap_or(0);
+                let _ = free_buffer(&mut self.store, instance, len_ptr, 4);
                 match call {
                     Ok(ptr) if ptr != 0 => {
                         if let Some(bytes) =
@@ -334,10 +343,18 @@ impl WasmHost {
             }
             if let Some(restore) = &self.plugins[idx].funcs.deserialize {
                 if let Some(buf) = states.get(id) {
-                    let ptr = write_buffer(&mut self.store, instance, buf)?;
+                    let ptr = match write_buffer(&mut self.store, instance, buf) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("ruleste: deserialize alloc for entity {id}: {e}");
+                            continue;
+                        }
+                    };
                     let result = restore.call(&mut self.store, (*id, ptr, buf.len() as u32));
-                    free_buffer(&mut self.store, instance, ptr, buf.len() as u32)?;
-                    result?;
+                    let _ = free_buffer(&mut self.store, instance, ptr, buf.len() as u32);
+                    if let Err(e) = result {
+                        eprintln!("ruleste: deserialize entity {id}: {e}");
+                    }
                 }
             }
         }

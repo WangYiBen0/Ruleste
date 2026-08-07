@@ -41,7 +41,9 @@
 - [ ] 实体-实体交互：`throwables` 插件可拓展 `player`；`theo`/`jellyfish` 拓展 `throwables`（AGENTS.md 规定的互操作链路）
 - [ ] 其余内建插件：`booster`、`spring`、`dream_block`、`crystal`、`spikes`、`crush` 等（按关卡实体优先级排序）
 - [x] 地图实体 → 插件的自动实例化：按 `ruleste_plugin_entity_types` 派发，未覆盖类型告警
-- [ ] 插件安全：宿主对插件 panic/越界/OOM 的隔离与报错
+- [x] 插件安全：宿主对插件 panic/越界/OOM 的隔离与报错
+  - `spawn_entity`: `call_init` trap → 回滚 ECS，日志告警
+  - `reload_plugin` serialize/restore 路径：辅助函数 trap → 跳过该实体，继续热重载
 
 ## Phase 4 — 渲染与画面 🔶 进行中
 - [x] SDL3 渲染器：320×180 逻辑分辨率 ×4 缩放、纹理上传、按 depth 排序绘制、翻转/相机 `src/interface/renderer.rs`
