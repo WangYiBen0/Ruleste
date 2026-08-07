@@ -39,7 +39,9 @@
 - [x] 插件 ABI：`ruleste_plugin_meta/entity_types/entity_*`、宏 `ruleste_meta!`/`ruleste_entity_types!`/`ruleste_noop_*` `crates/ruleste-plugin-api`
 - [x] 内建 `player` 插件：走动/跑、跳跃（落地缓冲 + 可变跳 + 贴墙跳）、蹲伏、贴墙滑、冲刺；动画名按 `PlayerSprite.cs`；状态可序列化 `plugins/player`
 - [x] 实体-实体交互：`host_entities_by_type`/`host_drain_events`/`host_entity_alive` FFI + Spring 插件验证跨插件交互
-- [ ] 其余内建插件：`booster`、`dream_block`、`crystal`、`spikes`、`crush` 等（按关卡实体优先级排序）
+- [x] 内建 `lamp` 插件：直接引用图集帧 `scenery/lamp`（非 Sprites.xml），宿主渲染回落 direct-frame（锚点经 hitbox offset 对齐吊灯底端中心）`plugins/lamp`
+- [x] 内建 `wire` 插件：`MapData.nodes`（实体子元素）解析 + 程序化绘制命令管线（`host_draw_line` FFI、每帧 `draw_commands`、二次贝塞尔 24px 垂坠、above 深度分层）`plugins/wire` `src/engine/draw.rs`
+- [ ] 其余内建插件：`booster`、`dream_block`、`crystal`、`spikes`、`crush`、`introCar` 等（按关卡实体优先级排序）
 - [x] 地图实体 → 插件的自动实例化：按 `ruleste_plugin_entity_types` 派发，未覆盖类型告警
 - [x] 插件安全：宿主对插件 panic/越界/OOM 的隔离与报错
   - `spawn_entity`: `call_init` trap → 回滚 ECS，日志告警
@@ -48,8 +50,8 @@
 ## Phase 4 — 渲染与画面 🔶 进行中
 - [x] SDL3 渲染器：320×180 逻辑分辨率 ×4 缩放、纹理上传、按 depth 排序绘制、翻转/相机 `src/interface/renderer.rs`
 - [ ] 场景框架：标题页 → 主菜单 → 存档选择 → 关卡 → 暂停/死亡/完成
-- [ ] 地图渲染：solids 自动拼接、bg 层、水/雾/滤镜等后处理
-- [ ] 实体绘制：插件 `ruleste_entity_draw` 驱动的 SpriteBank 帧渲染
+- [x] 地图渲染：solids 自动拼接、bg 层、水/雾/滤镜等后处理（solids ✅；bg 层待做）
+- [x] 实体绘制：插件 `ruleste_entity_draw` 驱动的 SpriteBank 帧渲染（含 direct-frame 图集帧与程序化 draw 命令）
 - [ ] 音频：FMOD 事件替换为 SDL 音频，`AudioBus` 请求接入
 
 ## Phase 5 — Everest 键盘输入
