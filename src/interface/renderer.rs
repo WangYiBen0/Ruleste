@@ -31,6 +31,7 @@ impl Renderer {
     pub fn new() -> anyhow::Result<Renderer> {
         let sdl = sdl3::init()?;
         let video = sdl.video()?;
+        println!("SDL3 video driver: {}", video.current_video_driver());
         let builder = WindowBuilder::new(
             &video,
             "Ruleste",
