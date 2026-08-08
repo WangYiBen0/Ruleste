@@ -10,6 +10,7 @@ members = [
     "plugins/strawberry",
     "plugins/resortLantern",
     "plugins/spinner",
+    "plugins/rotatespinner",
 ]
 
 [package]

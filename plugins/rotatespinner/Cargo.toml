@@ -1,0 +1,13 @@
+[package]
+name = "ruleste-rotatespinner"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "RotateSpinner hazard plugin — an invisible spinner orbiting a node."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }
