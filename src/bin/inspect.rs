@@ -76,6 +76,16 @@ fn dump_map(path: &Path) -> anyhow::Result<()> {
         level.camera_offset.x, level.camera_offset.y
     );
 
+    println!("  solids grid (rows of # = solid):");
+    for row in 0..level.solids.size().1 {
+        let mut line = String::new();
+        for col in 0..level.solids.size().0 {
+            let solid = level.solids.solid_at(col as i32, row as i32);
+            line.push(if solid { '#' } else { '.' });
+        }
+        println!("    {row:>3} {line}");
+    }
+
     let mut histogram: HashMap<&str, usize> = HashMap::new();
     for e in &level.entities {
         *histogram.entry(e.name.as_str()).or_default() += 1;
@@ -147,11 +157,20 @@ fn dump_atlas(path: &Path) -> anyhow::Result<()> {
 
     let mut ids: Vec<&String> = atlas.frame_index.keys().collect();
     ids.sort();
-    for id in ids.iter().take(12) {
+    let filter = std::env::var("RULESTE_ATLAS_FILTER").unwrap_or_default();
+    let shown: Vec<&&String> = ids
+        .iter()
+        .filter(|id| filter.is_empty() || id.contains(&filter))
+        .take(40)
+        .collect();
+    if shown.is_empty() {
+        println!("    (no frames match filter {filter:?})");
+    }
+    for id in shown {
         println!("    {id}");
     }
-    if ids.len() > 12 {
-        println!("    ... {} more", ids.len() - 12);
+    if ids.len() > 40 {
+        println!("    ... {} more", ids.len() - 40);
     }
 
     let player_id = "characters/player/idle00";
@@ -164,6 +183,42 @@ fn dump_atlas(path: &Path) -> anyhow::Result<()> {
             );
         }
         None => println!("  sample frame {player_id}: not found"),
+    }
+
+    for fid in [
+        "danger/dustcreature/center00",
+        "danger/dustcreature/base01",
+        "danger/dustcreature/overlay02",
+    ] {
+        let Some(clip) = atlas.frame_clip(fid) else {
+            println!("  {fid}: not found");
+            continue;
+        };
+        let rgba = atlas.frame_rgba_into(fid).unwrap_or_default();
+        let mut opaque = 0;
+        let mut colored = 0;
+        let mut hist: HashMap<(u8, u8, u8), usize> = HashMap::new();
+        let mut alpha_hist: HashMap<u8, usize> = HashMap::new();
+        for px in rgba.chunks_exact(4) {
+            let (r, g, b, a) = (px[0], px[1], px[2], px[3]);
+            if a > 8 {
+                opaque += 1;
+                *hist.entry((r, g, b)).or_default() += 1;
+                *alpha_hist.entry(a).or_default() += 1;
+                if a >= 16 {
+                    colored += 1;
+                }
+            }
+        }
+        println!("  {fid}: clip {clip:?} alpha>8 = {opaque} px, alpha>=16 = {colored} px");
+        let mut al: Vec<_> = alpha_hist.into_iter().collect();
+        al.sort_by_key(|a| std::cmp::Reverse(a.1));
+        println!("      alpha histogram (top 4): {al:?}");
+        let mut top: Vec<_> = hist.into_iter().collect();
+        top.sort_by_key(|a| std::cmp::Reverse(a.1));
+        for ((r, g, b), n) in top.iter().take(6) {
+            println!("      ({r},{g},{b}) x{n}");
+        }
     }
     Ok(())
 }

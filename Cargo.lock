@@ -916,6 +916,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-spinner"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
 name = "ruleste-spring"
 version = "0.1.0"
 dependencies = [
