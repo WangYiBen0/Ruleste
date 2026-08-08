@@ -8,6 +8,7 @@ members = [
     "plugins/wire",
     "plugins/spikes",
     "plugins/strawberry",
+    "plugins/resortLantern",
 ]
 
 [package]

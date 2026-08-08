@@ -902,6 +902,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-resort-lantern"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
 name = "ruleste-spikes"
 version = "0.1.0"
 dependencies = [

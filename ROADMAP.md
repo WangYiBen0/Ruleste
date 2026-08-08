@@ -48,6 +48,7 @@
 - [x] 绘制管线扩展：`Image`（draw_image FFI）支持任意图集帧变换绘制 `src/engine/draw.rs` `src/interface/renderer.rs`
 - [x] 实体分类：无碰撞箱的装饰实体（wire/lamp/resortLantern/torch 等）分离到 `Level.decorations`
 - [x] 出生房间选择：`Level::from_bin` 查找包含 `player` 实体的房间而非 `levels.children.first()`
+- [x] 内建 `resortLantern` 插件：玩家经过触发 Monocle Wiggler 摆动（2.5s/1.2freq 衰减正弦 ±30°）、flip 镜像、灯芯发光动画循环 `plugins/resortLantern`
 - [x] 地图实体 → 插件的自动实例化：按 `ruleste_plugin_entity_types` 派发，未覆盖类型告警
 - [x] 插件安全：宿主对插件 panic/越界/OOM 的隔离与报错
   - `spawn_entity`: `call_init` trap → 回滚 ECS，日志告警

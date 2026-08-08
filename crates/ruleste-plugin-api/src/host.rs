@@ -133,6 +133,20 @@ pub fn draw_line(x1: f32, y1: f32, x2: f32, y2: f32, color: Color) {
 /// given world position, with optional rotation (degrees, clockwise) and
 /// scale. Only meaningful during the `ruleste_entity_draw` hook.
 pub fn draw_image(frame_id: &str, x: f32, y: f32, rotation: f32, scale_x: f32, scale_y: f32) {
+    draw_image_flipped(frame_id, x, y, rotation, scale_x, scale_y, false, false);
+}
+
+/// Like [`draw_image`], with horizontal/vertical flipping.
+pub fn draw_image_flipped(
+    frame_id: &str,
+    x: f32,
+    y: f32,
+    rotation: f32,
+    scale_x: f32,
+    scale_y: f32,
+    flip_x: bool,
+    flip_y: bool,
+) {
     unsafe {
         host_draw_image(
             frame_id.as_ptr(),
@@ -142,8 +156,8 @@ pub fn draw_image(frame_id: &str, x: f32, y: f32, rotation: f32, scale_x: f32, s
             rotation,
             scale_x,
             scale_y,
-            0,
-            0,
+            i32::from(flip_x),
+            i32::from(flip_y),
             255,
             255,
             255,
