@@ -37,6 +37,7 @@ extern "C" {
     fn host_input_pressed(action: i32) -> bool;
     fn host_input_released(action: i32) -> bool;
     fn host_collide_check(id: EntityId, offset_x: f32, offset_y: f32) -> bool;
+    fn host_collide_solid_platform_set(id: EntityId, on: bool);
     fn host_actor_move(id: EntityId, h: f32, v: f32) -> u32;
     fn host_actor_is_grounded(id: EntityId) -> bool;
     fn host_play_sound(name: *const u8, len: u32);
@@ -419,6 +420,14 @@ impl Collision {
     #[must_use]
     pub fn check(&self, dx: f32, dy: f32) -> bool {
         unsafe { host_collide_check(self.id, dx, dy) }
+    }
+
+    /// Marks the entity as a standable dynamic platform: actors can land and
+    /// stand on its top surface, and its movement carries them along.
+    pub fn platform(&self, on: bool) {
+        unsafe {
+            host_collide_solid_platform_set(self.id, on);
+        }
     }
 
     /// Moves the entity by `(h, v)` and resolves collisions against solid

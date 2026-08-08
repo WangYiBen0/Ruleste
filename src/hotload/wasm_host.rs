@@ -714,6 +714,18 @@ impl WasmHost {
         )?;
         linker.func_wrap(
             "env",
+            "host_collide_solid_platform_set",
+            |mut caller: Caller<'_, GameState>, id: u32, on: i32| {
+                let state = caller.data_mut();
+                crate::engine::physics::SolidGrid::mark_solid_platform(
+                    &mut state.world,
+                    id,
+                    on != 0,
+                );
+            },
+        )?;
+        linker.func_wrap(
+            "env",
             "host_actor_move",
             |mut caller: Caller<'_, GameState>, id: u32, h: f32, v: f32| {
                 let state = caller.data_mut();

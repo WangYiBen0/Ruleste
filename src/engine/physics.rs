@@ -69,6 +69,93 @@ impl SolidGrid {
             .any(|jt| (y - jt.y).abs() <= 0.5 && x < jt.x + jt.w && x + w > jt.x)
     }
 
+    /// True when the top surface of a dynamic solid-platform entity lies
+    /// within `slop` below the horizontal span `(x, x+w)` at height `y`.
+    fn platform_top(&self, world: &World, x: f32, y: f32, w: f32, exclude: u32) -> bool {
+        self.platform_top_y(world, x, y, w, exclude).is_some()
+    }
+
+    /// Same, but returns the platform's top `y`.
+    fn platform_top_y(&self, world: &World, x: f32, y: f32, w: f32, exclude: u32) -> Option<f32> {
+        world
+            .solid_platforms
+            .iter()
+            .filter(|&&pid| pid != exclude && world.is_alive(pid))
+            .find_map(|&pid| {
+                let e = world.get(pid).expect("alive platform");
+                let top = e.position.y + e.hitbox_offset.y;
+                let px = e.position.x + e.hitbox_offset.x;
+                let pw = e.hitbox.x;
+                ((y - top).abs() <= 0.5 && x < px + pw && x + w > px).then_some(top)
+            })
+    }
+
+    /// Returns the top `y` of a dynamic platform the horizontal span would
+    /// land on while falling across `[bottom, bottom + step]`, if any.
+    fn platform_landing(
+        &self,
+        world: &World,
+        exclude: u32,
+        x: f32,
+        bottom: f32,
+        w: f32,
+        step: f32,
+    ) -> Option<f32> {
+        world
+            .solid_platforms
+            .iter()
+            .filter(|&&pid| pid != exclude && world.is_alive(pid))
+            .find_map(|&pid| {
+                let e = world.get(pid).expect("alive platform");
+                let top = e.position.y + e.hitbox_offset.y;
+                let px = e.position.x + e.hitbox_offset.x;
+                let pw = e.hitbox.x;
+                if x < px + pw && x + w > px && top >= bottom && top <= bottom + step + 0.01 {
+                    Some(top)
+                } else {
+                    None
+                }
+            })
+    }
+
+    /// Marks an entity as a standable dynamic platform (or unmarks it).
+    pub fn mark_solid_platform(world: &mut World, id: u32, on: bool) {
+        if on {
+            world.solid_platforms.insert(id);
+        } else {
+            world.solid_platforms.remove(&id);
+        }
+    }
+
+    /// Every other entity whose bottom edge rests on this platform's top
+    /// surface (they get carried along with it).
+    fn platform_riders(&self, world: &World, platform_id: u32) -> Vec<u32> {
+        let Some(p) = world.get(platform_id) else {
+            return Vec::new();
+        };
+        let top = p.position.y + p.hitbox_offset.y;
+        let px = p.position.x + p.hitbox_offset.x;
+        let pw = p.hitbox.x;
+        world
+            .iter()
+            .filter(|e| {
+                e.id != platform_id
+                    && (e.position.y + e.hitbox_offset.y + e.hitbox.y - top).abs() <= 0.5
+                    && e.position.x + e.hitbox_offset.x < px + pw
+                    && e.position.x + e.hitbox_offset.x + e.hitbox.x > px
+            })
+            .map(|e| e.id)
+            .collect()
+    }
+
+    /// Moves an entity by `(dx, dy)` in world units without any collision.
+    fn shift(&self, world: &mut World, id: u32, dx: f32, dy: f32) {
+        if let Some(e) = world.get_mut(id) {
+            e.position.x += dx;
+            e.position.y += dy;
+        }
+    }
+
     /// Returns the `y` of the jump-thru top surface the horizontal span is
     /// about to cross while moving down, if any.
     fn jumpthru_landing(&self, x: f32, bottom: f32, w: f32, step: f32) -> Option<f32> {
@@ -135,6 +222,11 @@ impl SolidGrid {
         let (ox, oy, w, h) = (e.hitbox_offset.x, e.hitbox_offset.y, e.hitbox.x, e.hitbox.y);
 
         if dx != 0.0 {
+            let riders_before = if world.solid_platforms.contains(&id) {
+                self.platform_riders(world, id)
+            } else {
+                Vec::new()
+            };
             let sign = dx.signum();
             let target = e.position.x + dx;
             let mut cur = e.position.x;
@@ -160,10 +252,21 @@ impl SolidGrid {
                 }
                 cur = nx;
             }
+            let moved = cur - e.position.x;
             world.get_mut(id).expect("alive").position.x = cur;
+            if moved != 0.0 {
+                for rider in &riders_before {
+                    self.shift(world, *rider, moved, 0.0);
+                }
+            }
         }
 
         if world.is_alive(id) && dy != 0.0 {
+            let riders_before = if world.solid_platforms.contains(&id) {
+                self.platform_riders(world, id)
+            } else {
+                Vec::new()
+            };
             let pos = world.get(id).expect("alive").position;
             let sign = dy.signum();
             let target = pos.y + dy;
@@ -195,17 +298,31 @@ impl SolidGrid {
                         flags |= MOVE_GROUND;
                         break;
                     }
+                    // Dynamic solid platforms behave like one-way platforms.
+                    if let Some(top) =
+                        self.platform_landing(world, id, pos.x + ox, ny + oy + h, w, step)
+                    {
+                        cur = top - oy - h;
+                        flags |= MOVE_GROUND;
+                        break;
+                    }
                 }
                 cur = ny;
             }
+            let moved = cur - pos.y;
             world.get_mut(id).expect("alive").position.y = cur;
+            if moved != 0.0 {
+                for rider in &riders_before {
+                    self.shift(world, *rider, 0.0, moved);
+                }
+            }
         }
 
         flags
     }
 
-    /// True when the entity's hitbox rests on solid ground or a jump-thru
-    /// platform top surface.
+    /// True when the entity's hitbox rests on solid ground, a jump-thru
+    /// platform top surface, or a dynamic solid-platform entity.
     pub fn is_grounded(&self, world: &World, id: u32) -> bool {
         match world.get(id) {
             Some(e) => {
@@ -213,6 +330,7 @@ impl SolidGrid {
                 let y = e.position.y + e.hitbox_offset.y + e.hitbox.y;
                 self.collide_rect(x, y + 0.5, e.hitbox.x, 1.0)
                     || self.jumpthru_top(x, y, e.hitbox.x)
+                    || self.platform_top(world, x, y, e.hitbox.x, id)
             }
             None => false,
         }
@@ -323,5 +441,88 @@ mod tests {
         }
         let g = grid_with_jumpthru();
         assert!(!g.is_grounded(&world, id));
+    }
+
+    fn platform_world() -> (SolidGrid, World, u32, u32) {
+        let rows = vec!["0".repeat(16); 24];
+        let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+        let g = SolidGrid::from_rows(&rows);
+        let mut world = World::new();
+        // Dynamic platform: 32x4 hitbox at (40, 120) with offset (0,-4), so
+        // its top surface is y = 116.
+        let platform = world.spawn();
+        {
+            let e = world.get_mut(platform).unwrap();
+            e.position = Vec2::new(40.0, 120.0);
+            e.hitbox = Vec2::new(32.0, 4.0);
+            e.hitbox_offset = Vec2::new(0.0, -4.0);
+        }
+        SolidGrid::mark_solid_platform(&mut world, platform, true);
+        // A rider falling from above (bottom = 111 initially).
+        let rider = world.spawn();
+        {
+            let e = world.get_mut(rider).unwrap();
+            e.position = Vec2::new(52.0, 100.0);
+            e.hitbox = Vec2::new(8.0, 11.0);
+            e.hitbox_offset = Vec2::new(-4.0, 0.0);
+        }
+        (g, world, platform, rider)
+    }
+
+    #[test]
+    fn actor_lands_on_dynamic_platform_top() {
+        let (g, mut world, platform, rider) = platform_world();
+        // Move the rider down through the platform top (y=116).
+        let flags = g.actor_move(&mut world, rider, 0.0, 40.0);
+        assert_ne!(flags & MOVE_GROUND, 0, "expected ground hit on platform");
+        let e = world.get(rider).unwrap();
+        assert!(
+            (e.position.y + 11.0 - 116.0).abs() < 0.01,
+            "bottom={}",
+            e.position.y + 11.0
+        );
+        let _ = platform;
+    }
+
+    #[test]
+    fn platform_movement_carries_rider() {
+        let (g, mut world, platform, rider) = platform_world();
+        // First land the rider on the platform, then move the platform up.
+        g.actor_move(&mut world, rider, 0.0, 40.0);
+        g.actor_move(&mut world, platform, 0.0, -10.0);
+        let e = world.get(rider).unwrap();
+        assert!(
+            (e.position.y - 95.0).abs() < 0.01,
+            "rider y={}",
+            e.position.y
+        );
+    }
+
+    #[test]
+    fn platform_movement_carries_rider_horizontally() {
+        let (g, mut world, platform, rider) = platform_world();
+        g.actor_move(&mut world, rider, 0.0, 40.0);
+        g.actor_move(&mut world, platform, 8.0, 0.0);
+        let e = world.get(rider).unwrap();
+        assert!(
+            (e.position.x - 60.0).abs() < 0.01,
+            "rider x={}",
+            e.position.x
+        );
+    }
+
+    #[test]
+    fn is_grounded_true_on_dynamic_platform() {
+        let (g, mut world, _platform, rider) = platform_world();
+        g.actor_move(&mut world, rider, 0.0, 40.0);
+        assert!(g.is_grounded(&world, rider));
+    }
+
+    #[test]
+    fn not_grounded_when_platform_moves_away() {
+        let (g, mut world, platform, rider) = platform_world();
+        // Platform moves down far enough that the rider no longer rests on it.
+        g.actor_move(&mut world, platform, 0.0, 20.0);
+        assert!(!g.is_grounded(&world, rider));
     }
 }

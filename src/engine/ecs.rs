@@ -2,7 +2,7 @@
 //! plugins; this registry only stores the shared state that plugins operate on
 //! through the FFI (position, speed, sprite state, ...).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use ruleste_plugin_api::types::{Color, Vec2};
 
@@ -73,6 +73,10 @@ impl Entity {
 pub struct World {
     entities: HashMap<u32, Entity>,
     next_id: u32,
+    /// Entities acting as standable platforms (dynamic solids). Their top
+    /// surface catches falling actors like a jump-thru, and their movement
+    /// carries along any actor standing on them.
+    pub solid_platforms: HashSet<u32>,
 }
 
 impl World {
