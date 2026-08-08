@@ -14,6 +14,16 @@ pub struct Line {
     pub color: Color,
 }
 
+/// A filled axis-aligned rectangle in world coordinates.
+#[derive(Debug, Clone, Copy)]
+pub struct Rect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub color: Color,
+}
+
 /// A single atlas frame blitted at an arbitrary position in world coordinates.
 /// Used by entities that compose several tiles (spike rows) or need rotation
 /// and scaling (spinners, lanterns) that the one-sprite-per-entity model can't

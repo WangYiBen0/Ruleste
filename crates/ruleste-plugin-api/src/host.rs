@@ -44,6 +44,7 @@ extern "C" {
     fn host_log(msg: *const u8, len: u32);
     fn host_emit(id: EntityId, event: u32, data: *const u8, len: u32);
     fn host_draw_line(x1: f32, y1: f32, x2: f32, y2: f32, r: u32, g: u32, b: u32, a: u32);
+    fn host_draw_rect(x: f32, y: f32, w: f32, h: f32, r: u32, g: u32, b: u32, a: u32);
     fn host_draw_image(
         frame_ptr: *const u8,
         frame_len: u32,
@@ -122,6 +123,23 @@ pub fn draw_line(x1: f32, y1: f32, x2: f32, y2: f32, color: Color) {
             y1,
             x2,
             y2,
+            color.r as u32,
+            color.g as u32,
+            color.b as u32,
+            color.a as u32,
+        );
+    }
+}
+
+/// Appends a filled rectangle (in world coordinates) to this frame's draw
+/// list. Only meaningful during the `ruleste_entity_draw` hook.
+pub fn draw_rect(x: f32, y: f32, w: f32, h: f32, color: Color) {
+    unsafe {
+        host_draw_rect(
+            x,
+            y,
+            w,
+            h,
             color.r as u32,
             color.g as u32,
             color.b as u32,

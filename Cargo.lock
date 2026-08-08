@@ -881,6 +881,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-clutter"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
 name = "ruleste-cobweb"
 version = "0.1.0"
 dependencies = [
@@ -889,6 +896,13 @@ dependencies = [
 
 [[package]]
 name = "ruleste-door"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-fallingblock"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",

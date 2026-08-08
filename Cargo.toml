@@ -14,6 +14,8 @@ members = [
     "plugins/cobweb",
     "plugins/soundsource",
     "plugins/door",
+    "plugins/fallingblock",
+    "plugins/clutter",
 ]
 
 [package]

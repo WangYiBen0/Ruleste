@@ -1,0 +1,13 @@
+[package]
+name = "ruleste-clutter"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "ClutterBlockBase plugin — the dark solid blocks (red/yellow/green) of Celestial Resort."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }

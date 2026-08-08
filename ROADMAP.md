@@ -55,6 +55,10 @@
 - [x] 内建 `cobweb` 装饰插件：二次贝塞尔蛛网线（摆动、支线、边缘深色）`plugins/cobweb`
 - [x] 内建 `soundSource` 占位插件：暂存 `sound` 事件名，等待 SDL 音频 `plugins/soundsource`
 - [x] 内建 `door` 插件：PlayerCollider 触发 `open`→`close`→`idle` SpriteBank 动画链、按接近方向 flip、撞 solid 禁门 `plugins/door`
+- [x] 动态实体平台（riding）：宿主 `host_collide_solid_platform_set` 把实体标记为可站立平台，顶面接住下落 actor、`is_grounded` 识别、平台移动携带站立者 `src/engine/physics.rs`（5 单测）
+- [x] 内建 `fallingBlock` 插件：玩家站顶触发震动→0.4s 宽限→加速塌落→落地碎裂消耗（本会话不重生）`plugins/fallingblock`
+- [x] 内建 `clutter` 插件（redBlocks/yellowBlocks/greenBlocks）：ClutterBlockBase 半透明黑 Solid 平台，depth 8999 `plugins/clutter`
+- [x] 宿主实心矩形绘制 `host_draw_rect`（fallingBlock/clutter 使用）
 - [x] 碰撞网格换算修复：`SolidGrid::collide_rect` 像素坐标未除 tile 尺寸导致的越界误判（全实体碰撞大 bug）`src/engine/physics.rs`
 - [x] 地图实体 → 插件的自动实例化：按 `ruleste_plugin_entity_types` 派发，未覆盖类型告警
 - [x] 插件安全：宿主对插件 panic/越界/OOM 的隔离与报错

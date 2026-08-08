@@ -184,6 +184,7 @@ fn main() -> anyhow::Result<()> {
         let state = wasm_host.game_state();
         renderer.draw_entities(&state.world, &atlas, &sprite_bank, &mut sprite_animator);
         renderer.draw_lines(&state.draw_commands);
+        renderer.draw_rects(&state.draw_rects);
         renderer.draw_images(&state.draw_images, &atlas);
         renderer.present();
 

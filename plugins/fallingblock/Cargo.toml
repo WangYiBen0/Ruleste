@@ -1,0 +1,13 @@
+[package]
+name = "ruleste-fallingblock"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "FallingBlock entity plugin — a Solid that crumbles away after the player stands on it."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }

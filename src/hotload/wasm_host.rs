@@ -19,7 +19,7 @@ use ruleste_plugin_api::export;
 use ruleste_plugin_api::types::Color;
 use wasmtime::{Caller, Engine, Extern, Instance, Linker, Memory, Module, Store, TypedFunc};
 
-use crate::engine::draw::{Image, Line};
+use crate::engine::draw::{Image, Line, Rect};
 use crate::engine::ecs::World;
 use crate::engine::input::Input;
 use crate::engine::physics::SolidGrid;
@@ -63,6 +63,8 @@ pub struct GameState {
     pub events: Vec<GameEvent>,
     /// Geometry submitted by plugins during their draw hook this frame.
     pub draw_commands: Vec<Line>,
+    /// Filled rectangles submitted by plugins during their draw hook.
+    pub draw_rects: Vec<Rect>,
     /// Atlas-frame blits submitted by plugins during their draw hook.
     pub draw_images: Vec<Image>,
     /// Seconds remaining on the death freeze; positive while the player is
@@ -82,6 +84,7 @@ impl GameState {
             audio: AudioBus::default(),
             events: Vec::new(),
             draw_commands: Vec::new(),
+            draw_rects: Vec::new(),
             draw_images: Vec::new(),
             death_timer: 0.0,
             collected: HashSet::new(),
@@ -324,6 +327,7 @@ impl WasmHost {
 
     pub fn draw(&mut self) {
         self.store.data_mut().draw_commands.clear();
+        self.store.data_mut().draw_rects.clear();
         self.store.data_mut().draw_images.clear();
         let jobs: Vec<(u32, usize)> = self
             .store
@@ -785,6 +789,32 @@ impl WasmHost {
                     y1,
                     x2,
                     y2,
+                    color: Color {
+                        r: r as u8,
+                        g: g as u8,
+                        b: b as u8,
+                        a: a as u8,
+                    },
+                });
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_draw_rect",
+            |mut caller: Caller<'_, GameState>,
+             x: f32,
+             y: f32,
+             w: f32,
+             h: f32,
+             r: u32,
+             g: u32,
+             b: u32,
+             a: u32| {
+                caller.data_mut().draw_rects.push(Rect {
+                    x,
+                    y,
+                    w,
+                    h,
                     color: Color {
                         r: r as u8,
                         g: g as u8,

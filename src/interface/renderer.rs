@@ -11,7 +11,7 @@ use sdl3::{EventPump, Sdl};
 use crate::data::atlas::Atlas;
 use crate::data::spritebank::SpriteBank;
 use crate::engine::autotiler::TileGrid;
-use crate::engine::draw::{Image, Line};
+use crate::engine::draw::{Image, Line, Rect};
 use crate::engine::ecs::World;
 use crate::engine::sprites::SpriteAnimator;
 
@@ -225,6 +225,25 @@ impl Renderer {
                 sdl3::render::FPoint::new(x1, y1),
                 sdl3::render::FPoint::new(x2, y2),
             );
+        }
+    }
+
+    /// Draws plugin-submitted filled rectangles (world coordinates),
+    /// transformed by the camera.
+    pub fn draw_rects(&mut self, rects: &[Rect]) {
+        for rect in rects {
+            self.canvas.set_draw_color(SdlColor::RGBA(
+                rect.color.r,
+                rect.color.g,
+                rect.color.b,
+                rect.color.a,
+            ));
+            let _ = self.canvas.fill_rect(FRect::new(
+                rect.x - self.camera.x,
+                rect.y - self.camera.y,
+                rect.w,
+                rect.h,
+            ));
         }
     }
 
