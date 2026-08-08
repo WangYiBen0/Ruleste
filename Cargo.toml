@@ -23,6 +23,10 @@ members = [
     "plugins/refill",
     "plugins/booster",
     "plugins/crushblock",
+    "plugins/checkpoint",
+    "plugins/cliffflag",
+    "plugins/torch",
+    "plugins/cloud",
 ]
 
 [package]

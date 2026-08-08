@@ -69,6 +69,8 @@ extern "C" {
     );
     fn host_die();
     fn host_collect(id: EntityId);
+    fn host_respawn_set(x: f32, y: f32);
+    fn host_respawn_get(out: *mut Vec2);
     fn host_entities_by_type(
         type_name: *const u8,
         type_len: u32,
@@ -192,6 +194,28 @@ pub fn draw_image_flipped(
     }
 }
 
+/// Like [`draw_image`], tinted with an ARGB color (the alpha is used for
+/// fading, e.g. a checkpoint highlight breathing with its sine timer).
+pub fn draw_image_color(frame_id: &str, x: f32, y: f32, color: Color) {
+    unsafe {
+        host_draw_image(
+            frame_id.as_ptr(),
+            frame_id.len() as u32,
+            x,
+            y,
+            0.0,
+            1.0,
+            1.0,
+            false as i32,
+            false as i32,
+            color.r as u32,
+            color.g as u32,
+            color.b as u32,
+            color.a as u32,
+        );
+    }
+}
+
 /// Kills the player: the host freezes the room and respawns it shortly after.
 /// Equivalent to `Player.Die()` in the original engine.
 pub fn die() {
@@ -206,6 +230,24 @@ pub fn collect(id: EntityId) {
     unsafe {
         host_collect(id);
     }
+}
+
+/// Records the world position the player respawns at after a death. Used by
+/// checkpoints: once reached, deaths send the player back here instead of the
+/// level start.
+pub fn set_respawn(x: f32, y: f32) {
+    unsafe {
+        host_respawn_set(x, y);
+    }
+}
+
+/// Returns the recorded respawn position, or `(0, 0)` if none was set yet.
+pub fn respawn_position() -> Vec2 {
+    let mut out = Vec2::ZERO;
+    unsafe {
+        host_respawn_get(&mut out);
+    }
+    out
 }
 
 /// Returns the IDs of all live entities whose `entity_type` matches `name`.

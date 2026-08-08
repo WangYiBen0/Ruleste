@@ -207,3 +207,73 @@ fn crushblock_registers_as_solid_platform() {
         "crushBlock should be registered as a solid platform"
     );
 }
+
+#[test]
+fn checkpoint_records_respawn_position() {
+    if !has_plugins() {
+        eprintln!("skipping: wasm plugins not built");
+        return;
+    }
+    let mut host = WasmHost::new(
+        World::new(),
+        Input::default(),
+        SolidGrid::from_rows(&[]),
+        Path::new(PLUGIN_DIR),
+    )
+    .unwrap();
+    host.load_plugins().unwrap();
+
+    host.spawn_entity("player", player_spawn())
+        .unwrap()
+        .unwrap();
+    host.spawn_entity(
+        "checkpoint",
+        spawn_map_attrs(&[("x", MapAttr::Float(140.0)), ("y", MapAttr::Float(120.0))]),
+    )
+    .unwrap()
+    .unwrap();
+
+    // The checkpoint triggers as soon as a player exists in the room.
+    host.update(0.016);
+    let pos = host.game_state().respawn_pos;
+    assert_eq!(
+        pos,
+        Some((140.0, 120.0)),
+        "checkpoint recorded its position"
+    );
+}
+
+#[test]
+fn cloud_registers_as_solid_platform() {
+    if !has_plugins() {
+        eprintln!("skipping: wasm plugins not built");
+        return;
+    }
+    let mut host = WasmHost::new(
+        World::new(),
+        Input::default(),
+        SolidGrid::from_rows(&[]),
+        Path::new(PLUGIN_DIR),
+    )
+    .unwrap();
+    host.load_plugins().unwrap();
+
+    host.spawn_entity(
+        "cloud",
+        spawn_map_attrs(&[("x", MapAttr::Float(100.0)), ("y", MapAttr::Float(100.0))]),
+    )
+    .unwrap()
+    .unwrap();
+
+    let id = host
+        .game_state()
+        .world
+        .iter()
+        .find(|e| e.entity_type == "cloud")
+        .map(|e| e.id)
+        .expect("cloud spawned");
+    assert!(
+        host.game_state().world.solid_platforms.contains(&id),
+        "cloud should be registered as a solid platform"
+    );
+}

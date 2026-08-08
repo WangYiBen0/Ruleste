@@ -73,6 +73,9 @@ pub struct GameState {
     /// Entities that have been consumed this session (e.g. a collected
     /// strawberry) and must not be re-created on respawn. Keyed by spawn blob.
     pub collected: HashSet<Vec<u8>>,
+    /// World position the player respawns at after a death, if a checkpoint has
+    /// been reached this session. `None` = fall back to the level start.
+    pub respawn_pos: Option<(f32, f32)>,
 }
 
 impl GameState {
@@ -88,6 +91,7 @@ impl GameState {
             draw_images: Vec::new(),
             death_timer: 0.0,
             collected: HashSet::new(),
+            respawn_pos: None,
         }
     }
 }
@@ -321,6 +325,22 @@ impl WasmHost {
             }
             if let Err(e) = self.spawn_entity(entity_type, spawn.clone()) {
                 eprintln!("ruleste: respawn of {entity_type} failed: {e}");
+            }
+        }
+        // A reached checkpoint overrides the level-start spawn position.
+        if let Some((x, y)) = self.store.data().respawn_pos {
+            let ids: Vec<u32> = self
+                .store
+                .data()
+                .world
+                .iter()
+                .filter(|e| e.entity_type == "player")
+                .map(|e| e.id)
+                .collect();
+            for id in ids {
+                if let Some(e) = self.store.data_mut().world.get_mut(id) {
+                    e.position = ruleste_plugin_api::types::Vec2::new(x, y);
+                }
             }
         }
     }
@@ -852,6 +872,28 @@ impl WasmHost {
                     state.collected.insert(e.spawn.clone());
                     state.world.despawn(id);
                 }
+            },
+        )?;
+        // --- Set the player's respawn position (used by checkpoints) ---
+        linker.func_wrap(
+            "env",
+            "host_respawn_set",
+            |mut caller: Caller<'_, GameState>, x: f32, y: f32| {
+                caller.data_mut().respawn_pos = Some((x, y));
+            },
+        )?;
+        // --- Read the current respawn position, if any ---
+        linker.func_wrap(
+            "env",
+            "host_respawn_get",
+            |mut caller: Caller<'_, GameState>, out: u32| {
+                let pos = caller.data().respawn_pos;
+                write_vec2(
+                    &mut caller,
+                    out,
+                    pos.map_or(0.0, |p| p.0),
+                    pos.map_or(0.0, |p| p.1),
+                );
             },
         )?;
         // --- Blit an atlas frame at an arbitrary world position ---

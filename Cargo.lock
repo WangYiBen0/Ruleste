@@ -972,6 +972,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-checkpoint"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-cliffflag"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-cloud"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-torch"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
 name = "ruleste-refill"
 version = "0.1.0"
 dependencies = [

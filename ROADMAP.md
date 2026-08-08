@@ -69,6 +69,12 @@
 - [x] 事件常量：插件共享 `EV_REFILL/EV_BOOST/EV_CRUSH`（`ruleste-plugin-api`）+ player 插件事件处理（充满 dash、弹射）
 - [x] player 插件 dash 撞 crushBlock 检测：dash 中与 crushBlock hitbox 重叠→发 `EV_CRUSH` 并结束 dash
 - [x] 集成测试：refill oneUse 消耗/两 dash 重生、booster/crushBlock 实例化、crushBlock 平台注册 `tests/interactions.rs`
+- [x] 宿主重生点 API：`host_respawn_set/get` FFI + `respawn()` 后按 checkpoint 位置重摆 player `src/hotload/wasm_host.rs`
+- [x] 内建 `checkpoint` 插件：房间有 player 即触发→记录重生点+高亮切换 on/off 循环脉冲+flash，重生重建后自动恢复 on 态 `plugins/checkpoint`
+- [x] 内建 `cliffflag` 插件：节点间二次贝塞尔垂坠彩旗线（4 色旗+高亮边缘+灰销钉、波荡、确定性随机）`plugins/cliffflag`
+- [x] 内建 `torch` 插件：镜之寺壁灯，触摸点燃（turnOn 1-3→on 3-8 循环）、startLit 用 litTorch 帧 `plugins/torch`
+- [x] 内建 `cloud` 插件：32 宽 riding 单向平台，踩上后压扁下沉→上弹将骑手 `Speed.Y=-200` 抛起，fragile 消散 2.5s 重生 `plugins/cloud`
+- [x] `draw_image_color`：宿主 draw_image 支持 ARGB 着色（checkpoint 高亮呼吸渐隐）`crates/ruleste-plugin-api`
 - [x] 2-OldSite 全实体类型有插件处理（dreamBlock/lightbeam/foregroundDebris/hanginglamp/floatingDebris）
 - [x] 碰撞网格换算修复：`SolidGrid::collide_rect` 像素坐标未除 tile 尺寸导致的越界误判（全实体碰撞大 bug）`src/engine/physics.rs`
 - [x] 地图实体 → 插件的自动实例化：按 `ruleste_plugin_entity_types` 派发，未覆盖类型告警

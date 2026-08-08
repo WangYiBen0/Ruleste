@@ -209,6 +209,16 @@ fn dump_atlas(path: &Path) -> anyhow::Result<()> {
         "objects/booster/booster00",
         "objects/refill/idle00",
         "objects/refillTwo/idle00",
+        "objects/checkpoint/highlight00",
+        "objects/checkpoint/highlight09",
+        "objects/checkpoint/flash00",
+        "objects/checkpoint/bg/6",
+        "objects/clouds/cloud00",
+        "objects/clouds/fragile00",
+        "objects/clouds/fragile06",
+        "objects/temple/torch00",
+        "objects/temple/torch04",
+        "objects/temple/litTorch00",
     ] {
         let Some(clip) = atlas.frame_clip(fid) else {
             println!("  {fid}: not found");
