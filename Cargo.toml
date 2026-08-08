@@ -12,6 +12,7 @@ members = [
     "plugins/spinner",
     "plugins/rotatespinner",
     "plugins/cobweb",
+    "plugins/soundsource",
 ]
 
 [package]

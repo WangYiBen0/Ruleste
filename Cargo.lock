@@ -923,6 +923,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-soundsource"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
 name = "ruleste-spikes"
 version = "0.1.0"
 dependencies = [

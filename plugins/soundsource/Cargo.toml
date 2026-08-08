@@ -1,0 +1,13 @@
+[package]
+name = "ruleste-soundsource"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "soundSource entity plugin — FMOD sound placeholder until SDL audio lands."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }
