@@ -51,6 +51,9 @@
 - [x] 内建 `resortLantern` 插件：玩家经过触发 Monocle Wiggler 摆动（2.5s/1.2freq 衰减正弦 ±30°）、flip 镜像、灯芯发光动画循环 `plugins/resortLantern`
 - [x] 内建 `spinner` 插件（DustStaticSpinner）：16×12 击杀碰撞、center 黑晶旋转 + 4 角 base/overlay 节点（autoExpand 5× 拉伸、solid 角跳过）、`die()` `plugins/spinner`
 - [x] 内建 `rotateSpinner` 插件（RotateSpinner）：隐形危险圆绕 center 节点 1.8s 一圈公转、Circle(6) 击杀、clockwise 属性 `plugins/rotatespinner`
+- [x] `jumpThru` 单向平台：解析进 `SolidGrid` 碰撞网格（顶面可站、下方可穿、向上穿过），player 自动受益，含物理单测 `src/engine/physics.rs`
+- [x] 内建 `cobweb` 装饰插件：二次贝塞尔蛛网线（摆动、支线、边缘深色）`plugins/cobweb`
+- [x] 内建 `soundSource` 占位插件：暂存 `sound` 事件名，等待 SDL 音频 `plugins/soundsource`
 - [x] 碰撞网格换算修复：`SolidGrid::collide_rect` 像素坐标未除 tile 尺寸导致的越界误判（全实体碰撞大 bug）`src/engine/physics.rs`
 - [x] 地图实体 → 插件的自动实例化：按 `ruleste_plugin_entity_types` 派发，未覆盖类型告警
 - [x] 插件安全：宿主对插件 panic/越界/OOM 的隔离与报错

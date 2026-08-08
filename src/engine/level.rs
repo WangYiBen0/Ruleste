@@ -7,7 +7,10 @@ use ruleste_plugin_api::map::{MapAttr, MapData};
 use ruleste_plugin_api::types::Vec2;
 
 use crate::data::binary_packer::{Attr, Element, MapBin};
-use crate::engine::physics::SolidGrid;
+use crate::engine::physics::{JumpThru, SolidGrid};
+
+/// `JumpThru`'s `Hitbox(width, 5f)` height.
+const JUMPTHRU_HEIGHT: f32 = 5.0;
 
 #[derive(Debug, Clone)]
 pub struct EntitySpawn {
@@ -76,13 +79,24 @@ impl Level {
             32.0 * level.attr_f32("cameraOffsetY", 0.0),
         );
 
-        let solids = parse_grid(level.child("solids"));
+        let mut solids = parse_grid(level.child("solids"));
         let bg = parse_grid(level.child("bg"));
 
         let mut entities = Vec::new();
         let mut decorations = Vec::new();
         if let Some(ents) = level.child("entities") {
             for child in &ents.children {
+                if child.name == "jumpThru" {
+                    // One-way platforms are baked into the collision grid, not
+                    // spawned as plugin entities (mirrors `JumpThru`'s Hitbox).
+                    solids.add_jumpthru(JumpThru {
+                        x: child.attr_f32("x", 0.0),
+                        y: child.attr_f32("y", 0.0),
+                        w: child.attr_f32("width", 8.0),
+                        h: JUMPTHRU_HEIGHT,
+                    });
+                    continue;
+                }
                 let mut data = attrs_to_map(child);
                 // The entity type name is always available to plugins, so a
                 // plugin handling several entity types can tell them apart.
