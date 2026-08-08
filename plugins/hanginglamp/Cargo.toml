@@ -1,0 +1,13 @@
+[package]
+name = "ruleste-hanginglamp"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "HangingLamp decoration plugin — a chain and glowing lamp at depth 2000."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }

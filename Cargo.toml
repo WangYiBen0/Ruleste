@@ -16,6 +16,10 @@ members = [
     "plugins/door",
     "plugins/fallingblock",
     "plugins/clutter",
+    "plugins/lightbeam",
+    "plugins/hanginglamp",
+    "plugins/dreamblock",
+    "plugins/debris",
 ]
 
 [package]

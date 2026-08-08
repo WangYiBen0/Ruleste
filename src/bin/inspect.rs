@@ -138,6 +138,16 @@ fn dump_map(path: &Path) -> anyhow::Result<()> {
             println!("        node[{i}] = ({}, {})", n.x, n.y);
         }
     }
+    for d in &level.decorations {
+        let x = d.data.get_float("x", 0.0);
+        let y = d.data.get_float("y", 0.0);
+        println!("    decoration {:<12} at ({x:>6.1}, {y:>6.1})", d.name);
+        for (k, v) in &d.data.attrs {
+            if k != "x" && k != "y" {
+                println!("        {k} = {v:?}");
+            }
+        }
+    }
     Ok(())
 }
 
@@ -189,6 +199,9 @@ fn dump_atlas(path: &Path) -> anyhow::Result<()> {
         "danger/dustcreature/center00",
         "danger/dustcreature/base01",
         "danger/dustcreature/overlay02",
+        "util/lightbeam",
+        "objects/dreamblock/particles",
+        "objects/hanginglamp",
     ] {
         let Some(clip) = atlas.frame_clip(fid) else {
             println!("  {fid}: not found");
