@@ -31,6 +31,16 @@ pub struct Level {
     pub camera_offset: Vec2,
     /// Entities to spawn into the world, in map order.
     pub entities: Vec<EntitySpawn>,
+    /// Decorative entities without gameplay collision boxes.
+    pub decorations: Vec<EntitySpawn>,
+}
+
+fn is_decoration(name: &str) -> bool {
+    matches!(
+        name,
+        "wire" | "lamp" | "resortLantern" | "torch" | "hanginglamp" | "floatingDebris"
+    ) || name.starts_with("dec")
+        || name.ends_with("dec")
 }
 
 impl Level {
@@ -44,10 +54,20 @@ impl Level {
         let root = &bin.root;
         let name = root.attr_str("name", "unknown");
 
-        let level = root
+        let levels_el = root
             .child("levels")
-            .and_then(|levels| levels.children.first())
             .ok_or_else(|| anyhow::anyhow!("map {:?} has no levels", name))?;
+
+        let level = levels_el
+            .children
+            .iter()
+            .find(|l| {
+                l.child("entities")
+                    .is_some_and(|ents| ents.children.iter().any(|e| e.name == "player"))
+            })
+            .or_else(|| levels_el.children.first())
+            .ok_or_else(|| anyhow::anyhow!("map {:?} has no levels", name))?;
+
         let width = level.attr_f32("width", 320.0);
         let height = level.attr_f32("height", 180.0);
 
@@ -60,6 +80,7 @@ impl Level {
         let bg = parse_grid(level.child("bg"));
 
         let mut entities = Vec::new();
+        let mut decorations = Vec::new();
         if let Some(ents) = level.child("entities") {
             for child in &ents.children {
                 let mut data = attrs_to_map(child);
@@ -74,10 +95,15 @@ impl Level {
                     .iter()
                     .map(|n| Vec2::new(n.attr_f32("x", 0.0), n.attr_f32("y", 0.0)))
                     .collect();
-                entities.push(EntitySpawn {
+                let spawn = EntitySpawn {
                     name: child.name.clone(),
                     data,
-                });
+                };
+                if is_decoration(&child.name) {
+                    decorations.push(spawn);
+                } else {
+                    entities.push(spawn);
+                }
             }
         }
 
@@ -89,6 +115,7 @@ impl Level {
             height,
             camera_offset,
             entities,
+            decorations,
         })
     }
 }

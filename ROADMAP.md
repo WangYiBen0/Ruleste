@@ -41,7 +41,13 @@
 - [x] 实体-实体交互：`host_entities_by_type`/`host_drain_events`/`host_entity_alive` FFI + Spring 插件验证跨插件交互
 - [x] 内建 `lamp` 插件：直接引用图集帧 `scenery/lamp`（非 Sprites.xml），宿主渲染回落 direct-frame（锚点经 hitbox offset 对齐吊灯底端中心）`plugins/lamp`
 - [x] 内建 `wire` 插件：`MapData.nodes`（实体子元素）解析 + 程序化绘制命令管线（`host_draw_line` FFI、每帧 `draw_commands`、二次贝塞尔 24px 垂坠、above 深度分层）`plugins/wire` `src/engine/draw.rs`
-- [ ] 其余内建插件：`booster`、`dream_block`、`crystal`、`spikes`、`crush`、`introCar` 等（按关卡实体优先级排序）
+- [ ] 其余内建插件：`booster`、`dream_block`、`crystal`、`crush`、`introCar` 等（按关卡实体优先级排序）
+- [x] 内建 `spikes` 插件：四方向（up/down/left/right）、3px 碰撞条、方向判定击杀 `plugins/spikes`
+- [x] 内建 `strawberry` 插件：触摸→跟随滞后→安全地面收集；goldenBerry 用 `set_bank("goldberry")` `plugins/strawberry`
+- [x] 死亡/重生管线：`death_timer` 冻结 + `respawn()` 重建房间，`collected` 集合跳过已收集草莓 `src/hotload/wasm_host.rs`
+- [x] 绘制管线扩展：`Image`（draw_image FFI）支持任意图集帧变换绘制 `src/engine/draw.rs` `src/interface/renderer.rs`
+- [x] 实体分类：无碰撞箱的装饰实体（wire/lamp/resortLantern/torch 等）分离到 `Level.decorations`
+- [x] 出生房间选择：`Level::from_bin` 查找包含 `player` 实体的房间而非 `levels.children.first()`
 - [x] 地图实体 → 插件的自动实例化：按 `ruleste_plugin_entity_types` 派发，未覆盖类型告警
 - [x] 插件安全：宿主对插件 panic/越界/OOM 的隔离与报错
   - `spawn_entity`: `call_init` trap → 回滚 ECS，日志告警
@@ -72,8 +78,16 @@
 - [ ] 加入/退出房间、延迟补偿、断线恢复
 
 ## Phase 8 — 打磨与完整复现
-- [ ] 成就/草莓/核心宝石/数字收集，存档读写
-- [ ] 金果冻/竹篮、吹风机、风场等机制补齐
+- [ ] 成就/草莓收集，存档读写
+- [ ] 金草莓/异变等机制补齐
 - [ ] 对话系统与过场、变奏曲、红心等章节机制
 - [ ] 性能：wasmtime 配置、渲染合批、热路径剖析
 - [ ] 打包与 CI（nix flake check、wasm 插件构建流水线）
+
+## Phase 9 — Extended Variant Mode（拓展异变）
+- [ ] 调研 `references/ExtendedVariantMode`（只读参考），设计异变参数模型
+- [ ] 宿主侧异变参数容器（重力倍率、游戏速度、无限冲刺等），运行时可热切换
+- [ ] 插件 FFI：`host_variant_get`/`host_variant_set`，让实体插件读取异变参数
+- [ ] `player` 插件接入异变：重力倍率、跳跃高度、冲刺次数、无敌等
+- [ ] 异变面板 UI（镜像原版 Variant 模式菜单）
+- [ ] 与地图存档/会话状态联动，异变参数持久化

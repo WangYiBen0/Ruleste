@@ -91,6 +91,23 @@ fn dump_map(path: &Path) -> anyhow::Result<()> {
         println!("    {count:>4}  {name}");
     }
 
+    let mut dec_hist: HashMap<&str, usize> = HashMap::new();
+    for d in &level.decorations {
+        *dec_hist.entry(d.name.as_str()).or_default() += 1;
+    }
+    if !level.decorations.is_empty() {
+        println!(
+            "  decorations: {} total, {} distinct types",
+            level.decorations.len(),
+            dec_hist.len()
+        );
+        let mut dtypes: Vec<_> = dec_hist.into_iter().collect();
+        dtypes.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+        for (name, count) in &dtypes {
+            println!("    {count:>4}  {name}");
+        }
+    }
+
     let sample = level
         .entities
         .iter()

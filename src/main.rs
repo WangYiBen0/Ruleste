@@ -81,16 +81,29 @@ fn main() -> anyhow::Result<()> {
     let mut wasm_host = WasmHost::new(world, input, solids, Path::new(&plugin_dir))?;
     wasm_host.load_plugins()?;
 
-    let spawn_recipes: Vec<(String, Vec<u8>)> = level
-        .entities
-        .iter()
-        .map(|e| (e.name.clone(), e.data.to_bytes()))
-        .collect();
-    wasm_host.set_respawn_entities(&spawn_recipes);
+    let mut all_spawns = Vec::new();
+    all_spawns.extend(
+        level
+            .entities
+            .iter()
+            .map(|e| (e.name.clone(), e.data.to_bytes())),
+    );
+    all_spawns.extend(
+        level
+            .decorations
+            .iter()
+            .map(|e| (e.name.clone(), e.data.to_bytes())),
+    );
 
-    println!("Spawning {} level entities...", level.entities.len());
+    wasm_host.set_respawn_entities(&all_spawns);
+
+    println!(
+        "Spawning {} entities and {} decorations...",
+        level.entities.len(),
+        level.decorations.len()
+    );
     let mut unhandled: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-    for (name, spawn) in &spawn_recipes {
+    for (name, spawn) in &all_spawns {
         match wasm_host.spawn_entity(name, spawn.clone()) {
             Ok(Some(_)) => {}
             Ok(None) => {
