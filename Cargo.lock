@@ -881,6 +881,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-cobweb"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
 name = "ruleste-lamp"
 version = "0.1.0"
 dependencies = [

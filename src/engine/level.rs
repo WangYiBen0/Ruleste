@@ -38,7 +38,7 @@ pub struct Level {
 fn is_decoration(name: &str) -> bool {
     matches!(
         name,
-        "wire" | "lamp" | "resortLantern" | "torch" | "hanginglamp" | "floatingDebris"
+        "wire" | "lamp" | "resortLantern" | "torch" | "hanginglamp" | "floatingDebris" | "cobweb"
     ) || name.starts_with("dec")
         || name.ends_with("dec")
 }

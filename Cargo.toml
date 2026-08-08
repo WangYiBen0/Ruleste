@@ -11,6 +11,7 @@ members = [
     "plugins/resortLantern",
     "plugins/spinner",
     "plugins/rotatespinner",
+    "plugins/cobweb",
 ]
 
 [package]
