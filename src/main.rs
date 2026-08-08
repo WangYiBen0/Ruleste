@@ -40,34 +40,36 @@ fn main() -> anyhow::Result<()> {
     let atlas = Atlas::load(Path::new(&atlas_path))?;
     let sprite_bank = SpriteBank::load(Path::new(&sprite_path))?;
     let level = Level::load(Path::new(&map_path))?;
-    let autotiler = Autotiler::load(Path::new(&autotiler_path))?;
-    let tile_grid = autotiler.generate(&level.solids);
-    {
-        let solid_tiles = level
-            .solids
-            .size()
-            .0
-            .checked_mul(level.solids.size().1)
-            .unwrap_or(0);
-        let mapped = tile_grid.tileset.iter().filter(|t| !t.is_empty()).count();
-        println!(
-            "autotiler: {}x{} grid, {} solid tiles, {} tiles mapped to textures",
-            level.solids.size().0,
-            level.solids.size().1,
-            solid_tiles,
-            mapped
-        );
-        let mut tilesets: std::collections::BTreeMap<&str, usize> =
-            std::collections::BTreeMap::new();
-        for t in &tile_grid.tileset {
-            if !t.is_empty() {
-                *tilesets.entry(t).or_default() += 1;
+        let autotiler = Autotiler::load(Path::new(&autotiler_path))?;
+        let tile_grid = autotiler.generate(&level.solids);
+        let bg_tile_grid = autotiler.generate(&level.bg);
+        {
+            let solid_tiles = level
+                .solids
+                .size()
+                .0
+                .checked_mul(level.solids.size().1)
+                .unwrap_or(0);
+            let mapped = tile_grid.tileset.iter().filter(|t| !t.is_empty()).count();
+            println!(
+                "autotiler: {}x{} grid, {} solid tiles, {} tiles mapped to textures",
+                level.solids.size().0,
+                level.solids.size().1,
+                solid_tiles,
+                mapped
+            );
+            let mut tilesets: std::collections::BTreeMap<&str, usize> =
+                std::collections::BTreeMap::new();
+            for t in &tile_grid.tileset {
+                if !t.is_empty() {
+                    *tilesets.entry(t).or_default() += 1;
+                }
+            }
+            for (ts, n) in &tilesets {
+                println!("  tileset {ts}: {n} tiles");
             }
         }
-        for (ts, n) in &tilesets {
-            println!("  tileset {ts}: {n} tiles");
-        }
-    }
+
 
     println!("Initializing SDL3 renderer...");
     let mut renderer = Renderer::new()?;
@@ -177,6 +179,7 @@ fn main() -> anyhow::Result<()> {
 
         // Render frame
         renderer.clear();
+        renderer.draw_solids(&bg_tile_grid, &atlas);
         renderer.draw_solids(&tile_grid, &atlas);
         // Run plugin draw hooks: they set sprite animations and submit custom
         // geometry (e.g. wire cables) before the renderer snapshots the frame.

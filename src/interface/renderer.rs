@@ -47,7 +47,7 @@ impl Renderer {
             WINDOW_WIDTH * PIXEL_SCALE,
             WINDOW_HEIGHT * PIXEL_SCALE,
         );
-        let window = builder.resizable().build()?;
+        let window = builder.build()?;
         let mut canvas = sdl3::render::create_renderer(window.clone(), None)?;
         let pump = sdl.event_pump()?;
         // Render at the fixed internal resolution and let SDL scale it to the
@@ -97,8 +97,8 @@ impl Renderer {
                 let Some((tileset_path, col, row)) = tile_grid.tile_at(tx, ty) else {
                     continue;
                 };
-                let x = tx as f32 * 8.0 - self.camera.x;
-                let y = ty as f32 * 8.0 - self.camera.y;
+                let x = (tx as f32 * 8.0 - self.camera.x).round();
+                let y = (ty as f32 * 8.0 - self.camera.y).round();
 
                 // The XML `path` is relative to "tilesets/", matching the
                 // atlas frame id (e.g. "tilesets/dirt").

@@ -250,20 +250,26 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         }
     }
 
-    // Integrate movement and resolve collisions.
-    let result = entity.collision.actor_move(speed.x * dt, speed.y * dt);
-    let mut speed = entity.speed.get();
-    if result.on_ground && speed.y > 0.0 {
-        speed.y = 0.0;
-    }
-    if (result.hit_wall_left && speed.x < 0.0) || (result.hit_wall_right && speed.x > 0.0) {
+    // Horizontal movement and collision.
+    let result_h = entity.collision.actor_move(speed.x * dt, 0.0);
+    if (result_h.hit_wall_left && speed.x < 0.0) || (result_h.hit_wall_right && speed.x > 0.0) {
         speed.x = 0.0;
     }
-    if result.hit_ceiling && speed.y < 0.0 {
+
+    // Vertical movement and collision.
+    let result_v = entity.collision.actor_move(0.0, speed.y * dt);
+    if result_v.on_ground && speed.y > 0.0 {
+        speed.y = 0.0;
+    }
+    if (result_v.hit_wall_left && speed.x < 0.0) || (result_v.hit_wall_right && speed.x > 0.0) {
+        // Horizontal collision during vertical move (e.g., corner).
+        speed.x = 0.0;
+    }
+    if result_v.hit_ceiling && speed.y < 0.0 {
         speed.y = 0.0;
         st.var_jump_timer = 0.0;
     }
-    if result.on_ground {
+    if result_v.on_ground {
         st.jump_grace = JUMP_GRACE_TIME;
     }
     entity.speed.set(speed);

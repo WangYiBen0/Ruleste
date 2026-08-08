@@ -65,8 +65,11 @@ impl Level {
             .children
             .iter()
             .find(|l| {
-                l.child("entities")
-                    .is_some_and(|ents| ents.children.iter().any(|e| e.name == "player"))
+                let x = l.attr_f32("x", 0.0);
+                let y = l.attr_f32("y", 0.0);
+                let w = l.attr_f32("width", 0.0);
+                let h = l.attr_f32("height", 0.0);
+                x <= 0.0 && y <= 0.0 && x + w > 0.0 && y + h > 0.0
             })
             .or_else(|| levels_el.children.first())
             .ok_or_else(|| anyhow::anyhow!("map {:?} has no levels", name))?;
