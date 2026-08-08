@@ -1,0 +1,13 @@
+[package]
+name = "ruleste-door"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Door entity plugin — opens its sprite animation when the player touches it."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }

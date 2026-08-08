@@ -54,6 +54,7 @@
 - [x] `jumpThru` 单向平台：解析进 `SolidGrid` 碰撞网格（顶面可站、下方可穿、向上穿过），player 自动受益，含物理单测 `src/engine/physics.rs`
 - [x] 内建 `cobweb` 装饰插件：二次贝塞尔蛛网线（摆动、支线、边缘深色）`plugins/cobweb`
 - [x] 内建 `soundSource` 占位插件：暂存 `sound` 事件名，等待 SDL 音频 `plugins/soundsource`
+- [x] 内建 `door` 插件：PlayerCollider 触发 `open`→`close`→`idle` SpriteBank 动画链、按接近方向 flip、撞 solid 禁门 `plugins/door`
 - [x] 碰撞网格换算修复：`SolidGrid::collide_rect` 像素坐标未除 tile 尺寸导致的越界误判（全实体碰撞大 bug）`src/engine/physics.rs`
 - [x] 地图实体 → 插件的自动实例化：按 `ruleste_plugin_entity_types` 派发，未覆盖类型告警
 - [x] 插件安全：宿主对插件 panic/越界/OOM 的隔离与报错
