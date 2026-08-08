@@ -68,10 +68,10 @@ impl SolidGrid {
         if w <= 0.0 || h <= 0.0 {
             return false;
         }
-        let x0 = x.floor() as i32;
-        let y0 = y.floor() as i32;
-        let x1 = (x + w - f32::EPSILON).floor() as i32;
-        let y1 = (y + h - f32::EPSILON).floor() as i32;
+        let x0 = (x / TILE).floor() as i32;
+        let y0 = (y / TILE).floor() as i32;
+        let x1 = ((x + w - f32::EPSILON) / TILE).floor() as i32;
+        let y1 = ((y + h - f32::EPSILON) / TILE).floor() as i32;
         for ty in y0..=y1 {
             for tx in x0..=x1 {
                 if self.solid_at(tx, ty) {
