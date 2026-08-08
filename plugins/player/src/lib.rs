@@ -120,6 +120,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
 
 #[no_mangle]
 pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
+    handle_events(id);
     let entity = Entity::new(id);
     let mut speed = entity.speed.get();
 
@@ -312,6 +313,44 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     }
 }
 
+/// Handles events from other plugins (refills, boosters) before movement.
+/// Refills top up the dash count (via `EV_REFILL`); boosters launch the player
+/// along the held aim direction (via `EV_BOOST`), refilling dashes like the
+/// original's `BoostBegin`.
+fn handle_events(id: EntityId) {
+    for (_, kind, data) in ruleste_plugin_api::host::drain_events() {
+        with_state(id, |st| match kind {
+            ruleste_plugin_api::host::EV_REFILL => {
+                let two = data.first().copied().unwrap_or(0) != 0;
+                st.dashes = if two { 2 } else { 1 };
+                st.dash_cooldown = 0.0;
+            }
+            ruleste_plugin_api::host::EV_BOOST => {
+                let move_x = Input::axis(input::MOVE_RIGHT) - Input::axis(input::MOVE_LEFT);
+                let move_y = Input::axis(input::MOVE_DOWN) - Input::axis(input::MOVE_UP);
+                let dir = if move_x != 0.0 || move_y != 0.0 {
+                    normalize(move_x, move_y)
+                } else {
+                    Vec2::new(st.facing as f32, 0.0)
+                };
+                st.dashes = 1;
+                st.dash_dir = dir;
+                st.dash_timer = DASH_TIME;
+                st.dash_cooldown = 0.0;
+                st.wall_slide_dir = 0;
+                ruleste_plugin_api::host::Speed::new(id)
+                    .set(Vec2::new(dir.x * DASH_SPEED, dir.y * DASH_SPEED));
+                ruleste_plugin_api::host::emit(
+                    id,
+                    ruleste_plugin_api::plugin::event::PLAYER_DASH,
+                    &[],
+                );
+            }
+            _ => {}
+        });
+    }
+}
+
 /// Attempts to start a dash. Returns `true` when the player is dashing and the
 /// normal movement step must be skipped.
 fn try_start_dash(entity: &Entity, dt: f32, speed: &mut Vec2) -> bool {
@@ -346,11 +385,16 @@ fn try_start_dash(entity: &Entity, dt: f32, speed: &mut Vec2) -> bool {
             let result: ActorMoveResult = entity
                 .collision
                 .actor_move(d.x * DASH_SPEED * dt, d.y * DASH_SPEED * dt);
+            let crushed = dash_hits_crushblock(entity);
+            if crushed {
+                emit_crush(entity.id, d);
+            }
             if st.dash_timer <= 0.0
                 || result.on_ground
                 || result.hit_wall_left
                 || result.hit_wall_right
                 || result.hit_ceiling
+                || crushed
             {
                 st.dash_timer = 0.0;
                 st.dash_cooldown = DASH_COOLDOWN;
@@ -385,6 +429,39 @@ fn try_start_dash(entity: &Entity, dt: f32, speed: &mut Vec2) -> bool {
             false
         }
     })
+}
+
+/// True when the dashing player overlaps a `crushBlock` entity's hitbox.
+/// The dash pushes into the block from the player's side; the block then
+/// crushes in the opposite direction.
+fn dash_hits_crushblock(entity: &Entity) -> bool {
+    let p = entity.position.get();
+    let (w, h, ox, oy) = entity.hitbox.get();
+    let px = p.x + ox;
+    let py = p.y + oy;
+    for block_id in ruleste_plugin_api::host::entities_by_type("crushBlock") {
+        if !ruleste_plugin_api::host::entity_alive(block_id) {
+            continue;
+        }
+        let bp = ruleste_plugin_api::host::Position::new(block_id).get();
+        let (bw, bh, box_, boy) = ruleste_plugin_api::host::Hitbox::new(block_id).get();
+        let bx = bp.x + box_;
+        let by = bp.y + boy;
+        let overlap = px < bx + bw && px + w > bx && py < by + bh && py + h > by;
+        if overlap {
+            return true;
+        }
+    }
+    false
+}
+
+/// Tells a touched `crushBlock` that the player dashed into it, sending the
+/// dash direction so the block can crush opposite to it.
+fn emit_crush(id: EntityId, d: Vec2) {
+    let mut buf = [0u8; 8];
+    buf[0..4].copy_from_slice(&d.x.to_le_bytes());
+    buf[4..8].copy_from_slice(&d.y.to_le_bytes());
+    ruleste_plugin_api::host::emit(id, ruleste_plugin_api::host::EV_CRUSH, &buf);
 }
 
 #[no_mangle]

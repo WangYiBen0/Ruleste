@@ -63,6 +63,12 @@
 - [x] 内建 `hanginglamp` 插件：链线 + `objects/hanginglamp` 灯，depth 2000 `plugins/hanginglamp`
 - [x] 内建 `dreamBlock` 插件：可站立 Solid，disabled 渲染（暗青背景 + 漂移粒子 + wobble 边框/角块），depth -11000 `plugins/dreamblock`
 - [x] 内建 `floatingDebris`/`foregroundDebris` 插件：程序化漂浮碎石/视差背景石（章节 atlas 纹理待多 atlas 支持）`plugins/debris`
+- [x] 内建 `refill` 插件：绿/粉 dash 恢复宝石（twoDash/oneUse 属性、idle 帧动画 + 周期闪光、接触→`EV_REFILL` 事件充满 dash、非 oneUse 2.5s 重生）`plugins/refill`
+- [x] 内建 `booster` 插件：绿/红助推垫（接触→`EV_BOOST` 事件沿瞄准方向弹射、spin→pop→1s 重生、SpriteBank 帧索引直接映射）`plugins/booster`
+- [x] 内建 `crushBlock` 插件：可站立 riding Solid，玩家 dash 撞入→`EV_CRUSH` 反方向 240 u/s 加速碾压至撞墙→回退原位；axes/chillout/giant 属性 `plugins/crushblock`
+- [x] 事件常量：插件共享 `EV_REFILL/EV_BOOST/EV_CRUSH`（`ruleste-plugin-api`）+ player 插件事件处理（充满 dash、弹射）
+- [x] player 插件 dash 撞 crushBlock 检测：dash 中与 crushBlock hitbox 重叠→发 `EV_CRUSH` 并结束 dash
+- [x] 集成测试：refill oneUse 消耗/两 dash 重生、booster/crushBlock 实例化、crushBlock 平台注册 `tests/interactions.rs`
 - [x] 2-OldSite 全实体类型有插件处理（dreamBlock/lightbeam/foregroundDebris/hanginglamp/floatingDebris）
 - [x] 碰撞网格换算修复：`SolidGrid::collide_rect` 像素坐标未除 tile 尺寸导致的越界误判（全实体碰撞大 bug）`src/engine/physics.rs`
 - [x] 地图实体 → 插件的自动实例化：按 `ruleste_plugin_entity_types` 派发，未覆盖类型告警

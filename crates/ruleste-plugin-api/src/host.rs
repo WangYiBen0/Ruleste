@@ -5,6 +5,13 @@
 use crate::types::{Color, EntityId, Vec2};
 use std::string::String;
 
+/// Event kinds passed over the host event bus (`host_emit` /
+/// `host_drain_events`). Plugins agree on these numbers: a refill restores the
+/// player's dashes, a booster launches it, a crushed block reports a dash hit.
+pub const EV_REFILL: u32 = 1;
+pub const EV_BOOST: u32 = 2;
+pub const EV_CRUSH: u32 = 3;
+
 #[allow(dead_code)]
 #[link(wasm_import_module = "env")]
 extern "C" {

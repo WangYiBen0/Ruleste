@@ -881,6 +881,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-booster"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
 name = "ruleste-clutter"
 version = "0.1.0"
 dependencies = [
@@ -889,6 +896,13 @@ dependencies = [
 
 [[package]]
 name = "ruleste-cobweb"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-crushblock"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
@@ -955,6 +969,13 @@ name = "ruleste-plugin-api"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "ruleste-refill"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
 ]
 
 [[package]]

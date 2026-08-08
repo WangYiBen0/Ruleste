@@ -1,0 +1,13 @@
+[package]
+name = "ruleste-refill"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Refill entity plugin — the green/pink dash-refresh gems that vanish and respawn."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }

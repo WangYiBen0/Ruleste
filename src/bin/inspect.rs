@@ -202,6 +202,13 @@ fn dump_atlas(path: &Path) -> anyhow::Result<()> {
         "util/lightbeam",
         "objects/dreamblock/particles",
         "objects/hanginglamp",
+        "objects/crushblock/block00",
+        "objects/crushblock/block01",
+        "objects/crushblock/block02",
+        "objects/crushblock/block03",
+        "objects/booster/booster00",
+        "objects/refill/idle00",
+        "objects/refillTwo/idle00",
     ] {
         let Some(clip) = atlas.frame_clip(fid) else {
             println!("  {fid}: not found");
