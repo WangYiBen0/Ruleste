@@ -43,3 +43,21 @@ pub struct Image {
     pub flip_y: bool,
     pub color: Color,
 }
+
+/// An autotiled box of 8x8 tiles (mirrors `Autotiler.GenerateBox`, e.g. the
+/// introCrusher slab). The host fills `col`/`row` from the solid-grid
+/// adjacency pass; the renderer blits each cell from the tileset frame.
+#[derive(Debug, Clone)]
+pub struct TileBox {
+    /// Atlas frame id of the tileset, e.g. `tilesets/snow`.
+    pub frame_id: String,
+    /// Top-left corner in world coordinates.
+    pub x: f32,
+    pub y: f32,
+    pub width: usize,
+    pub height: usize,
+    /// Per-cell column index in the tileset texture (row-major).
+    pub col: Vec<u32>,
+    /// Per-cell row index in the tileset texture (row-major).
+    pub row: Vec<u32>,
+}

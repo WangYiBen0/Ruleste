@@ -50,17 +50,20 @@
             {
               name = "ruleste";
 
-              packages = [
-                (toolchain system)
-                pkgs.pkg-config
-                pkgs.sdl3
-                pkgs.dotnet-sdk
-                pkgs.ilspycmd
-                pkgs.mono
-              ]
-              ++ lib.optionals pkgs.stdenv.isLinux [
-                pkgs.file
-              ];
+              packages =
+                with pkgs;
+                [
+                  (toolchain system)
+                  pkg-config
+                  sdl3
+                  dotnet-sdk
+                  ilspycmd
+                  mono
+                  lld
+                ]
+                ++ lib.optionals pkgs.stdenv.isLinux [
+                  file
+                ];
 
               # sdl3-sys / pkg-config (sdl3.pc ships in the .dev output)
               PKG_CONFIG_PATH = "${pkgs.sdl3.dev}/lib/pkgconfig";

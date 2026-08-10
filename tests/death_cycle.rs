@@ -1,10 +1,10 @@
 //! End-to-end death cycle: the spikes plugin kills the player, the host
 //! freezes the room, and respawns it from the recorded spawn recipes.
 //!
-//! Requires the wasm plugins to be built (`cargo build -p ... --target
+//! Requires the wasm plugins to be built (`./build.sh` or `cargo build -p ... --target
 //! wasm32-unknown-unknown --release`); the test skips when they are absent.
 
-use std::path::Path;
+use std::path::PathBuf;
 
 use ruleste::engine::ecs::World;
 use ruleste::engine::input::Input;
@@ -12,7 +12,13 @@ use ruleste::engine::physics::SolidGrid;
 use ruleste::hotload::wasm_host::WasmHost;
 use ruleste_plugin_api::map::{MapAttr, MapData};
 
-const PLUGIN_DIR: &str = "target/wasm32-unknown-unknown/release";
+/// The wasm plugin dir: `$RULESTE_PLUGIN_PATH` wins, otherwise fall back to
+/// the standard cargo output so tests work out of the box after `./build.sh`.
+fn plugin_dir() -> PathBuf {
+    std::env::var_os("RULESTE_PLUGIN_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("target/wasm32-unknown-unknown/release"))
+}
 
 fn spawn_map(x: f32, y: f32) -> Vec<u8> {
     let data = MapData {
@@ -26,7 +32,7 @@ fn spawn_map(x: f32, y: f32) -> Vec<u8> {
 }
 
 fn has_plugins() -> bool {
-    std::fs::read_dir(PLUGIN_DIR)
+    std::fs::read_dir(plugin_dir())
         .map(|it| {
             it.flatten()
                 .any(|e| e.path().extension().is_some_and(|e| e == "wasm"))
@@ -44,7 +50,7 @@ fn spike_kills_and_room_respawns() {
         World::new(),
         Input::default(),
         SolidGrid::from_rows(&[]),
-        Path::new(PLUGIN_DIR),
+        plugin_dir(),
     )
     .unwrap();
     host.load_plugins().unwrap();
@@ -124,7 +130,7 @@ fn collected_strawberry_does_not_respawn() {
         World::new(),
         Input::default(),
         SolidGrid::from_rows(&[]),
-        Path::new(PLUGIN_DIR),
+        plugin_dir(),
     )
     .unwrap();
     host.load_plugins().unwrap();

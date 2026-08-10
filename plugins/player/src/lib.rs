@@ -16,7 +16,6 @@ use ruleste_plugin_api::ruleste_meta;
 use ruleste_plugin_api::ruleste_noop_destroy;
 use ruleste_plugin_api::types::input;
 use ruleste_plugin_api::types::{EntityId, Vec2};
-
 const GRAVITY: f32 = 900.0;
 const MAX_FALL: f32 = 160.0;
 const FAST_MAX_FALL: f32 = 240.0;
@@ -39,10 +38,22 @@ const WALL_JUMP_SPEED: f32 = -160.0;
 const WALL_SLIDE_MAX_FALL: f32 = 20.0;
 const WALL_SLIDE_TIME: f32 = 1.2;
 const WALL_CHECK_DIST: f32 = 3.0;
+const SUPER_JUMP_H: f32 = 260.0;
+const SUPER_JUMP_Y: f32 = -105.0;
+const DUCK_SUPER_X_MULT: f32 = 1.25;
+const DUCK_SUPER_Y_MULT: f32 = 0.5;
+const DASH_FLATTEN_MULT: f32 = 1.2;
 
 /// Hitboxes (`Player.cs`): size and offset relative to the foot-center anchor.
 const NORMAL_HITBOX: (f32, f32, f32, f32) = (8.0, 11.0, -4.0, -11.0);
 const DUCK_HITBOX: (f32, f32, f32, f32) = (8.0, 6.0, -4.0, -6.0);
+
+/// State-machine values mirroring `Player.cs` `StNormal`/`StClimb`/`StDash`,
+/// for the debug state dump (`RULESTE_DEBUG=1`). `StRedDash`/`StSwim` etc. are
+/// not reachable from the normal/dash/climb set this plugin implements.
+const ST_NORMAL: u32 = 0;
+const ST_CLIMB: u32 = 1;
+const ST_DASH: u32 = 2;
 
 ruleste_meta!("player");
 ruleste_entity_types!("player");
@@ -62,6 +73,8 @@ struct PlayerState {
     dash_dir: Vec2,
     wall_slide_timer: f32,
     wall_slide_dir: i32,
+    /// Last derived state-machine value, used to log transitions in debug mode.
+    debug_state: u32,
 }
 
 impl Default for PlayerState {
@@ -78,6 +91,7 @@ impl Default for PlayerState {
             dash_dir: Vec2::ZERO,
             wall_slide_timer: 0.0,
             wall_slide_dir: 0,
+            debug_state: ST_NORMAL,
         }
     }
 }
@@ -140,6 +154,10 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     if grounded {
         st.dash_cooldown = 0.0;
         st.dashes = 1;
+        // Keep the coyote timer topped up while grounded: when standing flush
+        // on ground the vertical move below is a no-op (dy == 0), so the jump
+        // would only be re-armed on the landing frame of an actual fall.
+        st.jump_grace = JUMP_GRACE_TIME;
     }
     if move_x != 0.0 {
         st.facing = if move_x > 0.0 { 1 } else { -1 };
@@ -208,6 +226,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             st.var_jump_timer = VAR_JUMP_TIME;
             st.var_jump_speed = speed.y;
             entity.speed.set(speed);
+            Input::consume(input::JUMP);
             ruleste_plugin_api::host::emit(id, ruleste_plugin_api::plugin::event::PLAYER_JUMP, &[]);
         } else if !st.ducking && wall_right {
             speed.x = -WALL_JUMP_HSPEED;
@@ -218,6 +237,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             st.wall_slide_dir = 0;
             st.wall_slide_timer = 0.0;
             entity.speed.set(speed);
+            Input::consume(input::JUMP);
             ruleste_plugin_api::host::emit(id, ruleste_plugin_api::plugin::event::PLAYER_JUMP, &[]);
         } else if !st.ducking && wall_left {
             speed.x = WALL_JUMP_HSPEED;
@@ -228,6 +248,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             st.wall_slide_dir = 0;
             st.wall_slide_timer = 0.0;
             entity.speed.set(speed);
+            Input::consume(input::JUMP);
             ruleste_plugin_api::host::emit(id, ruleste_plugin_api::plugin::event::PLAYER_JUMP, &[]);
         }
     }
@@ -274,9 +295,34 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     }
     entity.speed.set(speed);
 
+    debug_state_log(id, &st);
     STATES.with(|s| {
         s.borrow_mut().insert(id, st);
     });
+}
+
+/// Derives the current state-machine value (mirroring `Player.cs` `State`)
+/// and, in debug mode, logs a line when it changes.
+fn debug_state_log(id: EntityId, st: &PlayerState) {
+    let state = if st.dash_timer > 0.0 {
+        ST_DASH
+    } else if st.wall_slide_dir != 0 {
+        ST_CLIMB
+    } else {
+        ST_NORMAL
+    };
+    if st.debug_state == state {
+        return;
+    }
+    if !ruleste_plugin_api::host::debug_enabled() {
+        return;
+    }
+    let name = match state {
+        ST_DASH => "Dash",
+        ST_CLIMB => "Climb",
+        _ => "Normal",
+    };
+    ruleste_plugin_api::host::log(&format!("player {id} state -> {name} ({state})"));
 }
 
 #[no_mangle]
@@ -374,7 +420,27 @@ fn try_start_dash(entity: &Entity, dt: f32, speed: &mut Vec2) -> bool {
                 st.dash_timer = DASH_TIME;
                 st.dashes -= 1;
                 st.wall_slide_dir = 0;
+                if dir.x != 0.0 {
+                    st.facing = if dir.x > 0.0 { 1 } else { -1 };
+                }
+                // DashBegin: an airborne duck resumes standing when the dash
+                // allows it; holding down while starting a dash ducks.
+                if !entity.collision.is_grounded() && st.ducking && can_unduck(entity, true) {
+                    st.ducking = false;
+                    entity.hitbox.set(
+                        NORMAL_HITBOX.0,
+                        NORMAL_HITBOX.1,
+                        NORMAL_HITBOX.2,
+                        NORMAL_HITBOX.3,
+                    );
+                } else if !st.ducking && move_y > 0.0 {
+                    st.ducking = true;
+                    entity
+                        .hitbox
+                        .set(DUCK_HITBOX.0, DUCK_HITBOX.1, DUCK_HITBOX.2, DUCK_HITBOX.3);
+                }
                 *speed = Vec2::new(dir.x * DASH_SPEED, dir.y * DASH_SPEED);
+                Input::consume(input::DASH);
                 ruleste_plugin_api::host::emit(
                     entity.id,
                     ruleste_plugin_api::plugin::event::PLAYER_DASH,
@@ -386,17 +452,63 @@ fn try_start_dash(entity: &Entity, dt: f32, speed: &mut Vec2) -> bool {
 
     with_state(entity.id, |st| {
         if st.dash_timer > 0.0 {
+            // SuperJump: while a horizontal dash is near the ground, a jump
+            // press converts into a 260 u/s leap (325 u/s and flatter arc from
+            // a duck) — the basis of hypers and wavedashes.
+            if st.dash_dir.y.abs() < 0.1
+                && Input::pressed(input::JUMP)
+                && st.jump_grace > 0.0
+                && can_unduck(entity, st.ducking)
+            {
+                st.dash_timer = 0.0;
+                st.dash_cooldown = DASH_COOLDOWN;
+                st.jump_grace = 0.0;
+                st.var_jump_timer = VAR_JUMP_TIME;
+                st.wall_slide_timer = WALL_SLIDE_TIME;
+                *speed = Vec2::new(SUPER_JUMP_H * st.facing as f32, SUPER_JUMP_Y);
+                if st.ducking {
+                    st.ducking = false;
+                    entity.hitbox.set(
+                        NORMAL_HITBOX.0,
+                        NORMAL_HITBOX.1,
+                        NORMAL_HITBOX.2,
+                        NORMAL_HITBOX.3,
+                    );
+                    speed.x *= DUCK_SUPER_X_MULT;
+                    speed.y *= DUCK_SUPER_Y_MULT;
+                }
+                st.var_jump_speed = speed.y;
+                Input::consume(input::JUMP);
+                ruleste_plugin_api::host::emit(
+                    entity.id,
+                    ruleste_plugin_api::plugin::event::PLAYER_JUMP,
+                    &[],
+                );
+                return true;
+            }
+            if entity.collision.is_grounded() {
+                st.jump_grace = JUMP_GRACE_TIME;
+            }
             st.dash_timer -= dt;
             let d = st.dash_dir;
-            let result: ActorMoveResult = entity
-                .collision
-                .actor_move(d.x * DASH_SPEED * dt, d.y * DASH_SPEED * dt);
+            let result: ActorMoveResult = entity.collision.actor_move(speed.x * dt, speed.y * dt);
             let crushed = dash_hits_crushblock(entity);
             if crushed {
                 emit_crush(entity.id, d);
             }
-            if st.dash_timer <= 0.0
-                || result.on_ground
+            // OnCollideV / DashCoroutine: a diagonal-down dash that reaches the
+            // ground flattens into a horizontal 1.2x dash and ducks, instead of
+            // ending — the setup for a hyperdash off the dash.
+            if result.on_ground && d.x != 0.0 && d.y > 0.0 && speed.y > 0.0 {
+                st.dash_dir = Vec2::new(d.x.signum(), 0.0);
+                *speed = Vec2::new(speed.x * DASH_FLATTEN_MULT, 0.0);
+                if !st.ducking {
+                    st.ducking = true;
+                    entity
+                        .hitbox
+                        .set(DUCK_HITBOX.0, DUCK_HITBOX.1, DUCK_HITBOX.2, DUCK_HITBOX.3);
+                }
+            } else if st.dash_timer <= 0.0
                 || result.hit_wall_left
                 || result.hit_wall_right
                 || result.hit_ceiling
@@ -404,30 +516,25 @@ fn try_start_dash(entity: &Entity, dt: f32, speed: &mut Vec2) -> bool {
             {
                 st.dash_timer = 0.0;
                 st.dash_cooldown = DASH_COOLDOWN;
-                if result.on_ground {
-                    *speed = Vec2::ZERO;
+                // DashCoroutine end: walls/ceiling reflect the tail speed;
+                // forward/upward dashes taper to `DashDir * 160` with upward
+                // parts trimmed to 0.75x; downward dashes keep their momentum.
+                let dx = if result.hit_wall_left {
+                    -1.0
+                } else if result.hit_wall_right {
+                    1.0
                 } else {
-                    let mut dx = if result.hit_wall_left {
-                        -1.0
-                    } else if result.hit_wall_right {
-                        1.0
-                    } else {
-                        d.x
-                    };
-                    let mut dy = if result.hit_ceiling { 1.0 } else { d.y };
-                    if result.on_ground {
-                        dy = 0.0;
-                    }
-                    if dy < 0.0 {
-                        dy *= END_DASH_UP_MULT;
-                    }
-                    if dx == 0.0 && dy == 0.0 {
-                        dx = st.facing as f32;
-                    }
+                    d.x
+                };
+                let dy = if result.hit_ceiling { 1.0 } else { d.y };
+                if result.hit_wall_left || result.hit_wall_right || result.hit_ceiling {
                     let n = (dx * dx + dy * dy).sqrt().max(1.0);
-                    dx = dx / n * END_DASH_SPEED;
-                    dy = dy / n * END_DASH_SPEED;
-                    *speed = Vec2::new(dx, dy);
+                    *speed = Vec2::new(dx / n * END_DASH_SPEED, dy / n * END_DASH_SPEED);
+                } else if d.y <= 0.0 {
+                    *speed = Vec2::new(d.x * END_DASH_SPEED, d.y * END_DASH_SPEED);
+                    if speed.y < 0.0 {
+                        speed.y *= END_DASH_UP_MULT;
+                    }
                 }
             }
             true
@@ -435,6 +542,12 @@ fn try_start_dash(entity: &Entity, dt: f32, speed: &mut Vec2) -> bool {
             false
         }
     })
+}
+
+/// True when the player can stand up right now: if ducking, the normal
+/// hitbox's extra 5 px of headroom over the duck hitbox must be clear.
+fn can_unduck(entity: &Entity, ducking: bool) -> bool {
+    !ducking || !entity.collision.check(0.0, -5.0)
 }
 
 /// True when the dashing player overlaps a `crushBlock` entity's hitbox.
@@ -486,6 +599,7 @@ pub extern "C" fn ruleste_entity_serialize(id: EntityId, out_len: *mut u32) -> u
     push_f32(&mut buf, st.dash_dir.y);
     push_f32(&mut buf, st.wall_slide_timer);
     push_i32(&mut buf, st.wall_slide_dir);
+    push_u32(&mut buf, st.debug_state);
     unsafe { *out_len = buf.len() as u32 }
     let ptr = buf.as_ptr() as u32;
     SER_BUF.with(|b| *b.borrow_mut() = buf);
@@ -503,6 +617,10 @@ pub extern "C" fn ruleste_entity_deserialize(id: EntityId, data: *const u8, len:
 }
 
 fn push_f32(buf: &mut Vec<u8>, v: f32) {
+    buf.extend_from_slice(&v.to_le_bytes());
+}
+
+fn push_u32(buf: &mut Vec<u8>, v: u32) {
     buf.extend_from_slice(&v.to_le_bytes());
 }
 
@@ -528,6 +646,7 @@ fn parse_state(bytes: &[u8]) -> Option<PlayerState> {
         dash_dir: Vec2::new(r.f32()?, r.f32()?),
         wall_slide_timer: r.f32()?,
         wall_slide_dir: r.i32()?,
+        debug_state: r.u32()?,
     })
 }
 
@@ -557,6 +676,10 @@ impl<'a> Cursor<'a> {
 
     fn i32(&mut self) -> Option<i32> {
         Some(i32::from_le_bytes(self.take(4)?.try_into().ok()?))
+    }
+
+    fn u32(&mut self) -> Option<u32> {
+        Some(u32::from_le_bytes(self.take(4)?.try_into().ok()?))
     }
 }
 

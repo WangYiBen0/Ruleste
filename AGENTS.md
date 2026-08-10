@@ -37,9 +37,11 @@ cargo run
   - `src/hotload/` — Mtime 热重载监视器（地图、对话、Wasm 插件）
 - `plugins/` — Wasm 实体插件（`wasm32-unknown-unknown` 目标）
   - 例如 `plugins/player/` 玩家插件，`plugins/booster/` 助推器插件
-- `map/` — 地图
-- `resources/` — 资源包，包含纹理包、字体包、语言包、音效包等
-  - 例如 `{map,resources}/Celeste/` 官方地图与资源包，但是不参与分发，而是提供一个将原版 `Content/` 转换为 `map/resources` 的工具
+- `maps/` — 关卡包，按 pack 分目录（例如 `maps/Celeste/*.bin`）
+- `resources/` — 资源包，按 pack/namespace 分目录：
+  - 例如 `resources/Celeste/Celeste/` 为原版 Celeste pack（pack=Celeste、namespace=Celeste）
+  - 子目录：`pack.png`、`metadata.json`、`textures/`、`texts/`、`font/`、`audio/`（OGG + manifest）、`mountain/`、`tutorials/`、`effects/`
+  - 官方内容不参与分发，提供 `convert-from-celeste-contents.sh` 把原版 `Content/` 转成 pack 布局；FMOD `.bank` 由 `tools/bank-to-ogg.sh` 抽成 `audio/`
 - `references/` — 参考，只读，gitignored
   - 详见 `references/README.md`
 

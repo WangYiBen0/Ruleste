@@ -4,14 +4,15 @@ use std::collections::HashMap;
 
 use ruleste_plugin_api::types::Vec2;
 use sdl3::pixels::{Color as SdlColor, PixelFormat};
-use sdl3::render::{FRect, Texture, TextureAccess, WindowCanvas};
+use sdl3::render::{BlendMode, FRect, Texture, TextureAccess, WindowCanvas};
 use sdl3::video::{Window, WindowBuilder};
 use sdl3::{EventPump, Sdl};
 
-use crate::data::atlas::Atlas;
+use crate::data::atlas::{Atlas, FrameRect};
 use crate::data::spritebank::SpriteBank;
 use crate::engine::autotiler::TileGrid;
-use crate::engine::draw::{Image, Line, Rect};
+use crate::engine::backdrops::Backdrop;
+use crate::engine::draw::{Image, Line, Rect, TileBox};
 use crate::engine::ecs::World;
 use crate::engine::sprites::SpriteAnimator;
 
@@ -25,18 +26,37 @@ pub struct Renderer {
     _window: Window,
     pub pump: EventPump,
     atlas_textures: HashMap<usize, Texture>,
+    /// Dedicated per-frame textures for backdrop layers. Backdrops are
+    /// alpha/color modulated, so they must not share the atlas page textures
+    /// used by tiles and sprites. Stores the frame's offset/untrimmed box so
+    /// the tiling loop matches `Parallax.Render`.
+    backdrop_textures: HashMap<String, BackdropFrame>,
     camera: Vec2,
 }
 
+/// A backdrop texture plus the atlas frame's offset rect (untrimmed box).
+struct BackdropFrame {
+    texture: Texture,
+    offset: FrameRect,
+}
+
 impl Renderer {
-    pub fn new() -> anyhow::Result<Renderer> {
-        // Software renderer by default: it is verified to display correctly on
-        // X11 and Wayland (including Niri) with this SDL3 build, and avoids
-        // GPU-driver quirks. GPU drivers (e.g. vulkan) also work, but note
-        // that `SDL_RenderReadPixels` only returns valid data on the software
-        // path. Users can override with SDL_RENDER_DRIVER.
-        if std::env::var("SDL_RENDER_DRIVER").is_err() {
-            std::env::set_var("SDL_RENDER_DRIVER", "software");
+    /// `for_frame_dump` forces the software renderer: `SDL_RenderReadPixels`
+    /// (used by `RULESTE_DUMP_FRAME`) only returns valid data on the software
+    /// path. Normal gameplay uses the GPU (SDL's default pick: opengl/vulkan/
+    /// direct3d) so maximizing the window scales on the GPU instead of the CPU.
+    pub fn new(for_frame_dump: bool) -> anyhow::Result<Renderer> {
+        // Software renderer only when a frame dump is requested, so that
+        // `SDL_RenderReadPixels` works. Otherwise let SDL pick a hardware
+        // driver (GPU scaling is much cheaper than the CPU when maximized).
+        // The hint is Normal priority, so an explicit `SDL_RENDER_DRIVER`
+        // environment variable (Override priority) still wins.
+        if for_frame_dump {
+            sdl3::hint::set_with_priority(
+                "SDL_RENDER_DRIVER",
+                "software",
+                &sdl3::hint::Hint::Normal,
+            );
         }
         let sdl = sdl3::init()?;
         let video = sdl.video()?;
@@ -47,7 +67,7 @@ impl Renderer {
             WINDOW_WIDTH * PIXEL_SCALE,
             WINDOW_HEIGHT * PIXEL_SCALE,
         );
-        let window = builder.build()?;
+        let window = builder.resizable().build()?;
         let mut canvas = sdl3::render::create_renderer(window.clone(), None)?;
         let pump = sdl.event_pump()?;
         // Render at the fixed internal resolution and let SDL scale it to the
@@ -57,12 +77,22 @@ impl Renderer {
             WINDOW_HEIGHT,
             sdl3::sys::render::SDL_RendererLogicalPresentation::LETTERBOX,
         )?;
+        // SDL3 defaults the presentation (and texture) scale mode to LINEAR,
+        // which makes the 320x180 framebuffer look soft when upscaled. Force
+        // nearest-neighbor so pixels stay crisp at any window size.
+        unsafe {
+            sdl3::sys::render::SDL_SetDefaultTextureScaleMode(
+                canvas.raw(),
+                sdl3::sys::surface::SDL_ScaleMode::NEAREST,
+            );
+        }
         Ok(Renderer {
             sdl,
             canvas,
             _window: window,
             pump,
             atlas_textures: HashMap::new(),
+            backdrop_textures: HashMap::new(),
             camera: Vec2::ZERO,
         })
     }
@@ -86,6 +116,133 @@ impl Renderer {
             self.atlas_textures.insert(i, texture);
         }
         Ok(())
+    }
+
+    /// Crops a backdrop frame out of the atlas into its own texture, so it can
+    /// be tinted and alpha-blended without disturbing tiles/sprites.
+    pub fn upload_backdrop(&mut self, atlas: &Atlas, frame_id: &str) -> anyhow::Result<()> {
+        if self.backdrop_textures.contains_key(frame_id) {
+            return Ok(());
+        }
+        let Some(rgba) = atlas.frame_rgba_into(frame_id) else {
+            anyhow::bail!("backdrop frame {frame_id:?} not in atlas");
+        };
+        let (pi, fi) = atlas.frame_index[frame_id];
+        let frame = &atlas.pages[pi].frames[fi];
+        let w = frame.clip.w as u32;
+        let h = frame.clip.h as u32;
+        let creator = self.canvas.texture_creator();
+        let mut texture =
+            creator.create_texture(Some(PixelFormat::ABGR8888), TextureAccess::Static, w, h)?;
+        texture.set_blend_mode(BlendMode::Blend);
+        texture.update(None, &rgba, w as usize * 4)?;
+        self.backdrop_textures.insert(
+            frame_id.to_string(),
+            BackdropFrame {
+                texture,
+                offset: frame.offset,
+            },
+        );
+        Ok(())
+    }
+
+    /// Draws a list of parallax backdrops in screen space, mirroring
+    /// `Parallax.Render`. The camera's world position selects the tile of the
+    /// texture to show; the draw loop covers the whole 320x180 view.
+    pub fn draw_backdrops(&mut self, backdrops: &[Backdrop]) {
+        for b in backdrops {
+            let Some(bf) = self.backdrop_textures.get_mut(&b.texture) else {
+                eprintln!("ruleste: backdrop texture {:?} not uploaded", b.texture);
+                continue;
+            };
+            let texture = &mut bf.texture;
+            // The loop steps by the frame's untrimmed box (offset.w/h); the
+            // visible clip (our cropped texture) is drawn at `position - offset`.
+            let tw = bf.offset.w as f32;
+            let th = bf.offset.h as f32;
+            let ox = bf.offset.x as f32;
+            let oy = bf.offset.y as f32;
+            let cw = texture.width() as f32;
+            let ch = texture.height() as f32;
+
+            // `vector = (camera.position + camera_offset).floor()` (Parallax's
+            // own CameraOffset is zero); anchor the backdrop by scroll factor.
+            let cam = Vec2::new(self.camera.x.floor(), self.camera.y.floor());
+            let mut sx = (b.position.x - cam.x * b.scroll.x).floor();
+            let mut sy = (b.position.y - cam.y * b.scroll.y).floor();
+
+            // LoopX/LoopY: wrap the start tile into the untrimmed box dims.
+            if b.loop_x {
+                while sx < 0.0 {
+                    sx += tw;
+                }
+                while sx > 0.0 {
+                    sx -= tw;
+                }
+            }
+            if b.loop_y {
+                while sy < 0.0 {
+                    sy += th;
+                }
+                while sy > 0.0 {
+                    sy -= th;
+                }
+            }
+
+            // `Color *= alpha` scales every channel; skip fully-transparent.
+            if b.alpha <= 0.0 {
+                continue;
+            }
+            let mul = b.alpha;
+            let cr = (b.color.0 as f32 * mul).round() as u8;
+            let cg = (b.color.1 as f32 * mul).round() as u8;
+            let cb = (b.color.2 as f32 * mul).round() as u8;
+            let ca = (255.0 * mul).round() as u8;
+            if ca <= 1 {
+                continue;
+            }
+
+            if b.additive {
+                // SDL's Add blend is `dst += srcRGB * srcAlpha`, so the alpha
+                // must live in the color mod (as in XNA's One/One additive);
+                // applying it to alpha_mod as well would square it (4x faint).
+                texture.set_blend_mode(BlendMode::Add);
+                texture.set_color_mod(cr, cg, cb);
+                texture.set_alpha_mod(255);
+            } else {
+                texture.set_color_mod(cr, cg, cb);
+                texture.set_alpha_mod(ca);
+            }
+            let mut x = sx;
+            loop {
+                let mut y = sy;
+                loop {
+                    let dst = FRect::new(x - ox, y - oy, cw, ch);
+                    let _ = self
+                        .canvas
+                        .copy_ex(texture, None, dst, 0.0, None, b.flip_x, b.flip_y);
+                    if !b.loop_y {
+                        break;
+                    }
+                    y += th;
+                    if y >= WINDOW_HEIGHT as f32 {
+                        break;
+                    }
+                }
+                if !b.loop_x {
+                    break;
+                }
+                x += tw;
+                if x >= WINDOW_WIDTH as f32 {
+                    break;
+                }
+            }
+            if b.additive {
+                texture.set_blend_mode(BlendMode::Blend);
+            }
+            texture.set_color_mod(255, 255, 255);
+            texture.set_alpha_mod(255);
+        }
     }
 
     /// Draws the solid grid using autotiled textures from the atlas.
@@ -244,6 +401,41 @@ impl Renderer {
                 rect.w,
                 rect.h,
             ));
+        }
+    }
+
+    /// Draws plugin-submitted autotiled boxes (`TileBox`), e.g. introCrusher
+    /// slabs. Blits each 8x8 cell from the tileset frame, honoring the box's
+    /// world position.
+    pub fn draw_tile_boxes(&mut self, boxes: &[TileBox], atlas: &Atlas) {
+        for tile_box in boxes {
+            let Some(&(page_idx, frame_idx)) = atlas.frame_index.get(&tile_box.frame_id) else {
+                continue;
+            };
+            let page = &atlas.pages[page_idx];
+            let frame = &page.frames[frame_idx];
+            let Some(texture) = self.atlas_textures.get(&page_idx) else {
+                continue;
+            };
+            for ty in 0..tile_box.height {
+                for tx in 0..tile_box.width {
+                    let idx = ty * tile_box.width + tx;
+                    let col = tile_box.col[idx];
+                    let row = tile_box.row[idx];
+                    let x = (tile_box.x + tx as f32 * 8.0 - self.camera.x).round();
+                    let y = (tile_box.y + ty as f32 * 8.0 - self.camera.y).round();
+                    let src = FRect::new(
+                        frame.clip.x as f32 + col as f32 * 8.0,
+                        frame.clip.y as f32 + row as f32 * 8.0,
+                        8.0,
+                        8.0,
+                    );
+                    let dst = FRect::new(x, y, 8.0, 8.0);
+                    let _ = self
+                        .canvas
+                        .copy_ex(texture, src, dst, 0.0, None, false, false);
+                }
+            }
         }
     }
 

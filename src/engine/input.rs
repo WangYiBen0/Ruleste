@@ -19,6 +19,19 @@ impl Binding {
     }
 }
 
+/// Buffer window per action, mirroring `Input.cs` `new VirtualButton(..., 0.08f, 0.2f)`.
+/// A `pressed()` stays true for this long after the physical key goes down,
+/// letting a jump/dash input register just before the player becomes able to
+/// act (the basis of jump-buffered wavedashes).
+fn buffer_time(action: usize) -> f32 {
+    const JUMP: usize = act::JUMP as usize;
+    const DASH: usize = act::DASH as usize;
+    match action {
+        JUMP | DASH => 0.08,
+        _ => 0.0,
+    }
+}
+
 #[derive(Debug)]
 pub struct Input {
     pub bindings: [Binding; act::COUNT as usize],
@@ -27,6 +40,9 @@ pub struct Input {
     prev_held: [bool; act::COUNT as usize],
     pressed: [bool; act::COUNT as usize],
     released: [bool; act::COUNT as usize],
+    /// VirtualButton `bufferCounter`: counts down while the binding is held
+    /// after a fresh press; zeroed immediately if the key is released.
+    buffer: [f32; act::COUNT as usize],
 }
 
 impl Default for Input {
@@ -58,6 +74,7 @@ impl Default for Input {
             prev_held: [false; act::COUNT as usize],
             pressed: [false; act::COUNT as usize],
             released: [false; act::COUNT as usize],
+            buffer: [0.0; act::COUNT as usize],
         }
     }
 }
@@ -66,8 +83,10 @@ impl Input {
     /// Processes SDL key events, refreshes `held`, and computes the
     /// `pressed`/`released` edges for this frame. Call once per frame before
     /// plugins update. Quit/resize events are ignored here so the caller can
-    /// handle them separately.
-    pub fn pump(&mut self, events: impl IntoIterator<Item = Event>) {
+    /// handle them separately. `dt` drives the VirtualButton press buffer
+    /// (mirroring `VirtualButton.Update`, which decrements `bufferCounter` by
+    /// `Engine.DeltaTime`).
+    pub fn pump(&mut self, events: impl IntoIterator<Item = Event>, dt: f32) {
         for event in events {
             match event {
                 Event::KeyDown {
@@ -88,9 +107,18 @@ impl Input {
 
         for (i, binding) in self.bindings.iter().enumerate() {
             let held = binding.keys.iter().any(|k| self.keys_down.contains(k));
-            self.pressed[i] = held && !self.prev_held[i];
+            let fresh_press = held && !self.prev_held[i];
+            self.pressed[i] = fresh_press;
             self.released[i] = !held && self.prev_held[i];
             self.held[i] = held;
+            // VirtualButton.Update: decrement the buffer; a fresh press re-arms
+            // it; letting go zeroes it (no held/repeat state to keep it alive).
+            self.buffer[i] -= dt;
+            if fresh_press {
+                self.buffer[i] = buffer_time(i);
+            } else if !held {
+                self.buffer[i] = 0.0;
+            }
         }
         self.prev_held = self.held;
     }
@@ -115,7 +143,9 @@ impl Input {
 
     pub fn pressed(&self, action: i32) -> bool {
         if (0..act::COUNT).contains(&action) {
-            self.pressed[action as usize]
+            // `VirtualButton.Pressed`: the fresh edge or a buffered press within
+            // the window (bufferCounter > 0), unless consumed.
+            self.pressed[action as usize] || self.buffer[action as usize] > 0.0
         } else {
             false
         }
@@ -126,6 +156,13 @@ impl Input {
             self.released[action as usize]
         } else {
             false
+        }
+    }
+
+    /// Clears the press buffer for an action (`VirtualButton.ConsumeBuffer`).
+    pub fn consume(&mut self, action: i32) {
+        if (0..act::COUNT).contains(&action) {
+            self.buffer[action as usize] = 0.0;
         }
     }
 }

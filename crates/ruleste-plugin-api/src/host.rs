@@ -8,9 +8,10 @@ use std::string::String;
 /// Event kinds passed over the host event bus (`host_emit` /
 /// `host_drain_events`). Plugins agree on these numbers: a refill restores the
 /// player's dashes, a booster launches it, a crushed block reports a dash hit.
-pub const EV_REFILL: u32 = 1;
-pub const EV_BOOST: u32 = 2;
-pub const EV_CRUSH: u32 = 3;
+/// All ids live in [`crate::event`]; these aliases keep old call sites working.
+pub const EV_REFILL: u32 = crate::event::REFILL;
+pub const EV_BOOST: u32 = crate::event::BOOST;
+pub const EV_CRUSH: u32 = crate::event::CRUSH;
 
 #[allow(dead_code)]
 #[link(wasm_import_module = "env")]
@@ -43,6 +44,7 @@ extern "C" {
     fn host_input_button(action: i32) -> bool;
     fn host_input_pressed(action: i32) -> bool;
     fn host_input_released(action: i32) -> bool;
+    fn host_input_consume(action: i32);
     fn host_collide_check(id: EntityId, offset_x: f32, offset_y: f32) -> bool;
     fn host_collide_solid_platform_set(id: EntityId, on: bool);
     fn host_actor_move(id: EntityId, h: f32, v: f32) -> u32;
@@ -67,6 +69,7 @@ extern "C" {
         b: u32,
         a: u32,
     );
+    fn host_draw_tile_box(tile_id: u32, x: f32, y: f32, tiles_x: u32, tiles_y: u32);
     fn host_die();
     fn host_collect(id: EntityId);
     fn host_respawn_set(x: f32, y: f32);
@@ -79,6 +82,7 @@ extern "C" {
     ) -> u32;
     fn host_drain_events(out_buf: *mut u8, buf_cap: u32) -> u32;
     fn host_entity_alive(id: EntityId) -> i32;
+    fn host_debug_enabled() -> i32;
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -216,6 +220,16 @@ pub fn draw_image_color(frame_id: &str, x: f32, y: f32, color: Color) {
     }
 }
 
+/// Draws a solid box of autotiled tiles at the given world position, mirroring
+/// `GFX.FGAutotiler.GenerateBox`. `tile_id` is the ForegroundTiles.xml id
+/// (e.g. `'3'` for snow); the host runs the adjacency pass once and caches the
+/// grid. Only meaningful during the `ruleste_entity_draw` hook.
+pub fn draw_tile_box(tile_id: char, x: f32, y: f32, tiles_x: u32, tiles_y: u32) {
+    unsafe {
+        host_draw_tile_box(tile_id as u32, x, y, tiles_x, tiles_y);
+    }
+}
+
 /// Kills the player: the host freezes the room and respawns it shortly after.
 /// Equivalent to `Player.Die()` in the original engine.
 pub fn die() {
@@ -286,6 +300,13 @@ pub fn drain_events() -> Vec<(EntityId, u32, Vec<u8>)> {
 /// Returns `true` if the entity with the given ID is alive in the world.
 pub fn entity_alive(id: EntityId) -> bool {
     unsafe { host_entity_alive(id) != 0 }
+}
+
+/// Returns `true` when the host enables verbose debug logging from plugins
+/// (currently gated on the `RULESTE_DEBUG` environment variable).
+#[must_use]
+pub fn debug_enabled() -> bool {
+    unsafe { host_debug_enabled() != 0 }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -468,8 +489,17 @@ impl Input {
     }
 
     #[must_use]
-    pub fn released(action: i32) -> bool {
+    pub fn released(&self, action: i32) -> bool {
         unsafe { host_input_released(action) }
+    }
+
+    /// Zeroes the press buffer (`VirtualButton.ConsumeBuffer`): clears a
+    /// buffered press so a jump/dash that already fired does not re-trigger
+    /// during the remaining buffer window.
+    pub fn consume(action: i32) {
+        unsafe {
+            host_input_consume(action);
+        }
     }
 }
 

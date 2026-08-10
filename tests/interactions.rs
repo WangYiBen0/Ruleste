@@ -3,10 +3,10 @@
 //! consumption and respawn), boosters launch the player, and crushBlocks
 //! register as solid riding platforms so they can crush when dashed into.
 //!
-//! Requires the wasm plugins to be built (`cargo build -p ... --target
+//! Requires the wasm plugins to be built (`./build.sh` or `cargo build -p ... --target
 //! wasm32-unknown-unknown --release`); the test skips when they are absent.
 
-use std::path::Path;
+use std::path::PathBuf;
 
 use ruleste::engine::ecs::World;
 use ruleste::engine::input::Input;
@@ -14,10 +14,16 @@ use ruleste::engine::physics::SolidGrid;
 use ruleste::hotload::wasm_host::WasmHost;
 use ruleste_plugin_api::map::{MapAttr, MapData};
 
-const PLUGIN_DIR: &str = "target/wasm32-unknown-unknown/release";
+/// The wasm plugin dir: `$RULESTE_PLUGIN_PATH` wins, otherwise fall back to
+/// the standard cargo output so tests work out of the box after `./build.sh`.
+fn plugin_dir() -> PathBuf {
+    std::env::var_os("RULESTE_PLUGIN_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("target/wasm32-unknown-unknown/release"))
+}
 
 fn has_plugins() -> bool {
-    std::fs::read_dir(PLUGIN_DIR)
+    std::fs::read_dir(plugin_dir())
         .map(|it| {
             it.flatten()
                 .any(|e| e.path().extension().is_some_and(|e| e == "wasm"))
@@ -50,7 +56,7 @@ fn interaction_plugins_spawn() {
         World::new(),
         Input::default(),
         SolidGrid::from_rows(&[]),
-        Path::new(PLUGIN_DIR),
+        plugin_dir(),
     )
     .unwrap();
     host.load_plugins().unwrap();
@@ -79,7 +85,7 @@ fn one_use_refill_is_consumed_on_touch() {
         World::new(),
         Input::default(),
         SolidGrid::from_rows(&[]),
-        Path::new(PLUGIN_DIR),
+        plugin_dir(),
     )
     .unwrap();
     host.load_plugins().unwrap();
@@ -120,7 +126,7 @@ fn two_dash_refill_respawns_after_cooldown() {
         World::new(),
         Input::default(),
         SolidGrid::from_rows(&[]),
-        Path::new(PLUGIN_DIR),
+        plugin_dir(),
     )
     .unwrap();
     host.load_plugins().unwrap();
@@ -177,7 +183,7 @@ fn crushblock_registers_as_solid_platform() {
         World::new(),
         Input::default(),
         SolidGrid::from_rows(&[]),
-        Path::new(PLUGIN_DIR),
+        plugin_dir(),
     )
     .unwrap();
     host.load_plugins().unwrap();
@@ -218,7 +224,7 @@ fn checkpoint_records_respawn_position() {
         World::new(),
         Input::default(),
         SolidGrid::from_rows(&[]),
-        Path::new(PLUGIN_DIR),
+        plugin_dir(),
     )
     .unwrap();
     host.load_plugins().unwrap();
@@ -253,7 +259,7 @@ fn cloud_registers_as_solid_platform() {
         World::new(),
         Input::default(),
         SolidGrid::from_rows(&[]),
-        Path::new(PLUGIN_DIR),
+        plugin_dir(),
     )
     .unwrap();
     host.load_plugins().unwrap();

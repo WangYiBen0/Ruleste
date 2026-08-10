@@ -7,6 +7,7 @@ use ruleste_plugin_api::map::{MapAttr, MapData};
 use ruleste_plugin_api::types::Vec2;
 
 use crate::data::binary_packer::{Attr, Element, MapBin};
+use crate::engine::backdrops::{self, Backdrop};
 use crate::engine::physics::{JumpThru, SolidGrid};
 
 /// `JumpThru`'s `Hitbox(width, 5f)` height.
@@ -36,6 +37,10 @@ pub struct Level {
     pub entities: Vec<EntitySpawn>,
     /// Decorative entities without gameplay collision boxes.
     pub decorations: Vec<EntitySpawn>,
+    /// Parallax background layers drawn behind the world.
+    pub backgrounds: Vec<Backdrop>,
+    /// Parallax foreground layers drawn in front of the world.
+    pub foregrounds: Vec<Backdrop>,
 }
 
 fn is_decoration(name: &str) -> bool {
@@ -61,6 +66,10 @@ impl Level {
             .child("levels")
             .ok_or_else(|| anyhow::anyhow!("map {:?} has no levels", name))?;
 
+        // First try to pick the level that contains the origin (0,0).
+        // This matches Celeste's MapData.StartLevel logic. If none contain the origin,
+        // fall back to the old heuristic: the first level containing a player entity,
+        // then the first level in the file.
         let level = levels_el
             .children
             .iter()
@@ -70,6 +79,12 @@ impl Level {
                 let w = l.attr_f32("width", 0.0);
                 let h = l.attr_f32("height", 0.0);
                 x <= 0.0 && y <= 0.0 && x + w > 0.0 && y + h > 0.0
+            })
+            .or_else(|| {
+                levels_el.children.iter().find(|l| {
+                    l.child("entities")
+                        .is_some_and(|ents| ents.children.iter().any(|e| e.name == "player"))
+                })
             })
             .or_else(|| levels_el.children.first())
             .ok_or_else(|| anyhow::anyhow!("map {:?} has no levels", name))?;
@@ -124,6 +139,8 @@ impl Level {
             }
         }
 
+        let (backgrounds, foregrounds) = backdrops::parse(root.child("Style"));
+
         Ok(Level {
             name,
             solids,
@@ -133,6 +150,8 @@ impl Level {
             camera_offset,
             entities,
             decorations,
+            backgrounds,
+            foregrounds,
         })
     }
 }

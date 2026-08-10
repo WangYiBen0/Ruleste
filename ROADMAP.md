@@ -21,7 +21,7 @@
 - [x] `Sprites.xml` SpriteBank `src/data/spritebank.rs`
 - [x] 用真实资产（`references/Celeste/Content/`）做解析自检：`0-Intro.bin` → 9 实体/4 类型；`Gameplay.meta` → 6824 帧 + RGBA 提取；`Sprites.xml` → player 动画（`src/bin/inspect.rs`）
 - [ ] 补充 `.data` 纹理、`Dialog`、字体、存档等其余资源解析
-- [ ] 将原版 `Content/` 转换为 `map/`、`resources/` 的工具（官方内容不参与分发）
+- [x] 将原版 `Content/` 转换为 pack 布局（`maps/<pack>/` + `resources/<pack>/<namespace>/`）的工具：`convert-from-celeste-contents.sh` 串起 `tools/bank-to-ogg.sh`；官方内容不参与分发
 
 ## Phase 2 — 引擎核心 ✅（待联调）
 - [x] ECS `World`/`Entity`（position/speed/hitbox/depth/sprite 状态）`src/engine/ecs.rs`
@@ -87,7 +87,14 @@
 - [ ] 场景框架：标题页 → 主菜单 → 存档选择 → 关卡 → 暂停/死亡/完成
 - [x] 地图渲染：solids 自动拼接、bg 层、水/雾/滤镜等后处理（solids ✅；bg 层待做）
 - [x] 实体绘制：插件 `ruleste_entity_draw` 驱动的 SpriteBank 帧渲染（含 direct-frame 图集帧与程序化 draw 命令）
-- [ ] 音频：FMOD 事件替换为 SDL 音频，`AudioBus` 请求接入
+- [~] 音频：FMOD 事件替换为 SDL 音频，`AudioBus` 请求接入
+  - [x] 离线转换工具 `tools/bank-to-ogg.sh`：vgmstream + ffmpeg 把 `*.bank` 抽成 OGG + `manifest`（6 个 bank / 4968 个样本已验证），输出到 `resources/<pack>/<namespace>/audio/`
+  - [ ] 解析 `*.strings.bank`，把 `event:/...` 路径映射到 `audio.manifest` 的 `sample_name`（FMOD 私有反序列化格式，无公开实现；见下「结论」）
+  - [x] 引擎加载 `audio.manifest`（`src/data/audio.rs`），`host_play_sound` 映射到样本文件已解（音频寻址切为 stream-name 主键）
+  - [x] SDL3 音频输出（mixer + OGG 解码）接入 `AudioBus.drain()`（`src/engine/audio.rs`：48kHz/立体声/f32、懒解码、pan、循环；± `lewton`）
+  - [x] `RULESTE_PLAY_SFX=<stream_name>` 启动自检
+
+> strings.bank 结论（研究记录）：`Master Bank.strings.bank` 是 RIFF 容器，`STDT` 块前半为碎片字符串池（NUL 分隔、任意切分、trie 前缀共享），后半（28124..46180）为纯 NUL 字符串区（`bank:/`、`bus:/`、snapshot）。碎片重建依赖「父指针侧表」，社区逆向均靠官方 DLL 私有反序列化器，无可独立复用的公开实现。`fsb5` 附录流名（如 `game_gen_diamond_touch_01`）可直接提取，但流名是艺术家自定义缩写（`madeline`→`mad`），无法机械反推 event 路径。启发式「流名→event 路径」贪心装配实测仅 18.8% 覆盖，不可靠。**因此音频寻址使用 stream-name 主键**；event 映射保留为后续研究项（若需原版 event 寻址，可考虑独立逆向 STDT 或引入社区 `fmod-studio-bank` 解析器）。
 
 ## Phase 5 — Everest 键盘输入
 - [ ] 解析 `Celeste.everest.yaml` 的键位/辅助配置

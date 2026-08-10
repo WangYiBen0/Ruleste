@@ -190,14 +190,23 @@ impl SolidGrid {
     }
 
     /// True when the axis-aligned rect (in world units) overlaps a solid tile.
+    ///
+    /// The far edge is exclusive: a rect resting exactly flush against a tile
+    /// boundary (e.g. the player standing on top of a solid tile) does not
+    /// collide with the tile on the other side. The epsilon must scale with
+    /// the coordinate magnitude — `f32::EPSILON` alone is smaller than the
+    /// float ULP at tile-scale coordinates (e.g. at y=136 the ULP is ~1.5e-5),
+    /// so `136 - EPSILON` rounds back to `136.0` and the ground tile sneaks in.
     pub fn collide_rect(&self, x: f32, y: f32, w: f32, h: f32) -> bool {
         if w <= 0.0 || h <= 0.0 {
             return false;
         }
+        let eps_x = f32::EPSILON * x.abs().max(w).max(TILE) * 4.0;
+        let eps_y = f32::EPSILON * y.abs().max(h).max(TILE) * 4.0;
         let x0 = (x / TILE).floor() as i32;
         let y0 = (y / TILE).floor() as i32;
-        let x1 = ((x + w - f32::EPSILON) / TILE).floor() as i32;
-        let y1 = ((y + h - f32::EPSILON) / TILE).floor() as i32;
+        let x1 = ((x + w - eps_x) / TILE).floor() as i32;
+        let y1 = ((y + h - eps_y) / TILE).floor() as i32;
         for ty in y0..=y1 {
             for tx in x0..=x1 {
                 if self.solid_at(tx, ty) {

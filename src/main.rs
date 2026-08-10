@@ -12,23 +12,51 @@ use ruleste::hotload::wasm_host::WasmHost;
 use ruleste::interface::renderer::Renderer;
 use ruleste_plugin_api::types::Vec2;
 
+/// Parses a `--plugin-path=<dir>` style option out of the raw argument list,
+/// returning the remaining positional args and the plugin dir (defaulting to
+/// the `plugins/` folder next to the executable). Keeps the game independent
+/// of the cargo `target/` layout.
+fn split_plugin_path(raw: Vec<String>) -> (Vec<String>, String) {
+    let mut plugin_dir = None;
+    let mut positional: Vec<String> = Vec::with_capacity(raw.len());
+    for arg in raw {
+        if let Some(rest) = arg.strip_prefix("--plugin-path=") {
+            plugin_dir = Some(rest.to_string());
+        } else {
+            positional.push(arg);
+        }
+    }
+    let dir = plugin_dir.unwrap_or_else(default_plugin_dir);
+    (positional, dir)
+}
+
+/// The `plugins/` folder next to the running executable.
+fn default_plugin_dir() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|p| p.join("plugins")))
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "plugins".to_string())
+}
+
 fn main() -> anyhow::Result<()> {
-    let mut args = std::env::args().skip(1);
+    let (positional, plugin_dir) = split_plugin_path(std::env::args().skip(1).collect());
+    let mut args = positional.into_iter();
     let map_path = args
         .next()
-        .unwrap_or_else(|| "references/Celeste/Content/Maps/0-Intro.bin".to_string());
+        .unwrap_or_else(|| "maps/Celeste/0-Intro.bin".to_string());
     let atlas_path = args
         .next()
-        .unwrap_or_else(|| "references/Celeste/Content/Graphics/Atlases/Gameplay.meta".to_string());
+        .unwrap_or_else(|| "resources/Celeste/Celeste/textures/Atlases/Gameplay.meta".to_string());
     let sprite_path = args
         .next()
-        .unwrap_or_else(|| "references/Celeste/Content/Graphics/Sprites.xml".to_string());
+        .unwrap_or_else(|| "resources/Celeste/Celeste/textures/Sprites.xml".to_string());
     let autotiler_path = args
         .next()
-        .unwrap_or_else(|| "references/Celeste/Content/Graphics/ForegroundTiles.xml".to_string());
-    let plugin_dir = args
+        .unwrap_or_else(|| "resources/Celeste/Celeste/textures/ForegroundTiles.xml".to_string());
+    let audio_dir = args
         .next()
-        .unwrap_or_else(|| "target/wasm32-unknown-unknown/release".to_string());
+        .unwrap_or_else(|| "resources/Celeste/Celeste/audio".to_string());
     let dump_frame = std::env::var("RULESTE_DUMP_FRAME").ok();
     let dump_frame_at: u32 = std::env::var("RULESTE_DUMP_FRAME_AT")
         .ok()
@@ -37,43 +65,89 @@ fn main() -> anyhow::Result<()> {
     let mut frame_count: u32 = 0;
 
     println!("Loading assets...");
-    let atlas = Atlas::load(Path::new(&atlas_path))?;
+    let mut atlas = Atlas::load(Path::new(&atlas_path))?;
+    // The `Misc` no-pack atlas holds standalone backdrop textures (e.g.
+    // "purplesunset") referenced by `Style > Backgrounds`/`Foregrounds`.
+    let misc_path = Path::new(&atlas_path)
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("Misc.meta");
+    if misc_path.exists() {
+        match Atlas::load_no_pack(&misc_path) {
+            Ok(misc) => atlas.merge(misc),
+            Err(e) => eprintln!(
+                "ruleste: failed to load Misc atlas ({}): {e}",
+                misc_path.display()
+            ),
+        }
+    }
     let sprite_bank = SpriteBank::load(Path::new(&sprite_path))?;
-    let level = Level::load(Path::new(&map_path))?;
-        let autotiler = Autotiler::load(Path::new(&autotiler_path))?;
-        let tile_grid = autotiler.generate(&level.solids);
-        let bg_tile_grid = autotiler.generate(&level.bg);
-        {
-            let solid_tiles = level
-                .solids
-                .size()
-                .0
-                .checked_mul(level.solids.size().1)
-                .unwrap_or(0);
-            let mapped = tile_grid.tileset.iter().filter(|t| !t.is_empty()).count();
-            println!(
-                "autotiler: {}x{} grid, {} solid tiles, {} tiles mapped to textures",
-                level.solids.size().0,
-                level.solids.size().1,
-                solid_tiles,
-                mapped
-            );
-            let mut tilesets: std::collections::BTreeMap<&str, usize> =
-                std::collections::BTreeMap::new();
-            for t in &tile_grid.tileset {
-                if !t.is_empty() {
-                    *tilesets.entry(t).or_default() += 1;
-                }
-            }
-            for (ts, n) in &tilesets {
-                println!("  tileset {ts}: {n} tiles");
+    let mut level = Level::load(Path::new(&map_path))?;
+    let autotiler = Autotiler::load(Path::new(&autotiler_path))?;
+    let bg_autotiler_path = Path::new(&autotiler_path)
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("BackgroundTiles.xml");
+    let bg_autotiler = Autotiler::load(&bg_autotiler_path)?;
+    let tile_grid = autotiler.generate(&level.solids);
+    let bg_tile_grid = bg_autotiler.generate(&level.bg);
+    {
+        let solid_tiles = level
+            .solids
+            .size()
+            .0
+            .checked_mul(level.solids.size().1)
+            .unwrap_or(0);
+        let mapped = tile_grid.tileset.iter().filter(|t| !t.is_empty()).count();
+        println!(
+            "autotiler: {}x{} grid, {} solid tiles, {} tiles mapped to textures",
+            level.solids.size().0,
+            level.solids.size().1,
+            solid_tiles,
+            mapped
+        );
+        let mut tilesets: std::collections::BTreeMap<&str, usize> =
+            std::collections::BTreeMap::new();
+        for t in &tile_grid.tileset {
+            if !t.is_empty() {
+                *tilesets.entry(t).or_default() += 1;
             }
         }
-
+        for (ts, n) in &tilesets {
+            println!("  tileset {ts}: {n} tiles");
+        }
+    }
 
     println!("Initializing SDL3 renderer...");
-    let mut renderer = Renderer::new()?;
+    // `RULESTE_DUMP_FRAME` needs the software renderer (readback); without it
+    // the game runs on a hardware/GPU driver so maximized scaling stays cheap.
+    let mut renderer = Renderer::new(dump_frame.is_some())?;
     renderer.upload_atlas(&atlas)?;
+    for b in level.backgrounds.iter().chain(&level.foregrounds) {
+        if let Err(e) = renderer.upload_backdrop(&atlas, &b.texture) {
+            eprintln!("ruleste: upload backdrop {}: {e}", b.texture);
+        }
+    }
+
+    // Audio: address streams by FMOD/FSB5 name via the audio/ manifest
+    // (`event:/...` remapping is a ROADMAP research item). Inert on headless
+    // boxes or when the converted tree is absent.
+    let mut audio = ruleste::engine::audio::AudioBus::new(&renderer.sdl);
+    if let Ok(manifest) = ruleste::data::audio::AudioManifest::load(Path::new(&audio_dir)) {
+        println!(
+            "Audio manifest: {} streams across {} banks",
+            manifest.len(),
+            manifest.banks.len()
+        );
+        audio.load_manifest(&manifest, Path::new(&audio_dir));
+    } else {
+        eprintln!("ruleste: no audio manifest at {audio_dir:?}; audio disabled");
+    }
+    if let Ok(sfx) = std::env::var("RULESTE_PLAY_SFX") {
+        if !sfx.trim().is_empty() {
+            audio.play(&sfx, 0.6, 0.0, 1.0, false);
+        }
+    }
 
     let world = ruleste::engine::ecs::World::new();
     let input = Input::default();
@@ -81,21 +155,56 @@ fn main() -> anyhow::Result<()> {
 
     println!("Initializing WasmHost from plugin dir: {plugin_dir}");
     let mut wasm_host = WasmHost::new(world, input, solids, Path::new(&plugin_dir))?;
-    wasm_host.load_plugins()?;
+    wasm_host.set_autotiler(autotiler);
+    // Instantiate only the plugins whose entity types this level actually
+    // contains; unrelated plugins stay unloaded (and uninstantiated).
+    let needed_types: std::collections::HashSet<String> = level
+        .entities
+        .iter()
+        .chain(&level.decorations)
+        .map(|e| e.name.clone())
+        .collect();
+    wasm_host.load_plugins_for(&needed_types)?;
 
+    // Celeste stores every `player` entity as a spawn marker (not a real
+    // entity) and creates the single Player at the spawn point closest to the
+    // level's bottom-left corner (`Level.DefaultSpawnPoint`). Pick that spawn
+    // point here so the initial player position is the intended start, not the
+    // first marker in file order (which may be a room-transition respawn).
     let mut all_spawns = Vec::new();
-    all_spawns.extend(
-        level
-            .entities
-            .iter()
-            .map(|e| (e.name.clone(), e.data.to_bytes())),
-    );
-    all_spawns.extend(
-        level
-            .decorations
-            .iter()
-            .map(|e| (e.name.clone(), e.data.to_bytes())),
-    );
+    let mut best_player: Option<&ruleste::engine::level::EntitySpawn> = None;
+    for e in &level.entities {
+        if e.name == "player" {
+            let x = e.data.get_float("x", 0.0);
+            let y = e.data.get_float("y", 0.0);
+            // Distance squared to (0, height): the level's bottom-left corner.
+            let dx = x;
+            let dy = y - level.height;
+            let dist = dx * dx + dy * dy;
+            let is_better = match &best_player {
+                None => true,
+                Some(best) => {
+                    let bx = best.data.get_float("x", 0.0);
+                    let by = best.data.get_float("y", 0.0);
+                    let bdx = bx;
+                    let bdy = by - level.height;
+                    let bdist = bdx * bdx + bdy * bdy;
+                    dist < bdist
+                }
+            };
+            if is_better {
+                best_player = Some(e);
+            }
+            continue;
+        }
+        all_spawns.push((e.name.clone(), e.data.to_bytes()));
+    }
+    if let Some(best) = best_player {
+        all_spawns.push((best.name.clone(), best.data.to_bytes()));
+    }
+    for e in &level.decorations {
+        all_spawns.push((e.name.clone(), e.data.to_bytes()));
+    }
 
     wasm_host.set_respawn_entities(&all_spawns);
 
@@ -145,7 +254,7 @@ fn main() -> anyhow::Result<()> {
                 break 'running;
             }
         }
-        wasm_host.game_state().input.pump(events);
+        wasm_host.game_state().input.pump(events, dt);
 
         // Hot reload plugins if mtimes changed
         if let Err(e) = wasm_host.reload_plugins() {
@@ -154,6 +263,17 @@ fn main() -> anyhow::Result<()> {
 
         // Update Wasm plugins (physics, player movement, entity logic)
         wasm_host.update(dt);
+
+        // Feed the audio bus (mix + device).
+        audio.update(dt);
+
+        // Advance parallax backdrops (their `speed` drifts the anchor).
+        for b in &mut level.backgrounds {
+            b.update(dt);
+        }
+        for b in &mut level.foregrounds {
+            b.update(dt);
+        }
 
         // Follow the player with the level camera.
         let player_pos = wasm_host
@@ -179,7 +299,11 @@ fn main() -> anyhow::Result<()> {
 
         // Render frame
         renderer.clear();
+        // Draw parallax background layers behind the world
+        renderer.draw_backdrops(&level.backgrounds);
+        // Draw background layer under entities
         renderer.draw_solids(&bg_tile_grid, &atlas);
+        // Draw solid collision layer on top of background
         renderer.draw_solids(&tile_grid, &atlas);
         // Run plugin draw hooks: they set sprite animations and submit custom
         // geometry (e.g. wire cables) before the renderer snapshots the frame.
@@ -188,7 +312,10 @@ fn main() -> anyhow::Result<()> {
         renderer.draw_entities(&state.world, &atlas, &sprite_bank, &mut sprite_animator);
         renderer.draw_lines(&state.draw_commands);
         renderer.draw_rects(&state.draw_rects);
+        renderer.draw_tile_boxes(&state.draw_tile_boxes, &atlas);
         renderer.draw_images(&state.draw_images, &atlas);
+        // Parallax foreground layers draw in front of the world
+        renderer.draw_backdrops(&level.foregrounds);
         renderer.present();
 
         // Debug: dump a rendered frame as a PPM and exit.

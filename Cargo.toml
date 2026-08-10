@@ -1,38 +1,39 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/ruleste-plugin-api",
-    "plugins/player",
-    "plugins/spring",
-    "plugins/lamp",
-    "plugins/wire",
-    "plugins/spikes",
-    "plugins/strawberry",
-    "plugins/resortLantern",
-    "plugins/spinner",
-    "plugins/rotatespinner",
-    "plugins/cobweb",
-    "plugins/soundsource",
-    "plugins/door",
-    "plugins/fallingblock",
-    "plugins/clutter",
-    "plugins/lightbeam",
-    "plugins/hanginglamp",
-    "plugins/dreamblock",
-    "plugins/debris",
-    "plugins/refill",
-    "plugins/booster",
-    "plugins/crushblock",
-    "plugins/checkpoint",
-    "plugins/cliffflag",
-    "plugins/torch",
-    "plugins/cloud",
+  "crates/ruleste-plugin-api",
+  "plugins/player",
+  "plugins/spring",
+  "plugins/lamp",
+  "plugins/wire",
+  "plugins/spikes",
+  "plugins/strawberry",
+  "plugins/resortLantern",
+  "plugins/spinner",
+  "plugins/rotatespinner",
+  "plugins/cobweb",
+  "plugins/soundsource",
+  "plugins/door",
+  "plugins/fallingblock",
+  "plugins/clutter",
+  "plugins/lightbeam",
+  "plugins/hanginglamp",
+  "plugins/dreamblock",
+  "plugins/debris",
+  "plugins/refill",
+  "plugins/booster",
+  "plugins/crushblock",
+  "plugins/introcrusher",
+  "plugins/checkpoint",
+  "plugins/cliffflag",
+  "plugins/torch",
+  "plugins/cloud",
 ]
 
 [package]
 name = "ruleste"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.85"
 description = "A from-scratch Rust reimplementation of Celeste (SDL3, cross-platform, no game engine frameworks)."
 license = "MIT"
@@ -44,6 +45,9 @@ wasmtime = "47"
 bytemuck = { version = "1", features = ["derive"] }
 anyhow = "1"
 roxmltree = "0.20"
+lewton = "0.10.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 
 # SDL3：基础 features 全平台，平台特定查找方式通过 target cfg 叠加
 [target.'cfg(unix)'.dependencies]

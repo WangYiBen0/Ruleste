@@ -221,6 +221,53 @@ impl Atlas {
         Ok(Atlas { pages, frame_index })
     }
 
+    /// Loads a `PackerNoAtlas` atlas: each frame is its own `.data` texture
+    /// stored under a page subdirectory (e.g. `Misc.meta` + `Misc/foo.data`).
+    /// The clip rect is the whole texture; the offset still holds the untrimmed
+    /// box so drawing behaves like the packed atlases.
+    pub fn load_no_pack(base: &Path) -> ReadResult<Atlas> {
+        let dir = base.parent().unwrap_or_else(|| Path::new("."));
+        let meta = AtlasMeta::from_file(base)?;
+
+        let mut pages = Vec::new();
+        let mut frame_index = HashMap::new();
+        for page in &meta.pages {
+            for frame in &page.frames {
+                let data_path = dir
+                    .join(&page.name)
+                    .join(format!("{}.data", frame.id.replace('/', "_")));
+                let bytes = std::fs::read(&data_path)
+                    .map_err(|e| ReadError::new(format!("read {}: {e}", data_path.display())))?;
+                let mut decoded = AtlasPage::decode(frame.id.clone(), &bytes)?;
+                let clip = FrameRect {
+                    x: 0,
+                    y: 0,
+                    w: decoded.width as i16,
+                    h: decoded.height as i16,
+                };
+                decoded.frames = vec![Frame {
+                    id: frame.id.clone(),
+                    clip,
+                    offset: frame.offset,
+                }];
+                frame_index.insert(frame.id.clone(), (pages.len(), 0));
+                pages.push(decoded);
+            }
+        }
+
+        Ok(Atlas { pages, frame_index })
+    }
+
+    /// Appends another atlas's pages and frame index to this one (used to make
+    /// the `Misc` no-pack atlas' backdrops available alongside `Gameplay`).
+    pub fn merge(&mut self, other: Atlas) {
+        let base = self.pages.len();
+        for (id, (pi, fi)) in other.frame_index {
+            self.frame_index.insert(id, (base + pi, fi));
+        }
+        self.pages.extend(other.pages);
+    }
+
     /// Returns the RGBA8 pixel data of a single atlas frame (frame's own
     /// clip rect), as a contiguous row-major buffer.
     #[must_use]

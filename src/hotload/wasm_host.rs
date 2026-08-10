@@ -14,12 +14,13 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use ruleste_plugin_api::export;
 use ruleste_plugin_api::types::Color;
 use wasmtime::{Caller, Engine, Extern, Instance, Linker, Memory, Module, Store, TypedFunc};
 
-use crate::engine::draw::{Image, Line, Rect};
+use crate::engine::autotiler::{Autotiler, TileGrid};
+use crate::engine::draw::{Image, Line, Rect, TileBox};
 use crate::engine::ecs::World;
 use crate::engine::input::Input;
 use crate::engine::physics::SolidGrid;
@@ -30,6 +31,10 @@ pub const SCRATCH_DEALLOC: &str = "ruleste_dealloc";
 /// How long a death freezes the room before it reloads (mirrors the original's
 /// respawn delay).
 pub const DEATH_FREEZE_TIME: f32 = 1.2;
+
+/// Set once from the `RULESTE_DEBUG` env var; plugins read it through
+/// `host_debug_enabled` to decide whether to emit verbose logs.
+static DEBUG_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[derive(Debug, Clone)]
 pub struct GameEvent {
@@ -67,6 +72,8 @@ pub struct GameState {
     pub draw_rects: Vec<Rect>,
     /// Atlas-frame blits submitted by plugins during their draw hook.
     pub draw_images: Vec<Image>,
+    /// Autotiled boxes (e.g. introCrusher slabs) submitted during the draw hook.
+    pub draw_tile_boxes: Vec<TileBox>,
     /// Seconds remaining on the death freeze; positive while the player is
     /// dead and the room is frozen before respawning.
     pub death_timer: f32,
@@ -76,6 +83,12 @@ pub struct GameState {
     /// World position the player respawns at after a death, if a checkpoint has
     /// been reached this session. `None` = fall back to the level start.
     pub respawn_pos: Option<(f32, f32)>,
+    /// Foreground autotiler, used to generate `generate_box` tile grids for
+    /// plugins that render autotiled slabs (introCrusher). Set once at startup.
+    pub autotiler: Option<Autotiler>,
+    /// Cached `generate_box` grids keyed by `(tile_id, tiles_x, tiles_y)` so a
+    /// static slab only regenerates its adjacency pass once.
+    pub tile_box_cache: HashMap<(char, usize, usize), TileGrid>,
 }
 
 impl GameState {
@@ -89,9 +102,12 @@ impl GameState {
             draw_commands: Vec::new(),
             draw_rects: Vec::new(),
             draw_images: Vec::new(),
+            draw_tile_boxes: Vec::new(),
             death_timer: 0.0,
             collected: HashSet::new(),
             respawn_pos: None,
+            autotiler: None,
+            tile_box_cache: HashMap::new(),
         }
     }
 }
@@ -132,6 +148,11 @@ impl WasmHost {
     ) -> Result<WasmHost> {
         let engine = Engine::new(&wasmtime::Config::new())?;
         let store = Store::new(&engine, GameState::new(world, input, solids));
+        DEBUG_ENABLED.store(
+            std::env::var("RULESTE_DEBUG")
+                .is_ok_and(|v| v != "0" && !v.eq_ignore_ascii_case("false")),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         Ok(WasmHost {
             engine,
             store,
@@ -146,12 +167,35 @@ impl WasmHost {
         self.respawn_entities = entities.to_vec();
     }
 
+    /// Provides the foreground autotiler plugins use for `generate_box` tile
+    /// slabs (e.g. introCrusher). Call before spawning entities.
+    pub fn set_autotiler(&mut self, autotiler: Autotiler) {
+        self.store.data_mut().autotiler = Some(autotiler);
+    }
+
     pub fn game_state(&mut self) -> &mut GameState {
         self.store.data_mut()
     }
 
     /// Loads every `*.wasm` in the plugin directory.
     pub fn load_plugins(&mut self) -> Result<()> {
+        self.load_plugins_filtered(None)
+    }
+
+    /// Loads only the plugins that handle at least one of the given entity
+    /// types. `Some(empty)` loads nothing; `None` loads everything. Used by the
+    /// game to instantiate just the plugins a level's entities actually need.
+    pub fn load_plugins_for(
+        &mut self,
+        needed_types: &std::collections::HashSet<String>,
+    ) -> Result<()> {
+        self.load_plugins_filtered(Some(needed_types))
+    }
+
+    fn load_plugins_filtered(
+        &mut self,
+        needed_types: Option<&std::collections::HashSet<String>>,
+    ) -> Result<()> {
         let mut entries: Vec<PathBuf> = std::fs::read_dir(&self.plugin_dir)
             .with_context(|| format!("read plugin dir {}", self.plugin_dir.display()))?
             .filter_map(|e| e.ok().map(|e| e.path()))
@@ -159,11 +203,37 @@ impl WasmHost {
             .collect();
         entries.sort();
         for path in entries {
+            // Peek at which entity types the module declares before
+            // instantiating it, so unrelated plugins never get loaded.
+            if let Some(needed) = needed_types {
+                let types = match self.peek_plugin_types(&path) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("ruleste: skip plugin {}: {e:#}", path.display());
+                        continue;
+                    }
+                };
+                if types.is_empty() || !types.iter().any(|t| needed.contains(t)) {
+                    continue;
+                }
+            }
             if let Err(e) = self.load_plugin(&path) {
                 eprintln!("ruleste: failed to load plugin {}: {e:#}", path.display());
             }
         }
         Ok(())
+    }
+
+    /// Compiles a module and reads its declared entity types without keeping
+    /// an instance. Cheaper than loading the whole plugin when filtering.
+    fn peek_plugin_types(&mut self, path: &Path) -> Result<Vec<String>> {
+        let module = Module::from_file(&self.engine, path)
+            .map_err(|e| anyhow!("compile {}: {e}", path.display()))?;
+        let linker = self.build_linker(&self.engine)?;
+        let instance = linker
+            .instantiate(&mut self.store, &module)
+            .map_err(|e| anyhow!("instantiate {}: {e}", path.display()))?;
+        self.read_plugin_types(&instance)
     }
 
     pub fn load_plugin(&mut self, path: &Path) -> Result<()> {
@@ -349,6 +419,7 @@ impl WasmHost {
         self.store.data_mut().draw_commands.clear();
         self.store.data_mut().draw_rects.clear();
         self.store.data_mut().draw_images.clear();
+        self.store.data_mut().draw_tile_boxes.clear();
         let jobs: Vec<(u32, usize)> = self
             .store
             .data()
@@ -730,6 +801,13 @@ impl WasmHost {
         )?;
         linker.func_wrap(
             "env",
+            "host_input_consume",
+            |mut caller: Caller<'_, GameState>, action: i32| {
+                caller.data_mut().input.consume(action);
+            },
+        )?;
+        linker.func_wrap(
+            "env",
             "host_collide_check",
             |mut caller: Caller<'_, GameState>, id: u32, ox: f32, oy: f32| {
                 let state = caller.data_mut();
@@ -933,6 +1011,53 @@ impl WasmHost {
                 });
             },
         )?;
+        // --- Draw an autotiled box of tiles (Autotiler.GenerateBox) ---
+        linker.func_wrap(
+            "env",
+            "host_draw_tile_box",
+            |mut caller: Caller<'_, GameState>,
+             tile_id: u32,
+             x: f32,
+             y: f32,
+             tiles_x: u32,
+             tiles_y: u32| {
+                let tile_char = tile_id as u8 as char;
+                let (tx, ty) = (tiles_x as usize, tiles_y as usize);
+                if tx == 0 || ty == 0 {
+                    return;
+                }
+                let state = caller.data_mut();
+                let Some(autotiler) = &state.autotiler else {
+                    return;
+                };
+                let grid = state
+                    .tile_box_cache
+                    .entry((tile_char, tx, ty))
+                    .or_insert_with(|| {
+                        autotiler
+                            .generate_box(tile_char, tx, ty)
+                            .unwrap_or_else(|| TileGrid {
+                                width: tx,
+                                height: ty,
+                                tileset: vec![String::new(); tx * ty],
+                                col: vec![0; tx * ty],
+                                row: vec![0; tx * ty],
+                            })
+                    });
+                if grid.tileset[0].is_empty() {
+                    return;
+                }
+                state.draw_tile_boxes.push(TileBox {
+                    frame_id: format!("tilesets/{}", grid.tileset[0]),
+                    x,
+                    y,
+                    width: tx,
+                    height: ty,
+                    col: grid.col.clone(),
+                    row: grid.row.clone(),
+                });
+            },
+        )?;
         // --- Entity query: find all entities of a given type ---
         linker.func_wrap(
             "env",
@@ -987,6 +1112,10 @@ impl WasmHost {
                 i32::from(caller.data().world.get(id).is_some())
             },
         )?;
+        // --- Verbose plugin debug logging (RULESTE_DEBUG=1) ---
+        linker.func_wrap("env", "host_debug_enabled", |_: Caller<'_, GameState>| {
+            i32::from(DEBUG_ENABLED.load(std::sync::atomic::Ordering::Relaxed))
+        })?;
         Ok(linker)
     }
 

@@ -24,9 +24,16 @@ pub mod export {
     pub const DESERIALIZE: &str = "ruleste_entity_deserialize";
 }
 
-/// Common gameplay events a plugin can emit through `host_emit`.
+/// Common gameplay events a plugin can emit through `host_emit`. This is the
+/// single registry for event ids: every plugin agrees on these numbers, and
+/// they never collide with the `host::EV_*` constants (which now alias these).
 pub mod event {
+    // Player-authored events.
     pub const PLAYER_DASH: u32 = 0;
     pub const PLAYER_JUMP: u32 = 1;
     pub const PLAYER_DEATH: u32 = 2;
+    // Entity-interaction events (refill/booster/crushBlock).
+    pub const REFILL: u32 = 3;
+    pub const BOOST: u32 = 4;
+    pub const CRUSH: u32 = 5;
 }
