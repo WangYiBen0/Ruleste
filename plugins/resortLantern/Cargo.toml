@@ -1,7 +1,7 @@
 [package]
 name = "ruleste-resort-lantern"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.85"
 description = "ResortLantern decoration plugin — a hanging lantern that sways when the player bumps into it."
 license = "MIT"

@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `floatingDebris` / `foregroundDebris` entity plugins.
 //!
 //! The original textures (`scenery/debris`, `scenery/fgdebris/rock_a|b`) live
@@ -8,7 +9,7 @@
 
 use ruleste_plugin_api::host;
 use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{spawn_data, Entity, EntityState};
+use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::{Color, EntityId};
 
 ruleste_plugin_api::ruleste_meta!("debris");
@@ -47,7 +48,7 @@ fn with_state<R>(id: EntityId, f: impl FnOnce(&mut DebrisState) -> R) -> R {
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
     let spawn: MapData = spawn_data(bytes);
@@ -63,14 +64,14 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     with_state(id, |st| {
         st.timer += dt;
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     with_state(id, |st| {
         let entity = Entity::new(id);

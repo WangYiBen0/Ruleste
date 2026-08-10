@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `lamp` scenery entity plugin.
 //!
 //! Draws a hanging lamp from the `scenery/lamp` atlas frame. Mirrors
@@ -8,7 +9,7 @@
 //! renderer falls back to direct atlas frames when the SpriteBank has no entry.
 
 use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{spawn_data, Entity};
+use ruleste_plugin_api::plugin::{Entity, spawn_data};
 use ruleste_plugin_api::types::EntityId;
 
 ruleste_plugin_api::ruleste_meta!("lamp");
@@ -20,7 +21,7 @@ ruleste_plugin_api::ruleste_noop_serialize!();
 const FRAME_W: f32 = 16.0;
 const FRAME_H: f32 = 80.0;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
     let spawn: MapData = spawn_data(bytes);
@@ -34,8 +35,8 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     entity.hitbox.set(0.0, 0.0, -FRAME_W * 0.5, -FRAME_H);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(_id: EntityId, _dt: f32) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(_id: EntityId) {}

@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `lightbeam` entity plugin.
 //!
 //! Mirrors `LightBeam.cs`: a shaft of light (`util/lightbeam`) rendered at
@@ -7,7 +8,7 @@
 
 use ruleste_plugin_api::host;
 use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{spawn_data, Entity, EntityState};
+use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::{Color, EntityId, Vec2};
 
 ruleste_plugin_api::ruleste_meta!("lightbeam");
@@ -51,7 +52,7 @@ fn to_radians(deg: f32) -> f32 {
     deg * std::f32::consts::PI / 180.0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
     let spawn: MapData = spawn_data(bytes);
@@ -70,10 +71,10 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(_id: EntityId, _dt: f32) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     with_state(id, |st| {
         let entity = Entity::new(id);

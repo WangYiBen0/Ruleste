@@ -1,7 +1,7 @@
 [package]
 name = "ruleste-player"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.85"
 description = "Built-in player entity plugin for Ruleste."
 

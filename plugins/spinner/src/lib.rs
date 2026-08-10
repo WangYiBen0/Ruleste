@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `spinner` hazard plugin.
 //!
 //! Mirrors `DustStaticSpinner.cs`, which is what the `spinner` map entity
@@ -12,7 +13,7 @@
 
 use ruleste_plugin_api::host::{self, die, draw_image, entities_by_type};
 use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{spawn_data, Entity, EntityState};
+use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::EntityId;
 
 ruleste_plugin_api::ruleste_meta!("spinner");
@@ -78,7 +79,7 @@ fn with_state<R>(id: EntityId, f: impl FnOnce(&mut SpinnerState) -> R) -> R {
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
     let spawn: MapData = spawn_data(bytes);
@@ -101,7 +102,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     with_state(id, |st| {
         st.center_timer += dt * CENTER_SPIN;
@@ -131,7 +132,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     with_state(id, |st| {
         let entity = Entity::new(id);
@@ -162,7 +163,7 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
             if entity.collision.check(cx * 4.0, cy * 16.0) {
                 vy = 5.0;
             }
-            let n = ((cx * cx + cy * cy) as f32).sqrt();
+            let n = (cx * cx + cy * cy).sqrt();
             let ax = cx / n * vx;
             let ay = cy / n * vy;
 

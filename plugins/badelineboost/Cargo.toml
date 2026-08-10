@@ -1,0 +1,10 @@
+[package]
+name = "ruleste-plugin-badelineboost"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api" }

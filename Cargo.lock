@@ -1008,6 +1008,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-badelineboost"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-bigspinner"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-bird"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-bonfire"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
 name = "ruleste-plugin-checkpoint"
 version = "0.1.0"
 dependencies = [
@@ -1029,7 +1057,126 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-dashblock"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-flutterbird"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-heartgemdoor"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-infinitestar"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-introcar"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-invisiblebarrier"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-killbox"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-memorial"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-npc"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-plateau"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-starjumpblock"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-summitbackground"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-swapblock"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
 name = "ruleste-plugin-torch"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-towerviewer"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-trackspinner"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-triggerspikes"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-zipmover"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",

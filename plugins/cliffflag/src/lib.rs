@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `cliffflag` entity plugin.
 //!
 //! Mirrors `CliffFlags.cs` + `Flagline.cs`: a rope of small hanging flags
@@ -9,7 +10,7 @@
 
 use ruleste_plugin_api::host;
 use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{spawn_data, Entity, EntityState};
+use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::{Color, EntityId, Vec2};
 
 ruleste_plugin_api::ruleste_meta!("cliffflag");
@@ -53,7 +54,7 @@ struct Cloth {
 }
 
 fn make_clothes(id: EntityId) -> [Cloth; CLOTH_COUNT] {
-    let mut seed = id as u32 ^ 0x9e37_79b9;
+    let mut seed = id ^ 0x9e37_79b9;
     let mut next = move || {
         seed ^= seed << 13;
         seed ^= seed >> 17;
@@ -173,7 +174,7 @@ fn draw_flagline(st: &FlaglineState, from: Vec2, to: Vec2) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
     let spawn: MapData = spawn_data(bytes);
@@ -188,14 +189,14 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     with_state(id, |st| {
         st.wave_timer += dt;
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     with_state(id, |st| {
         let entity = Entity::new(id);

@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `door` entity plugin.
 //!
 //! Mirrors `Door.cs`: a depth 8998 door with a `PlayerCollider` hitbox
@@ -8,7 +9,7 @@
 
 use ruleste_plugin_api::host;
 use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{spawn_data, Entity, EntityState};
+use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::EntityId;
 
 ruleste_plugin_api::ruleste_meta!("door");
@@ -22,16 +23,10 @@ const HIT_H: f32 = 22.0;
 const HIT_OX: f32 = -6.0;
 const HIT_OY: f32 = -23.0;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct DoorState {
     /// Whether the door got wedged against solid tiles and can no longer open.
     disabled: bool,
-}
-
-impl Default for DoorState {
-    fn default() -> DoorState {
-        DoorState { disabled: false }
-    }
 }
 
 thread_local! {
@@ -48,7 +43,7 @@ fn with_state<R>(id: EntityId, f: impl FnOnce(&mut DoorState) -> R) -> R {
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
     let spawn: MapData = spawn_data(bytes);
@@ -68,7 +63,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     entity.sprite.play("idle");
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     with_state(id, |st| {
         let entity = Entity::new(id);

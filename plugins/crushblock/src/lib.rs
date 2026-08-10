@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `crushBlock` entity plugin.
 //!
 //! Mirrors `CrushBlock.cs`: a solid riding platform that, when the player dashes
@@ -8,7 +9,7 @@
 
 use ruleste_plugin_api::host;
 use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{spawn_data, Entity, EntityState};
+use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::Color;
 use ruleste_plugin_api::types::EntityId;
 
@@ -78,7 +79,7 @@ fn with_state<R>(id: EntityId, f: impl FnOnce(&mut CrushState) -> R) -> R {
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
     let spawn: MapData = spawn_data(bytes);
@@ -137,7 +138,7 @@ fn move_crush(entity: &Entity, st: &mut CrushState, amount: f32) -> bool {
     false
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     with_state(id, |st| {
         st.anim += dt;
@@ -237,7 +238,7 @@ fn face_frame(st: &CrushState) -> String {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     with_state(id, |st| {
         let entity = Entity::new(id);

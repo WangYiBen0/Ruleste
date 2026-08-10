@@ -1,7 +1,7 @@
 [package]
 name = "ruleste-spinner"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.85"
 description = "DustStaticSpinner hazard plugin — a rotating dust crystal that kills on contact."
 license = "MIT"

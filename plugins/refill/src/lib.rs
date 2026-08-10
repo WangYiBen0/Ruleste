@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `refill` entity plugin.
 //!
 //! Mirrors `Refill.cs`: the green (one dash) / pink (two dash) gems. The player
@@ -8,7 +9,7 @@
 
 use ruleste_plugin_api::host;
 use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{spawn_data, Entity, EntityState};
+use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::EntityId;
 
 ruleste_plugin_api::ruleste_meta!("refill");
@@ -24,11 +25,7 @@ const FLASH_FRAMES: usize = 6;
 const FLASH_EVERY: f32 = 2.0;
 
 fn idle_frames(two_dash: bool) -> usize {
-    if two_dash {
-        13
-    } else {
-        5
-    }
+    if two_dash { 13 } else { 5 }
 }
 
 #[derive(Debug)]
@@ -78,7 +75,7 @@ fn prefix(two_dash: bool) -> &'static str {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
     let spawn: MapData = spawn_data(bytes);
@@ -98,7 +95,7 @@ fn frame_id(id: &str) -> String {
     id.to_string()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     with_state(id, |st| {
         st.timer += dt;
@@ -143,7 +140,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     with_state(id, |st| {
         if !st.active {

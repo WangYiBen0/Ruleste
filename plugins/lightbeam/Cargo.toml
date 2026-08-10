@@ -1,7 +1,7 @@
 [package]
 name = "ruleste-lightbeam"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.85"
 description = "LightBeam entity plugin — a soft shaft of light (util/lightbeam) fading near the player."
 license = "MIT"

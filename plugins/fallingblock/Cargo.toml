@@ -1,7 +1,7 @@
 [package]
 name = "ruleste-fallingblock"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.85"
 description = "FallingBlock entity plugin — a Solid that crumbles away after the player stands on it."
 license = "MIT"

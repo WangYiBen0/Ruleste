@@ -15,7 +15,7 @@ pub const EV_CRUSH: u32 = crate::event::CRUSH;
 
 #[allow(dead_code)]
 #[link(wasm_import_module = "env")]
-extern "C" {
+unsafe extern "C" {
     // Every function here is part of the plugin ABI surface; individual
     // plugins use whichever subset they need.
     fn host_position_get(id: EntityId, out: *mut Vec2);
@@ -169,6 +169,7 @@ pub fn draw_image(frame_id: &str, x: f32, y: f32, rotation: f32, scale_x: f32, s
 }
 
 /// Like [`draw_image`], with horizontal/vertical flipping.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_image_flipped(
     frame_id: &str,
     x: f32,

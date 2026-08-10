@@ -99,13 +99,13 @@ pub fn spawn_data(bytes: &[u8]) -> MapData {
 /// via [`ruleste_alloc`], writes spawn/state bytes into it, calls the plugin,
 /// then releases it with [`ruleste_dealloc`]. Uses the module's own allocator
 /// so the host never guesses at the heap layout.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_alloc(len: u32) -> u32 {
     let layout = std::alloc::Layout::from_size_align(len as usize, 8).unwrap();
     unsafe { std::alloc::alloc(layout) as u32 }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_dealloc(ptr: u32, len: u32) {
     let layout = std::alloc::Layout::from_size_align(len as usize, 8).unwrap();
     unsafe { std::alloc::dealloc(ptr as *mut u8, layout) }
@@ -119,7 +119,7 @@ pub use crate::{event, export};
 #[macro_export]
 macro_rules! ruleste_meta {
     ($name:literal) => {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "C" fn ruleste_plugin_meta() -> u32 {
             static NAME: &[u8] = concat!($name, "\0").as_bytes();
             NAME.as_ptr() as u32
@@ -130,7 +130,7 @@ macro_rules! ruleste_meta {
 #[macro_export]
 macro_rules! ruleste_entity_types {
     ($($ty:literal),+ $(,)?) => {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "C" fn ruleste_plugin_entity_types(out_len: *mut u32) -> u32 {
             static TYPES: &[u8] = concat!($($ty, ",",)+ "\0").as_bytes();
             unsafe { *out_len = (TYPES.len() - 1) as u32 }
@@ -143,7 +143,7 @@ macro_rules! ruleste_entity_types {
 #[macro_export]
 macro_rules! ruleste_noop_destroy {
     () => {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "C" fn ruleste_entity_destroy(_id: EntityId) {}
     };
 }
@@ -152,13 +152,13 @@ macro_rules! ruleste_noop_destroy {
 #[macro_export]
 macro_rules! ruleste_noop_serialize {
     () => {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "C" fn ruleste_entity_serialize(_id: EntityId, out_len: *mut u32) -> u32 {
             unsafe { *out_len = 0 }
             0
         }
 
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "C" fn ruleste_entity_deserialize(_id: EntityId, _data: *const u8, _len: u32) {}
     };
 }

@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `soundSource` entity plugin.
 //!
 //! Mirrors `SoundSourceEntity.cs`: a depth -8500, invisible entity that plays
@@ -6,7 +7,7 @@
 //! SDL audio integration and does nothing else.
 
 use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{spawn_data, Entity, EntityState};
+use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::EntityId;
 
 ruleste_plugin_api::ruleste_meta!("soundsource");
@@ -14,18 +15,10 @@ ruleste_plugin_api::ruleste_entity_types!("soundSource");
 ruleste_plugin_api::ruleste_noop_destroy!();
 ruleste_plugin_api::ruleste_noop_serialize!();
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct SoundState {
     /// `data.Attr("sound")` — FMOD event handle, unused until audio lands.
     event_name: String,
-}
-
-impl Default for SoundState {
-    fn default() -> SoundState {
-        SoundState {
-            event_name: String::new(),
-        }
-    }
 }
 
 thread_local! {
@@ -42,7 +35,7 @@ fn with_state<R>(id: EntityId, f: impl FnOnce(&mut SoundState) -> R) -> R {
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
     let spawn: MapData = spawn_data(bytes);
@@ -56,8 +49,8 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(_id: EntityId, _dt: f32) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(_id: EntityId) {}

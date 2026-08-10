@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `redBlocks` / `yellowBlocks` / `greenBlocks` entity plugin.
 //!
 //! These are the Celestial Resort clutter blocks (`ClutterBlockBase.cs`):
@@ -8,7 +9,7 @@
 
 use ruleste_plugin_api::host;
 use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{spawn_data, Entity};
+use ruleste_plugin_api::plugin::{Entity, spawn_data};
 use ruleste_plugin_api::types::{Color, EntityId};
 
 ruleste_plugin_api::ruleste_meta!("clutter");
@@ -19,7 +20,7 @@ ruleste_plugin_api::ruleste_noop_serialize!();
 /// `enabledColor` from the original: black at 70% alpha.
 const ENABLED: Color = Color::new(0, 0, 0, 178);
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
     let spawn: MapData = spawn_data(bytes);
@@ -34,10 +35,10 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     entity.collision.platform(true);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(_id: EntityId, _dt: f32) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let entity = Entity::new(id);
     let (w, h, ox, oy) = entity.hitbox.get();

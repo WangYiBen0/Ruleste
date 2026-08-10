@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `wire` scenery entity plugin.
 //!
 //! Draws a hanging cable between the entity position and its first node as a
@@ -12,7 +13,7 @@ use std::cell::RefCell;
 
 use ruleste_plugin_api::host::draw_line;
 use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{spawn_data, Entity, EntityState};
+use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::{Color, EntityId, Vec2};
 ruleste_plugin_api::ruleste_meta!("wire");
 ruleste_plugin_api::ruleste_entity_types!("wire");
@@ -50,7 +51,7 @@ fn with_state(id: EntityId, f: impl FnOnce(&mut WireState)) {
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
     let spawn: MapData = spawn_data(bytes);
@@ -72,10 +73,10 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(_id: EntityId, _dt: f32) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     with_state(id, |st| {
         // Control point sags the cable: midpoint + (0, 24). Wind is omitted

@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! Spring entity plugin — bounces the player upward on contact.
 //!
 //! Validates the cross-plugin architecture: uses `host_entities_by_type` to
@@ -6,7 +7,7 @@
 
 use ruleste_plugin_api::host::{self, entities_by_type, log};
 use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{spawn_data, Entity, EntityState};
+use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::EntityId;
 
 ruleste_plugin_api::ruleste_meta!("spring");
@@ -35,7 +36,7 @@ fn with_state(id: EntityId, f: impl FnOnce(&mut SpringState)) {
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
     let spawn: MapData = spawn_data(bytes);
@@ -48,7 +49,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     with_state(id, |st| *st = SpringState::default());
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     with_state(id, |st| {
         st.cooldown -= dt;
@@ -90,5 +91,5 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(_id: EntityId) {}

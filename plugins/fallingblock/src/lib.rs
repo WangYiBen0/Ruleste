@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `fallingBlock` entity plugin.
 //!
 //! Mirrors `FallingBlock.cs`: a solid platform (marked via the host riding
@@ -7,7 +8,7 @@
 
 use ruleste_plugin_api::host;
 use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{spawn_data, Entity, EntityState};
+use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::{Color, EntityId};
 
 ruleste_plugin_api::ruleste_meta!("fallingblock");
@@ -73,7 +74,7 @@ fn player_on_top(entity: &Entity) -> bool {
     false
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
     let spawn: MapData = spawn_data(bytes);
@@ -87,7 +88,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     entity.collision.platform(true);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     with_state(id, |st| {
         if st.phase == 4 {
@@ -135,7 +136,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let entity = Entity::new(id);
     let (w, h, ox, oy) = entity.hitbox.get();
