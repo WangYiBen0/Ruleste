@@ -910,97 +910,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ruleste-booster"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-clutter"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-cobweb"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-crushblock"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-debris"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-door"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-dreamblock"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-fallingblock"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-hanginglamp"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-introcrusher"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-lamp"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-lightbeam"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-player"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
 name = "ruleste-plugin-api"
 version = "0.1.0"
 dependencies = [
@@ -1008,28 +917,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "ruleste-plugin-badelineboost"
+name = "ruleste-plugin-badeline-boost"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-plugin-bigspinner"
+name = "ruleste-plugin-big-spinner"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-plugin-bird"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-plugin-bonfire"
+name = "ruleste-plugin-booster"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
@@ -1043,13 +945,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ruleste-plugin-cliffflag"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
 name = "ruleste-plugin-cloud"
 version = "0.1.0"
 dependencies = [
@@ -1057,42 +952,77 @@ dependencies = [
 ]
 
 [[package]]
-name = "ruleste-plugin-dashblock"
+name = "ruleste-plugin-clutter"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-plugin-flutterbird"
+name = "ruleste-plugin-crush-block"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-plugin-heartgemdoor"
+name = "ruleste-plugin-dash-block"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-plugin-infinitestar"
+name = "ruleste-plugin-decorations"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-plugin-introcar"
+name = "ruleste-plugin-door"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-plugin-invisiblebarrier"
+name = "ruleste-plugin-dream-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-falling-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-heart-gem-door"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-infinite-star"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-intro-crusher"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
+name = "ruleste-plugin-invisible-barrier"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
@@ -1127,119 +1057,84 @@ dependencies = [
 ]
 
 [[package]]
-name = "ruleste-plugin-starjumpblock"
+name = "ruleste-plugin-player"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-plugin-summitbackground"
+name = "ruleste-plugin-refill"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-plugin-swapblock"
+name = "ruleste-plugin-rotate-spinner"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-plugin-torch"
+name = "ruleste-plugin-spikes"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-plugin-towerviewer"
+name = "ruleste-plugin-spinner"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-plugin-trackspinner"
+name = "ruleste-plugin-spring"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-plugin-triggerspikes"
+name = "ruleste-plugin-star-jump-block"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-plugin-zipmover"
+name = "ruleste-plugin-strawberry"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-refill"
+name = "ruleste-plugin-swap-block"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-resort-lantern"
+name = "ruleste-plugin-track-spinner"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-rotatespinner"
+name = "ruleste-plugin-trigger-spikes"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",
 ]
 
 [[package]]
-name = "ruleste-soundsource"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-spikes"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-spinner"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-spring"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-strawberry"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugin-api",
-]
-
-[[package]]
-name = "ruleste-wire"
+name = "ruleste-plugin-zip-mover"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugin-api",

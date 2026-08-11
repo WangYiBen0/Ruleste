@@ -1,5 +1,5 @@
 [package]
-name = "ruleste-booster"
+name = "ruleste-plugin-booster"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
@@ -10,4 +10,6 @@ license = "MIT"
 crate-type = ["cdylib"]
 
 [dependencies]
-ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = [
+  "plugin",
+] }

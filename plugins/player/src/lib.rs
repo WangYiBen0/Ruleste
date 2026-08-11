@@ -95,6 +95,36 @@ const SUPER_JUMP_Y: f32 = -105.0;
 const DUCK_SUPER_X_MULT: f32 = 1.25;
 const DUCK_SUPER_Y_MULT: f32 = 0.5;
 
+// Booster (`Booster.cs` -> `Player.BoostCoroutine`).
+const BOOST_TIME: f32 = 0.25;
+const BOOST_APPROACH_SPEED: f32 = 80.0;
+
+// Bumper (`Player.ExplodeLaunch`) and BadelineBoost launches (`StLaunch`).
+const EXPLODE_LAUNCH_SPEED: f32 = 280.0;
+const LAUNCH_FALL_TARGET: f32 = 160.0;
+const LAUNCH_Y_ACCEL_RISE: f32 = 450.0;
+const LAUNCH_Y_ACCEL_FALL: f32 = 225.0;
+const LAUNCH_X_ACCEL: f32 = 200.0;
+const LAUNCH_RETURN_SPEED: f32 = 220.0;
+const BADELINE_LAUNCH_SPEED: f32 = -330.0;
+const BADELINE_APPROACH_X: f32 = 60.0;
+
+// Feather flight (`Player.StStarFly`, mirroring `FlyFeather.cs`).
+const STARFLY_TIME: f32 = 2.0;
+const STARFLY_BOOST_SPEED: f32 = 250.0;
+const STARFLY_TURN_SPEED: f32 = 5.5850534;
+const STARFLY_TARGET_NO_INPUT: f32 = 91.0;
+const STARFLY_TARGET_SLOW: f32 = 140.0;
+const STARFLY_TARGET_FAST: f32 = 190.0;
+const STARFLY_SPEED_LERP_TIME: f32 = 1.0;
+const STARFLY_SPEED_ACCEL: f32 = 1000.0;
+const STARFLY_TRANSFORM_DECEL: f32 = 1000.0;
+
+/// Maximum number of dashes. `MaxDashes` in the original is 1 for Madeline.
+const MAX_DASHES: i32 = 1;
+/// `Refill.cs` stamina threshold below which a refill is still useful.
+const REFILL_STAMINA_MIN: f32 = 20.0;
+
 // Hitboxes (`Player.cs`): size and offset relative to the foot-center anchor.
 const NORMAL_HITBOX: (f32, f32, f32, f32) = (8.0, 11.0, -4.0, -11.0);
 const DUCK_HITBOX: (f32, f32, f32, f32) = (8.0, 6.0, -4.0, -6.0);
@@ -103,6 +133,15 @@ const DUCK_HITBOX: (f32, f32, f32, f32) = (8.0, 6.0, -4.0, -6.0);
 const ST_NORMAL: u32 = 0;
 const ST_CLIMB: u32 = 1;
 const ST_DASH: u32 = 2;
+const ST_BOOST: u32 = 4;
+const ST_LAUNCH: u32 = 7;
+const ST_SUMMIT_LAUNCH: u32 = 10;
+const ST_STARFLY: u32 = 19;
+
+// Spring side bounce (`Player.SideBounce`): `SideBounceSpeed`/`ForceMoveXTime`.
+const SIDE_BOUNCE_SPEED: f32 = 240.0;
+const SIDE_BOUNCE_FORCE_TIME: f32 = 0.3;
+const SUPER_BOUNCE_SPEED: f32 = -185.0;
 
 ruleste_meta!("player");
 ruleste_entity_types!("player");
@@ -141,6 +180,22 @@ struct PlayerState {
     dash_dir: Vec2,
     before_dash_speed: Vec2,
     launched: bool,
+    // Booster (`StBoost`): pull toward the booster center until the timer runs
+    // out, then the stored aim fires a dash.
+    boost_target: Vec2,
+    boost_timer: f32,
+    // Launch (`StLaunch`): optional horizontal approach target while airborne.
+    launch_approach_x: f32,
+    has_launch_approach: bool,
+    // Feather flight (`StStarFly`).
+    starfly_timer: f32,
+    starfly_transforming: bool,
+    starfly_speed_lerp: f32,
+    starfly_last_dir: Vec2,
+    // Carried by another plugin (BadelineBoost grab): frozen in place with the
+    // carrier driving the position each frame.
+    carried: bool,
+    carry_target: Vec2,
     // Current state machine value.
     state: u32,
     /// Last derived state-machine value, used to log transitions in debug mode.
@@ -174,6 +229,16 @@ impl Default for PlayerState {
             dash_dir: Vec2::ZERO,
             before_dash_speed: Vec2::ZERO,
             launched: false,
+            boost_target: Vec2::ZERO,
+            boost_timer: 0.0,
+            launch_approach_x: 0.0,
+            has_launch_approach: false,
+            starfly_timer: 0.0,
+            starfly_transforming: false,
+            starfly_speed_lerp: 0.0,
+            starfly_last_dir: Vec2::ZERO,
+            carried: false,
+            carry_target: Vec2::ZERO,
             state: ST_NORMAL,
             debug_state: ST_NORMAL,
         }
@@ -224,11 +289,10 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     let mut speed = entity.speed.get();
     let grounded = entity.collision.is_grounded();
 
-    // On the ground dash refills, the cooldown clears, and the coyote timer is
-    // kept topped up (the original refills dashes on landing).
-    if grounded {
-        st.dashes = 1;
-        st.dash_cooldown = 0.0;
+    // On the ground dashes refill — but only once `dashRefillCooldownTimer`
+    // expires, otherwise a dash landing instantly recharges.
+    if grounded && st.dash_refill_cooldown <= 0.0 {
+        st.dashes = MAX_DASHES;
         st.jump_grace = JUMP_GRACE_TIME;
     }
 
@@ -240,8 +304,20 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     if st.dash_attack_timer > 0.0 {
         st.dash_attack_timer -= dt;
     }
+    st.wall_slide_timer -= dt;
     st.wall_boost_timer -= dt;
     st.low_friction_stop -= dt;
+
+    // Carried: the carrier owns the position; everything else is frozen.
+    if st.carried {
+        entity.position.set_xy(st.carry_target.x, st.carry_target.y);
+        entity.speed.set(Vec2::ZERO);
+        publish_resources(id, &st);
+        STATES.with(|s| {
+            s.borrow_mut().insert(id, st);
+        });
+        return;
+    }
 
     let mut move_x = Input::axis(input::MOVE_RIGHT) - Input::axis(input::MOVE_LEFT);
     let move_y = Input::axis(input::MOVE_DOWN) - Input::axis(input::MOVE_UP);
@@ -259,6 +335,10 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         ST_NORMAL => normal_update(&entity, &mut st, &mut speed, dt, move_x, move_y, grounded),
         ST_CLIMB => climb_update(&entity, &mut st, &mut speed, dt, move_x, move_y, grounded),
         ST_DASH => dash_update(&entity, &mut st, &mut speed, dt),
+        ST_BOOST => boost_update(&entity, &mut st, &mut speed, dt),
+        ST_LAUNCH => launch_update(&entity, &mut st, &mut speed, dt),
+        ST_SUMMIT_LAUNCH => summit_launch_update(&entity, &mut st, &mut speed, dt),
+        ST_STARFLY => starfly_update(&entity, &mut st, &mut speed, dt, move_x, move_y, grounded),
         _ => ST_NORMAL,
     };
 
@@ -274,17 +354,26 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         }
     }
 
-    // `StDash` moves inside `dash_update`; the other states get the shared
-    // `Actor.MoveH/MoveV` pass here.
-    if st.state != ST_DASH {
+    // `StDash`/`StBoost`/`StStarFly` move inside their own updates; the other
+    // states get the shared `Actor.MoveH/MoveV` pass here.
+    if st.state != ST_DASH && st.state != ST_BOOST && st.state != ST_STARFLY {
         move_and_collide(&entity, &mut st, &mut speed, dt);
     }
     entity.speed.set(speed);
+    publish_resources(id, &st);
 
     debug_state_log(id, &st);
     STATES.with(|s| {
         s.borrow_mut().insert(id, st);
     });
+}
+
+/// Publishes the player's dash count and stamina to the host so refills,
+/// springs and other plugins can read them back via the FFI.
+fn publish_resources(id: EntityId, st: &PlayerState) {
+    ruleste_plugin_api::host::set_player_dashes(id, st.dashes);
+    ruleste_plugin_api::host::set_player_stamina(id, st.stamina);
+    ruleste_plugin_api::host::set_player_state(id, st.state);
 }
 
 #[unsafe(no_mangle)]
@@ -652,7 +741,6 @@ fn dash_update(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt: f32)
 
     // Movement + collision; the flatten and end rules match the DashCoroutine.
     let result = entity.collision.actor_move(speed.x * dt, speed.y * dt);
-    let crushed = dash_hits_crushblock(entity);
 
     if result.on_ground && d.x != 0.0 && d.y > 0.0 && speed.y > 0.0 {
         // Diagonal-down dash reaching the ground flattens into a 1.2x dash and
@@ -667,15 +755,27 @@ fn dash_update(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt: f32)
         st.jump_grace = JUMP_GRACE_TIME;
     }
 
-    if st.dash_timer <= 0.0
-        || result.hit_wall_left
-        || result.hit_wall_right
-        || result.hit_ceiling
-        || crushed
-    {
-        // Dash end: forward/up tapering mirrors `DashCoroutine`'s tail.
+    if st.dash_timer <= 0.0 || result.hit_wall_left || result.hit_wall_right || result.hit_ceiling {
+        // Dash end: forward/up tapering mirrors `DashCoroutine`'s tail. A
+        // crush block in the hit direction is told via `EV_CRUSH` (with the
+        // wall direction) so the block can start its attack; `dashCooldownTimer`
+        // is only ever set at dash start.
         st.dash_timer = 0.0;
-        st.dash_cooldown = DASH_COOLDOWN;
+        let (wall_dir_h, wall_dir_v) = if result.hit_wall_left {
+            (-1, 0)
+        } else if result.hit_wall_right {
+            (1, 0)
+        } else if result.hit_ceiling {
+            (0, -1)
+        } else {
+            (0, 0)
+        };
+        if wall_dir_h != 0 && dash_hits_crushblock_dir(entity, wall_dir_h) {
+            emit_crush_dir(entity.id, wall_dir_h, 0);
+        }
+        if wall_dir_v != 0 && dash_hits_crushblock_dir(entity, wall_dir_v) {
+            emit_crush_dir(entity.id, 0, wall_dir_v);
+        }
         if result.hit_wall_left || result.hit_wall_right || result.hit_ceiling {
             // Reflect the tail speed off the wall/ceiling.
             let dx = if result.hit_wall_left {
@@ -700,6 +800,244 @@ fn dash_update(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt: f32)
     st.dash_timer -= dt;
 
     ST_DASH
+}
+
+/// Emits `EV_CRUSH` toward a crush block in wall direction `h` and `v` (sign),
+/// the payload the block uses to decide whether it can activate (`CanActivate`).
+fn emit_crush_dir(id: EntityId, h: i32, v: i32) {
+    let mut buf = [0u8; 2];
+    buf[0] = (h.clamp(-1, 1)) as i8 as u8;
+    buf[1] = (v.clamp(-1, 1)) as i8 as u8;
+    ruleste_plugin_api::host::emit(id, ruleste_plugin_api::host::EV_CRUSH, &buf);
+}
+
+// ---------------------------------------------------------------------------
+// Boost / launch / star fly state updates (`StBoost`, `StLaunch`,
+// `StSummitLaunch`, `StStarFly`)
+// ---------------------------------------------------------------------------
+
+/// `StBoost` (`Player.BoostUpdate`): pulled toward the booster center for
+/// `BOOST_TIME`, then a dash fires in the held aim. `BoostBegin` refills.
+fn boost_update(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt: f32) -> u32 {
+    let aim = Input::axis(input::MOVE_RIGHT) - Input::axis(input::MOVE_LEFT);
+    let p = entity.position.get();
+    let target = Vec2::new(st.boost_target.x + aim * 3.0, st.boost_target.y);
+    let moved = approach_point(p, target, BOOST_APPROACH_SPEED * dt);
+    entity.position.set_xy(moved.x, moved.y);
+
+    st.boost_timer -= dt;
+    if st.boost_timer <= 0.0 {
+        // `BoostCoroutine` exit: a dash in the current aim direction.
+        let move_y = Input::axis(input::MOVE_DOWN) - Input::axis(input::MOVE_UP);
+        start_dash(entity, st, speed, aim, move_y);
+        return ST_DASH;
+    }
+    ST_BOOST
+}
+
+/// `StLaunch` (`Player.LaunchUpdate`): gravity approach and horizontal decay
+/// until the speed falls under the return threshold.
+fn launch_update(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt: f32) -> u32 {
+    if st.has_launch_approach {
+        let p = entity.position.get();
+        let nx = approach(p.x, st.launch_approach_x, BADELINE_APPROACH_X * dt);
+        entity.position.set_xy(nx, p.y);
+    }
+    if can_dash(*st) && Input::pressed(input::DASH) {
+        let move_x = Input::axis(input::MOVE_RIGHT) - Input::axis(input::MOVE_LEFT);
+        let move_y = Input::axis(input::MOVE_DOWN) - Input::axis(input::MOVE_UP);
+        start_dash(entity, st, speed, move_x, move_y);
+        return ST_DASH;
+    }
+    if speed.y < 0.0 {
+        speed.y = approach(speed.y, LAUNCH_FALL_TARGET, LAUNCH_Y_ACCEL_RISE * dt);
+    } else {
+        speed.y = approach(speed.y, LAUNCH_FALL_TARGET, LAUNCH_Y_ACCEL_FALL * dt);
+    }
+    speed.x = approach(speed.x, 0.0, LAUNCH_X_ACCEL * dt);
+    if speed.length() < LAUNCH_RETURN_SPEED {
+        st.launched = false;
+        st.has_launch_approach = false;
+        return ST_NORMAL;
+    }
+    ST_LAUNCH
+}
+
+/// `StSummitLaunch` (`Player.SummitLaunchUpdate`): straight up at 240 while
+/// drifting toward the target X.
+fn summit_launch_update(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, _dt: f32) -> u32 {
+    st.facing = 1;
+    let p = entity.position.get();
+    let nx = approach(p.x, st.launch_approach_x, 20.0 * 1.0);
+    entity.position.set_xy(nx, p.y);
+    *speed = Vec2::new(0.0, -240.0);
+    ST_SUMMIT_LAUNCH
+}
+
+/// `StStarFly` (`Player.StarFlyUpdate`, simplified): rotate the current speed
+/// toward the feather input, ramp speed between 140/190, exit with a normal
+/// jump or when the timer expires.
+#[allow(clippy::too_many_arguments)]
+fn starfly_update(
+    entity: &Entity,
+    st: &mut PlayerState,
+    speed: &mut Vec2,
+    dt: f32,
+    move_x: f32,
+    move_y: f32,
+    grounded: bool,
+) -> u32 {
+    let _ = grounded;
+    if st.starfly_transforming {
+        // `startStarFly` morph: coast to a halt first.
+        *speed = approach_vec(*speed, Vec2::ZERO, STARFLY_TRANSFORM_DECEL * dt);
+        if speed.length() <= 1.0 {
+            st.starfly_transforming = false;
+            st.starfly_timer = STARFLY_TIME;
+            // Refills happen at morph end (`StarFlyCoroutine`).
+            st.dashes = MAX_DASHES;
+            st.stamina = CLIMB_MAX_STAMINA;
+            let dir = if move_x != 0.0 || move_y != 0.0 {
+                normalize(move_x, move_y)
+            } else {
+                Vec2::new(st.facing as f32, 0.0)
+            };
+            st.starfly_last_dir = dir;
+            *speed = Vec2::new(dir.x * STARFLY_BOOST_SPEED, dir.y * STARFLY_BOOST_SPEED);
+        }
+        return ST_STARFLY;
+    }
+
+    let aim = if move_x != 0.0 || move_y != 0.0 {
+        normalize(move_x, move_y)
+    } else {
+        Vec2::ZERO
+    };
+    let no_input = aim.x == 0.0 && aim.y == 0.0;
+    let cur = safe_normalize(speed);
+    let dir = if cur != Vec2::ZERO {
+        rotate_toward(cur, aim, STARFLY_TURN_SPEED * dt)
+    } else {
+        aim
+    };
+    st.starfly_last_dir = dir;
+    let target = if no_input {
+        st.starfly_speed_lerp = 0.0;
+        STARFLY_TARGET_NO_INPUT
+    } else if dir != Vec2::ZERO && dot(cur, aim) >= 0.45 {
+        st.starfly_speed_lerp = approach(st.starfly_speed_lerp, 1.0, dt / STARFLY_SPEED_LERP_TIME);
+        lerp(
+            STARFLY_TARGET_SLOW,
+            STARFLY_TARGET_FAST,
+            st.starfly_speed_lerp,
+        )
+    } else {
+        st.starfly_speed_lerp = 0.0;
+        STARFLY_TARGET_SLOW
+    };
+    let val = speed.length();
+    let val = approach(val, target, STARFLY_SPEED_ACCEL * dt);
+    *speed = Vec2::new(dir.x * val, dir.y * val);
+
+    // Jump cancels into a normal/wall jump; grab into a climb.
+    if Input::pressed(input::JUMP) {
+        if entity.collision.is_grounded() {
+            jump(entity, st, speed, move_x);
+            Input::consume(input::JUMP);
+            return ST_NORMAL;
+        }
+        if wall_jump_check(entity, -1) {
+            wall_jump(entity, st, speed, 1);
+            Input::consume(input::JUMP);
+            return ST_NORMAL;
+        }
+        if wall_jump_check(entity, 1) {
+            wall_jump(entity, st, speed, -1);
+            Input::consume(input::JUMP);
+            return ST_NORMAL;
+        }
+    }
+    if Input::button(input::CLIMB) && !st.ducking {
+        if climb_check(entity, 1, 0.0) {
+            climb_begin(entity, st, speed);
+            return ST_CLIMB;
+        }
+        if climb_check(entity, -1, 0.0) {
+            climb_begin(entity, st, speed);
+            return ST_CLIMB;
+        }
+    }
+    if can_dash(*st) && Input::pressed(input::DASH) {
+        start_dash(entity, st, speed, move_x, move_y);
+        return ST_DASH;
+    }
+
+    // Move and bounce off walls/ceilings (`OnCollideH` starfly branch).
+    let result = entity.collision.actor_move(speed.x * dt, speed.y * dt);
+    if result.hit_wall_left || result.hit_wall_right {
+        if st.starfly_timer < 0.2 {
+            speed.x = 0.0;
+        } else {
+            speed.x *= -0.5;
+        }
+    }
+    if result.hit_ceiling && speed.y < 0.0 {
+        speed.y *= -0.5;
+    }
+
+    st.starfly_timer -= dt;
+    if st.starfly_timer <= 0.0 {
+        // `StarFlyEnd`: damp exit, clamp horizontal speed, jump input carries.
+        if move_y < 0.0 {
+            speed.y = -100.0;
+        }
+        if speed.y > 0.0 {
+            speed.y = 0.0;
+        }
+        if speed.x.abs() > 140.0 {
+            speed.x = 140.0 * speed.x.signum();
+        }
+        return ST_NORMAL;
+    }
+    ST_STARFLY
+}
+
+fn approach_vec(value: Vec2, target: Vec2, max_move: f32) -> Vec2 {
+    let dx = target.x - value.x;
+    let dy = target.y - value.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len <= max_move {
+        target
+    } else {
+        Vec2::new(value.x + dx / len * max_move, value.y + dy / len * max_move)
+    }
+}
+
+fn approach_point(value: Vec2, target: Vec2, max_move: f32) -> Vec2 {
+    approach_vec(value, target, max_move)
+}
+
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t.clamp(0.0, 1.0)
+}
+
+/// `Vector2.RotateTowards(target, maxRadiansDelta)`.
+fn rotate_toward(from: Vec2, to: Vec2, max_delta: f32) -> Vec2 {
+    if to == Vec2::ZERO {
+        return from;
+    }
+    let from_angle = from.y.atan2(from.x);
+    let to_angle = to.y.atan2(to.x);
+    let mut diff = to_angle - from_angle;
+    // Wrap to [-PI, PI].
+    while diff > std::f32::consts::PI {
+        diff -= 2.0 * std::f32::consts::PI;
+    }
+    while diff < -std::f32::consts::PI {
+        diff += 2.0 * std::f32::consts::PI;
+    }
+    let angle = from_angle + diff.clamp(-max_delta, max_delta);
+    Vec2::new(angle.cos(), angle.sin())
 }
 
 /// The shared physics pass for the non-dash states: horizontal then vertical
@@ -991,8 +1329,10 @@ fn set_ducking(entity: &Entity, st: &mut PlayerState, ducking: bool) {
     }
 }
 
-/// True when the dashing player overlaps a `crushBlock` entity's hitbox.
-fn dash_hits_crushblock(entity: &Entity) -> bool {
+/// True when the dashing player overlaps a `crushBlock` entity's hitbox while
+/// hitting a wall in direction `_dir` (the payload's sign selects the block's
+/// activation axis).
+fn dash_hits_crushblock_dir(entity: &Entity, _dir: i32) -> bool {
     let p = entity.position.get();
     let (w, h, ox, oy) = entity.hitbox.get();
     let px = p.x + ox;
@@ -1013,45 +1353,174 @@ fn dash_hits_crushblock(entity: &Entity) -> bool {
     false
 }
 
-/// Handles events from other plugins (refills, boosters) before movement.
+/// Handles events from other plugins (refills, boosters, bumpers, springs,
+/// feathers, BadelineBoost) before movement. Resource-affecting events consult
+/// the player's current dashes/stamina so a full player is not refilled.
 fn handle_events(id: EntityId) {
+    let mut new_state: Option<u32> = None;
+    let mut speed_override: Option<Vec2> = None;
     for (_, kind, data) in ruleste_plugin_api::host::drain_events() {
-        with_state(id, |st| match kind {
+        match kind {
             ruleste_plugin_api::host::EV_REFILL => {
-                let two = data.first().copied().unwrap_or(0) != 0;
-                st.dashes = if two { 2 } else { 1 };
-                st.dash_cooldown = 0.0;
-                st.dash_refill_cooldown = 0.0;
-                st.stamina = CLIMB_MAX_STAMINA;
+                with_state(id, |st| {
+                    let two = data.first().copied().unwrap_or(0) != 0;
+                    let want = if two { 2 } else { MAX_DASHES };
+                    let used = st.dashes < want || st.stamina < REFILL_STAMINA_MIN;
+                    if used {
+                        st.dashes = want;
+                        st.dash_cooldown = 0.0;
+                        st.dash_refill_cooldown = 0.0;
+                        st.stamina = CLIMB_MAX_STAMINA;
+                    }
+                });
             }
             ruleste_plugin_api::host::EV_BOOST => {
-                let move_x = Input::axis(input::MOVE_RIGHT) - Input::axis(input::MOVE_LEFT);
-                let move_y = Input::axis(input::MOVE_DOWN) - Input::axis(input::MOVE_UP);
-                let dir = if move_x != 0.0 || move_y != 0.0 {
-                    normalize(move_x, move_y)
-                } else {
-                    Vec2::new(st.facing as f32, 0.0)
+                let target = read_vec2(&data);
+                with_state(id, |st| {
+                    // `BoostBegin`: refill before the pull starts.
+                    st.dashes = MAX_DASHES;
+                    st.stamina = CLIMB_MAX_STAMINA;
+                    st.boost_target = target;
+                    st.boost_timer = BOOST_TIME;
+                    st.wall_slide_dir = 0;
+                    new_state = Some(ST_BOOST);
+                });
+            }
+            ruleste_plugin_api::host::EV_LAUNCH => {
+                let from_dir = safe_normalize(&read_vec2(&data));
+                with_state(id, |st| {
+                    st.launched = true;
+                    st.dashes = MAX_DASHES;
+                    st.stamina = CLIMB_MAX_STAMINA;
+                    st.dash_cooldown = DASH_COOLDOWN;
+                    st.has_launch_approach = false;
+                    speed_override = Some(Vec2::new(
+                        from_dir.x * EXPLODE_LAUNCH_SPEED,
+                        from_dir.y * EXPLODE_LAUNCH_SPEED,
+                    ));
+                    new_state = Some(ST_LAUNCH);
+                });
+            }
+            ruleste_plugin_api::host::EV_SIDE_BOUNCE => {
+                let dir = match data.first() {
+                    Some(b) => *b as i8 as i32,
+                    None => 1,
                 };
-                // `BoostBegin` (simplified): refill dashes and launch along the
-                // held aim. The in-booster spiral is an engine feature that
-                // the booster entity does not drive yet.
-                st.dashes = 1;
-                st.launched = true;
-                st.dash_dir = dir;
-                st.dash_timer = DASH_TIME;
-                st.dash_cooldown = 0.0;
-                st.wall_slide_dir = 0;
-                ruleste_plugin_api::host::Speed::new(id)
-                    .set(Vec2::new(dir.x * DASH_SPEED, dir.y * DASH_SPEED));
-                ruleste_plugin_api::host::emit(
-                    id,
-                    ruleste_plugin_api::plugin::event::PLAYER_DASH,
-                    &[],
-                );
+                with_state(id, |st| {
+                    if speed_of(id).x.abs() > SIDE_BOUNCE_SPEED
+                        && (speed_of(id).x.signum() as i32) == dir
+                    {
+                        // `SideBounce` early-out: too fast in the same direction.
+                        return;
+                    }
+                    st.dashes = MAX_DASHES;
+                    st.stamina = CLIMB_MAX_STAMINA;
+                    st.jump_grace = 0.0;
+                    st.var_jump_timer = 0.2;
+                    st.dash_attack_timer = 0.0;
+                    st.wall_slide_timer = WALL_SLIDE_TIME;
+                    st.launched = false;
+                    st.force_move_x = dir as f32;
+                    st.force_move_timer = SIDE_BOUNCE_FORCE_TIME;
+                    speed_override = Some(Vec2::new(SIDE_BOUNCE_SPEED * dir as f32, 0.0));
+                    new_state = Some(ST_NORMAL);
+                });
+            }
+            ruleste_plugin_api::host::EV_SUPER_BOUNCE => {
+                let from_y = read_f32(&data).unwrap_or(0.0);
+                with_state(id, |st| {
+                    // `Player.SuperBounce(fromY)`: snap to the spring top, refill
+                    // everything, then launch straight up at -185.
+                    st.dashes = MAX_DASHES;
+                    st.stamina = CLIMB_MAX_STAMINA;
+                    st.jump_grace = 0.0;
+                    st.var_jump_timer = 0.2;
+                    st.var_jump_speed = SUPER_BOUNCE_SPEED;
+                    st.dash_attack_timer = 0.0;
+                    st.wall_slide_timer = WALL_SLIDE_TIME;
+                    st.launched = false;
+                    st.dash_refill_cooldown = 0.0;
+                    let p = Entity::new(id).position.get();
+                    Entity::new(id).position.set_xy(p.x, from_y - 11.0);
+                    speed_override = Some(Vec2::new(0.0, SUPER_BOUNCE_SPEED));
+                    new_state = Some(ST_NORMAL);
+                });
+            }
+            ruleste_plugin_api::host::EV_STARFLY => {
+                let strength = read_f32(&data).unwrap_or(STARFLY_TIME);
+                with_state(id, |st| {
+                    if st.state == ST_STARFLY {
+                        // Already flying: top up the timer (`StartStarFly`).
+                        st.starfly_timer = st.starfly_timer.max(strength);
+                    } else {
+                        st.starfly_timer = strength;
+                        st.starfly_transforming = true;
+                        st.starfly_speed_lerp = 0.0;
+                        st.jump_grace = 0.0;
+                        new_state = Some(ST_STARFLY);
+                    }
+                });
+            }
+            ruleste_plugin_api::host::EV_BADELINE_BOOST => {
+                let at_x = read_f32(&data).unwrap_or(0.0);
+                let final_boost = data.get(4).copied().unwrap_or(0) != 0;
+                with_state(id, |st| {
+                    st.launched = true;
+                    st.dashes = MAX_DASHES;
+                    st.stamina = CLIMB_MAX_STAMINA;
+                    st.dash_cooldown = DASH_COOLDOWN;
+                    st.has_launch_approach = true;
+                    st.launch_approach_x = at_x;
+                    if final_boost {
+                        st.launch_approach_x = at_x;
+                        new_state = Some(ST_SUMMIT_LAUNCH);
+                    } else {
+                        new_state = Some(ST_LAUNCH);
+                    }
+                    speed_override = Some(Vec2::new(0.0, BADELINE_LAUNCH_SPEED));
+                });
+            }
+            ruleste_plugin_api::host::EV_CARRIED => {
+                let on = data.get(8).copied().unwrap_or(0) != 0;
+                let pos = read_vec2(&data);
+                with_state(id, |st| {
+                    st.carried = on;
+                    st.carry_target = pos;
+                    if on {
+                        speed_override = Some(Vec2::ZERO);
+                    }
+                });
             }
             _ => {}
-        });
+        }
     }
+    if let Some(s) = new_state {
+        with_state(id, |st| st.state = s);
+    }
+    if let Some(v) = speed_override {
+        ruleste_plugin_api::host::Speed::new(id).set(v);
+    }
+}
+
+/// Reads the current speed of an entity (used for event guards).
+fn speed_of(id: EntityId) -> Vec2 {
+    ruleste_plugin_api::host::Speed::new(id).get()
+}
+
+fn read_f32(data: &[u8]) -> Option<f32> {
+    data.get(0..4)
+        .and_then(|s| <[u8; 4]>::try_from(s).ok())
+        .map(f32::from_le_bytes)
+}
+
+/// Reads a `Vec2` from the first 8 bytes of an event payload.
+fn read_vec2(data: &[u8]) -> Vec2 {
+    let x = read_f32(data).unwrap_or(0.0);
+    let y = data
+        .get(4..8)
+        .map(|s| f32::from_le_bytes(s.try_into().ok().unwrap_or([0; 4])))
+        .unwrap_or(0.0);
+    Vec2::new(x, y)
 }
 
 /// Derives a readable state name and, in debug mode, logs transitions.
@@ -1065,6 +1534,10 @@ fn debug_state_log(id: EntityId, st: &PlayerState) {
     let name = match st.state {
         ST_CLIMB => "Climb",
         ST_DASH => "Dash",
+        ST_BOOST => "Boost",
+        ST_LAUNCH => "Launch",
+        ST_SUMMIT_LAUNCH => "SummitLaunch",
+        ST_STARFLY => "StarFly",
         _ => "Normal",
     };
     ruleste_plugin_api::host::log(&format!("player {id} state -> {name} ({})", st.state));
@@ -1110,6 +1583,20 @@ pub extern "C" fn ruleste_entity_serialize(id: EntityId, out_len: *mut u32) -> u
     push_f32(&mut buf, st.hop_wait_x_speed);
     push_f32(&mut buf, st.force_move_x);
     push_f32(&mut buf, st.force_move_timer);
+    // Version 4 fields (boost / launch / star fly / carried).
+    push_f32(&mut buf, st.boost_target.x);
+    push_f32(&mut buf, st.boost_target.y);
+    push_f32(&mut buf, st.boost_timer);
+    push_f32(&mut buf, st.launch_approach_x);
+    push_u8(&mut buf, u8::from(st.has_launch_approach));
+    push_f32(&mut buf, st.starfly_timer);
+    push_u8(&mut buf, u8::from(st.starfly_transforming));
+    push_f32(&mut buf, st.starfly_speed_lerp);
+    push_f32(&mut buf, st.starfly_last_dir.x);
+    push_f32(&mut buf, st.starfly_last_dir.y);
+    push_u8(&mut buf, u8::from(st.carried));
+    push_f32(&mut buf, st.carry_target.x);
+    push_f32(&mut buf, st.carry_target.y);
     unsafe { *out_len = buf.len() as u32 }
     let ptr = buf.as_ptr() as u32;
     SER_BUF.with(|b| *b.borrow_mut() = buf);
@@ -1181,6 +1668,20 @@ fn parse_state(bytes: &[u8]) -> Option<PlayerState> {
         st.force_move_x = r.f32()?;
         st.force_move_timer = r.f32()?;
     }
+    // Version 4 trailing fields (29 bytes: 2 f32 + 1 f32 + 1 f32 + 1 u8 +
+    // 1 f32 + 1 u8 + 1 f32 + 2 f32 + 1 u8 + 2 f32).
+    if r.remaining() >= 29 {
+        st.boost_target = Vec2::new(r.f32()?, r.f32()?);
+        st.boost_timer = r.f32()?;
+        st.launch_approach_x = r.f32()?;
+        st.has_launch_approach = r.u8()? != 0;
+        st.starfly_timer = r.f32()?;
+        st.starfly_transforming = r.u8()? != 0;
+        st.starfly_speed_lerp = r.f32()?;
+        st.starfly_last_dir = Vec2::new(r.f32()?, r.f32()?);
+        st.carried = r.u8()? != 0;
+        st.carry_target = Vec2::new(r.f32()?, r.f32()?);
+    }
     Some(st)
 }
 
@@ -1233,4 +1734,17 @@ fn approach(value: f32, target: f32, max_move: f32) -> f32 {
 fn normalize(x: f32, y: f32) -> Vec2 {
     let len = (x * x + y * y).sqrt();
     Vec2::new(x / len, y / len)
+}
+
+fn safe_normalize(v: &Vec2) -> Vec2 {
+    let len = v.length();
+    if len < 1e-6 {
+        Vec2::ZERO
+    } else {
+        Vec2::new(v.x / len, v.y / len)
+    }
+}
+
+fn dot(a: Vec2, b: Vec2) -> f32 {
+    a.x * b.x + a.y * b.y
 }

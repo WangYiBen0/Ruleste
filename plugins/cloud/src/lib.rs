@@ -1,12 +1,13 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `cloud` entity plugin.
 //!
-//! Mirrors `Cloud.cs`: a 32-wide jump-through platform floating in place. When
-//! the player lands on it and presses down the cloud dips, squishes, then
-//! springs back up, launching the rider with `Speed.Y = -200`. `fragile` clouds
-//! (pink) shatter: they fade out, go non-collidable, and respawn after 2.5s;
-//! non-fragile clouds just return to their resting height. The platform is a
-//! host solid-platform, so riders are carried along during the bounce.
+//! Mirrors `Cloud.cs`: a 32-wide jump-through platform (hitbox `32×5` at
+//! `(-16,0)`) floating in place. When the player lands on it and presses down
+//! the cloud dips, squishes, then springs back up, launching the rider with
+//! `Speed.Y = -200`. `fragile` clouds (pink) shatter: they fade out, go
+//! non-collidable, and respawn after 2.5s; non-fragile clouds just return to
+//! their resting height. Downward fall speed is capped at 220 (`num = -220`).
+//! The platform is a host solid-platform, so riders are carried during bounce.
 
 use ruleste_plugin_api::host;
 use ruleste_plugin_api::map::MapData;
@@ -21,6 +22,10 @@ ruleste_plugin_api::ruleste_noop_serialize!();
 const BOOST_ACCEL: f32 = 1200.0;
 const RETURN_ACCEL: f32 = 600.0;
 const RESPAWN_TIME: f32 = 2.5;
+/// Max downward fall speed, `num = -220f` in the original.
+const MAX_FALL: f32 = 220.0;
+/// Fade animation: 6 frames, advanced at 12fps.
+const FADE_RATE: f32 = 12.0;
 
 #[derive(Debug)]
 struct CloudState {
@@ -93,6 +98,11 @@ fn has_rider(id: EntityId, top: f32) -> Option<u32> {
     None
 }
 
+/// The cloud's standable top surface (hitbox y-offset is 0).
+fn top_of(entity: &Entity) -> f32 {
+    entity.position.get().y
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
@@ -101,7 +111,8 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let y = spawn.get_float("y", 0.0);
     let entity = Entity::new(id);
     entity.position.set_xy(x, y);
-    entity.hitbox.set(32.0, 8.0, -16.0, -8.0);
+    // `JumpThru(position, 32)`: Hitbox(32, 5), Collider.Position.X = -16.
+    entity.hitbox.set(32.0, 5.0, -16.0, 0.0);
     entity.collision.platform(true);
     entity.depth.set(-9000);
     with_state(id, |st| {
@@ -117,6 +128,9 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         st.timer += dt;
         st.scale_x = approach(st.scale_x, 1.0, 1.0 * dt);
         st.scale_y = approach(st.scale_y, 1.0, 1.0 * dt);
+        if st.fading {
+            st.fade_frame += FADE_RATE * dt;
+        }
 
         // The sprite bobs up and down while at rest (unless someone rides it).
         if st.active && st.waiting {
@@ -141,7 +155,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         }
 
         if st.waiting {
-            let top = entity.position.get().y - 8.0;
+            let top = top_of(&entity);
             let rider = has_rider(id, top).filter(|pid| host::Speed::new(*pid).get().y >= 0.0);
             if rider.is_some() {
                 st.waiting = false;
@@ -169,7 +183,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         }
 
         // Fragile clouds collapse when their rider hops off before the bounce.
-        if st.fragile && st.active && has_rider(id, entity.position.get().y - 8.0).is_none() {
+        if st.fragile && st.active && has_rider(id, top_of(&entity)).is_none() {
             st.active = false;
             st.fading = true;
             entity.collision.platform(false);
@@ -181,9 +195,10 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         } else {
             st.speed += BOOST_ACCEL * dt;
             if st.speed >= -100.0 {
-                // Launch the rider straight up.
-                if let Some(rider) = has_rider(id, p.y - 8.0) {
-                    host::Speed::new(rider).set_xy(host::Speed::new(rider).get().x, -200.0);
+                // Launch the rider straight up (`Speed.Y = -200f`).
+                if let Some(rider) = has_rider(id, p.y) {
+                    let v = host::Speed::new(rider).get();
+                    host::Speed::new(rider).set_xy(v.x, -200.0);
                 }
                 if st.fragile {
                     st.active = false;
@@ -197,7 +212,9 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                 }
             }
         }
-        let _ = entity.collision.actor_move(0.0, st.speed * dt);
+        // `MoveV(speed * dt, -220)`: downward travel capped at 220 u/s.
+        let fall = if st.speed < 0.0 { -MAX_FALL } else { st.speed };
+        let _ = entity.collision.actor_move(0.0, fall * dt);
     });
 }
 

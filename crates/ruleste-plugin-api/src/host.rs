@@ -12,6 +12,12 @@ use std::string::String;
 pub const EV_REFILL: u32 = crate::event::REFILL;
 pub const EV_BOOST: u32 = crate::event::BOOST;
 pub const EV_CRUSH: u32 = crate::event::CRUSH;
+pub const EV_LAUNCH: u32 = crate::event::LAUNCH;
+pub const EV_STARFLY: u32 = crate::event::STARFLY;
+pub const EV_BADELINE_BOOST: u32 = crate::event::BADELINE_BOOST;
+pub const EV_CARRIED: u32 = crate::event::CARRIED;
+pub const EV_SIDE_BOUNCE: u32 = crate::event::SIDE_BOUNCE;
+pub const EV_SUPER_BOUNCE: u32 = crate::event::SUPER_BOUNCE;
 
 #[allow(dead_code)]
 #[link(wasm_import_module = "env")]
@@ -47,6 +53,7 @@ unsafe extern "C" {
     fn host_input_consume(action: i32);
     fn host_collide_check(id: EntityId, offset_x: f32, offset_y: f32) -> bool;
     fn host_collide_solid_platform_set(id: EntityId, on: bool);
+    fn host_collide_solid_set(id: EntityId, on: bool);
     fn host_actor_move(id: EntityId, h: f32, v: f32) -> u32;
     fn host_actor_is_grounded(id: EntityId) -> bool;
     fn host_play_sound(name: *const u8, len: u32);
@@ -72,6 +79,7 @@ unsafe extern "C" {
     fn host_draw_tile_box(tile_id: u32, x: f32, y: f32, tiles_x: u32, tiles_y: u32);
     fn host_die();
     fn host_collect(id: EntityId);
+    fn host_remove(id: EntityId);
     fn host_respawn_set(x: f32, y: f32);
     fn host_respawn_get(out: *mut Vec2);
     fn host_entities_by_type(
@@ -83,6 +91,55 @@ unsafe extern "C" {
     fn host_drain_events(out_buf: *mut u8, buf_cap: u32) -> u32;
     fn host_entity_alive(id: EntityId) -> i32;
     fn host_debug_enabled() -> i32;
+    // Player resource access: the player plugin publishes its current dash
+    // count and stamina each frame; other plugins (refill gems, springs) query
+    // them to guard their interactions.
+    fn host_player_dashes_get(id: EntityId) -> i32;
+    fn host_player_dashes_set(id: EntityId, dashes: i32);
+    fn host_player_stamina_get(id: EntityId) -> f32;
+    fn host_player_stamina_set(id: EntityId, stamina: f32);
+    fn host_player_state_get(id: EntityId) -> u32;
+    fn host_player_state_set(id: EntityId, state: u32);
+}
+
+/// Reads the player entity's current dash count (published by the player plugin).
+#[must_use]
+pub fn player_dashes(id: EntityId) -> i32 {
+    unsafe { host_player_dashes_get(id) }
+}
+
+/// Publishes the player entity's dash count for other plugins to read.
+pub fn set_player_dashes(id: EntityId, dashes: i32) {
+    unsafe {
+        host_player_dashes_set(id, dashes);
+    }
+}
+
+/// Reads the player entity's current stamina (published by the player plugin).
+#[must_use]
+pub fn player_stamina(id: EntityId) -> f32 {
+    unsafe { host_player_stamina_get(id) }
+}
+
+/// Publishes the player entity's stamina for other plugins to read.
+pub fn set_player_stamina(id: EntityId, stamina: f32) {
+    unsafe {
+        host_player_stamina_set(id, stamina);
+    }
+}
+
+/// Reads the player entity's current state number (published by the player
+/// plugin), so springs and friends can skip interactions the player forbids.
+#[must_use]
+pub fn player_state(id: EntityId) -> u32 {
+    unsafe { host_player_state_get(id) }
+}
+
+/// Publishes the player entity's state number for other plugins to read.
+pub fn set_player_state(id: EntityId, state: u32) {
+    unsafe {
+        host_player_state_set(id, state);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -239,11 +296,28 @@ pub fn die() {
     }
 }
 
+/// Sets whether the host renders this entity (invisible entities are also
+/// skipped by collision-aware host passes).
+pub fn set_visible(id: EntityId, visible: bool) {
+    unsafe {
+        host_visible_set(id, visible);
+    }
+}
+
 /// Permanently consumes the entity this session: it despawns immediately and
 /// is not re-created when the room respawns. Used by collectibles.
 pub fn collect(id: EntityId) {
     unsafe {
         host_collect(id);
+    }
+}
+
+/// Removes the entity from the live world now, but leaves its spawn recipe
+/// intact so a room respawn re-creates it. Used by breakables that come back
+/// on death (e.g. a non-`permanent` dash block).
+pub fn remove(id: EntityId) {
+    unsafe {
+        host_remove(id);
     }
 }
 
@@ -525,6 +599,17 @@ impl Collision {
     pub fn platform(&self, on: bool) {
         unsafe {
             host_collide_solid_platform_set(self.id, on);
+        }
+    }
+
+    /// Marks the entity as a fully solid block (like the original `Solid`):
+    /// actors collide with every face, stand on the top, and are carried by
+    /// the block's movement. Use for crushable/ridable blocks (introCrusher,
+    /// crushBlock, ...) where one-way `platform` semantics would let players
+    /// slip through the sides.
+    pub fn solid(&self, on: bool) {
+        unsafe {
+            host_collide_solid_set(self.id, on);
         }
     }
 

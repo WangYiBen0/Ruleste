@@ -77,6 +77,11 @@ pub struct World {
     /// surface catches falling actors like a jump-thru, and their movement
     /// carries along any actor standing on them.
     pub solid_platforms: HashSet<u32>,
+    /// Entities acting as fully solid blocks (like `Solid` in the original):
+    /// actors collide with all four sides, can stand on the top, and are
+    /// carried by the block's movement. Used by crushable/ridable blocks
+    /// (introCrusher, crushBlock, ...) rather than one-way platforms.
+    pub solid_entities: HashSet<u32>,
 }
 
 impl World {

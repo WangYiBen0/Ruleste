@@ -2,9 +2,9 @@
 //! `plateau` entity plugin.
 //!
 //! The weathered rock slabs on the Reflection bridges. In the original these
-//! are background fixtures with no collision; the same is true here — the
-//! plugin draws a mossy cap over a grey base. Level styling (`Plateau.Level`)
-//! selects the palette; chapter 9 looks differently, but the base stone stays.
+//! are *solid* (`Solid`, 104×4, collider shifted 8 right so the standable run
+//! is 96 wide), with `SurfaceSoundIndex = 23`. Level styling
+//! (`Plateau.Level`) only picks the palette; the base stone stays.
 
 use ruleste_plugin_api::host::draw_rect;
 use ruleste_plugin_api::map::MapData;
@@ -37,6 +37,9 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     entity
         .position
         .set_xy(spawn.get_float("x", 0.0), spawn.get_float("y", 0.0));
+    // Collider.Left += 8f on a 104-wide hitbox → standable run is 96 wide.
+    entity.hitbox.set(96.0, 4.0, 8.0, 0.0);
+    entity.collision.solid(true);
     entity.depth.set(300);
 }
 
@@ -46,6 +49,6 @@ pub extern "C" fn ruleste_entity_update(_id: EntityId, _dt: f32) {}
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let p = Entity::new(id).position.get();
-    draw_rect(p.x - 24.0, p.y - 9.0, 48.0, 9.0, STONE);
-    draw_rect(p.x - 30.0, p.y - 11.0, 60.0, 3.0, MOSS);
+    draw_rect(p.x, p.y, 104.0, 1.0, MOSS);
+    draw_rect(p.x, p.y + 1.0, 104.0, 3.0, STONE);
 }

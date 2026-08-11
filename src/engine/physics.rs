@@ -80,6 +80,7 @@ impl SolidGrid {
         world
             .solid_platforms
             .iter()
+            .chain(world.solid_entities.iter())
             .filter(|&&pid| pid != exclude && world.is_alive(pid))
             .find_map(|&pid| {
                 let e = world.get(pid).expect("alive platform");
@@ -125,6 +126,42 @@ impl SolidGrid {
         } else {
             world.solid_platforms.remove(&id);
         }
+    }
+
+    /// Marks an entity as a fully solid block (or unmarks it): actors collide
+    /// with every face, stand on top, and ride along with its movement.
+    pub fn mark_solid_entity(world: &mut World, id: u32, on: bool) {
+        if on {
+            world.solid_entities.insert(id);
+        } else {
+            world.solid_entities.remove(&id);
+        }
+    }
+
+    /// The hitbox of a solid entity overlapping `(x, y, w, h)`, if any.
+    /// `exclude` skips an entity (itself, when it moves through `actor_move`).
+    fn solid_entity_hitbox(
+        &self,
+        world: &World,
+        exclude: u32,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) -> Option<(f32, f32, f32, f32)> {
+        world
+            .solid_entities
+            .iter()
+            .filter(|&&id| id != exclude && world.is_alive(id))
+            .find_map(|&id| {
+                let e = world.get(id).expect("alive solid entity");
+                let (sx, sy) = (
+                    e.position.x + e.hitbox_offset.x,
+                    e.position.y + e.hitbox_offset.y,
+                );
+                let (sw, sh) = (e.hitbox.x, e.hitbox.y);
+                (x < sx + sw && x + w > sx && y < sy + sh && y + h > sy).then_some((sx, sy, sw, sh))
+            })
     }
 
     /// Every other entity whose bottom edge rests on this platform's top
@@ -231,11 +268,12 @@ impl SolidGrid {
         let (ox, oy, w, h) = (e.hitbox_offset.x, e.hitbox_offset.y, e.hitbox.x, e.hitbox.y);
 
         if dx != 0.0 {
-            let riders_before = if world.solid_platforms.contains(&id) {
-                self.platform_riders(world, id)
-            } else {
-                Vec::new()
-            };
+            let riders_before =
+                if world.solid_platforms.contains(&id) || world.solid_entities.contains(&id) {
+                    self.platform_riders(world, id)
+                } else {
+                    Vec::new()
+                };
             let sign = dx.signum();
             let target = e.position.x + dx;
             let mut cur = e.position.x;
@@ -259,6 +297,21 @@ impl SolidGrid {
                     };
                     break;
                 }
+                if let Some((sx, _, sw, _)) =
+                    self.solid_entity_hitbox(world, id, nx + ox, e.position.y + oy, w, h)
+                {
+                    cur = if sign > 0.0 {
+                        sx - w - ox
+                    } else {
+                        sx + sw - ox
+                    };
+                    flags |= if sign > 0.0 {
+                        MOVE_WALL_RIGHT
+                    } else {
+                        MOVE_WALL_LEFT
+                    };
+                    break;
+                }
                 cur = nx;
             }
             let moved = cur - e.position.x;
@@ -271,11 +324,12 @@ impl SolidGrid {
         }
 
         if world.is_alive(id) && dy != 0.0 {
-            let riders_before = if world.solid_platforms.contains(&id) {
-                self.platform_riders(world, id)
-            } else {
-                Vec::new()
-            };
+            let riders_before =
+                if world.solid_platforms.contains(&id) || world.solid_entities.contains(&id) {
+                    self.platform_riders(world, id)
+                } else {
+                    Vec::new()
+                };
             let pos = world.get(id).expect("alive").position;
             let sign = dy.signum();
             let target = pos.y + dy;
@@ -298,6 +352,22 @@ impl SolidGrid {
                     } else {
                         MOVE_CEILING
                     };
+                    break;
+                }
+                // Fully solid blocks: land on their top, bump their underside.
+                if sign > 0.0 {
+                    if let Some((_, sy, _, _)) =
+                        self.solid_entity_hitbox(world, id, pos.x + ox, ny + oy, w, h)
+                    {
+                        cur = sy - oy - h;
+                        flags |= MOVE_GROUND;
+                        break;
+                    }
+                } else if let Some((_, sy, _, sh)) =
+                    self.solid_entity_hitbox(world, id, pos.x + ox, ny + oy, w, h)
+                {
+                    cur = sy + sh - oy;
+                    flags |= MOVE_CEILING;
                     break;
                 }
                 // One-way platforms: landing on top while falling.
@@ -346,15 +416,17 @@ impl SolidGrid {
     }
 
     /// True when the entity's hitbox, offset by `(dx, dy)` in world units,
-    /// overlaps a solid tile.
+    /// overlaps a solid tile or a fully solid entity.
     pub fn entity_collide(&self, world: &World, id: u32, dx: f32, dy: f32) -> bool {
         match world.get(id) {
-            Some(e) => self.collide_rect(
-                e.position.x + e.hitbox_offset.x + dx,
-                e.position.y + e.hitbox_offset.y + dy,
-                e.hitbox.x,
-                e.hitbox.y,
-            ),
+            Some(e) => {
+                let x = e.position.x + e.hitbox_offset.x + dx;
+                let y = e.position.y + e.hitbox_offset.y + dy;
+                self.collide_rect(x, y, e.hitbox.x, e.hitbox.y)
+                    || self
+                        .solid_entity_hitbox(world, id, x, y, e.hitbox.x, e.hitbox.y)
+                        .is_some()
+            }
             None => false,
         }
     }
@@ -533,5 +605,158 @@ mod tests {
         // Platform moves down far enough that the rider no longer rests on it.
         g.actor_move(&mut world, platform, 0.0, 20.0);
         assert!(!g.is_grounded(&world, rider));
+    }
+
+    /// A solid-block world: a 16x16 block at (40, 100) and a rider that can
+    /// approach its left, top, and bottom faces.
+    fn solid_world() -> (SolidGrid, World, u32, u32) {
+        let rows = vec!["0".repeat(16); 24];
+        let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+        let g = SolidGrid::from_rows(&rows);
+        let mut world = World::new();
+        // Solid block: 16x16 at (40, 100), top surface y = 100.
+        let block = world.spawn();
+        {
+            let e = world.get_mut(block).unwrap();
+            e.position = Vec2::new(40.0, 100.0);
+            e.hitbox = Vec2::new(16.0, 16.0);
+            e.hitbox_offset = Vec2::ZERO;
+        }
+        SolidGrid::mark_solid_entity(&mut world, block, true);
+        // Rider: 8x11 with offset (-4, 0), so its left edge = x - 4.
+        let rider = world.spawn();
+        {
+            let e = world.get_mut(rider).unwrap();
+            e.position = Vec2::new(20.0, 100.0);
+            e.hitbox = Vec2::new(8.0, 11.0);
+            e.hitbox_offset = Vec2::new(-4.0, 0.0);
+        }
+        (g, world, block, rider)
+    }
+
+    #[test]
+    fn solid_block_blocks_rider_from_the_side() {
+        let (g, mut world, _block, rider) = solid_world();
+        // Rider's right edge (x + 4) starts at 24; push it into the block's
+        // left edge (x = 40). It should stop at x = 36 (right edge = 40).
+        let flags = g.actor_move(&mut world, rider, 60.0, 0.0);
+        assert_ne!(
+            flags & MOVE_WALL_RIGHT,
+            0,
+            "expected wall hit on block side"
+        );
+        let e = world.get(rider).unwrap();
+        assert!(
+            (e.position.x - 36.0).abs() < 0.01,
+            "rider x={}",
+            e.position.x
+        );
+    }
+
+    #[test]
+    fn solid_block_lands_rider_on_top() {
+        let (g, mut world, block, _rider) = solid_world();
+        // Spawn a rider above the block's top (y = 100) and drop it down.
+        let faller = world.spawn();
+        {
+            let e = world.get_mut(faller).unwrap();
+            e.position = Vec2::new(48.0, 80.0);
+            e.hitbox = Vec2::new(8.0, 11.0);
+            e.hitbox_offset = Vec2::new(-4.0, 0.0);
+        }
+        let _ = block;
+        let flags = g.actor_move(&mut world, faller, 0.0, 30.0);
+        assert_ne!(flags & MOVE_GROUND, 0, "expected landing on block top");
+        let e = world.get(faller).unwrap();
+        assert!(
+            (e.position.y + 11.0 - 100.0).abs() < 0.01,
+            "faller bottom={}",
+            e.position.y + 11.0
+        );
+    }
+
+    #[test]
+    fn solid_block_blocks_rider_from_below() {
+        let (g, mut world, block, _rider) = solid_world();
+        // Spawn a rider below the block and push it up into the block bottom
+        // (y = 116). It should stop with its top edge at the block bottom.
+        let jumper = world.spawn();
+        {
+            let e = world.get_mut(jumper).unwrap();
+            e.position = Vec2::new(48.0, 130.0);
+            e.hitbox = Vec2::new(8.0, 11.0);
+            e.hitbox_offset = Vec2::new(-4.0, 0.0);
+        }
+        let _ = block;
+        let flags = g.actor_move(&mut world, jumper, 0.0, -30.0);
+        assert_ne!(flags & MOVE_CEILING, 0, "expected ceiling hit on block");
+        let e = world.get(jumper).unwrap();
+        assert!(
+            (e.position.y - 116.0).abs() < 0.01,
+            "jumper top={}",
+            e.position.y
+        );
+    }
+
+    #[test]
+    fn solid_block_carries_rider_on_top() {
+        let (g, mut world, block, _rider) = solid_world();
+        // Land a rider on the block, then move the block horizontally: the
+        // rider must be carried along (its x changes by the same amount).
+        let stander = world.spawn();
+        {
+            let e = world.get_mut(stander).unwrap();
+            e.position = Vec2::new(48.0, 80.0);
+            e.hitbox = Vec2::new(8.0, 11.0);
+            e.hitbox_offset = Vec2::new(-4.0, 0.0);
+        }
+        g.actor_move(&mut world, stander, 0.0, 30.0);
+        // Rider should now be on the block top (y + 11 == 100).
+        assert!(g.is_grounded(&world, stander));
+        g.actor_move(&mut world, block, 5.0, 0.0);
+        let e = world.get(stander).unwrap();
+        assert!(
+            (e.position.x - 53.0).abs() < 0.01,
+            "stander x={} (should carry with block)",
+            e.position.x
+        );
+    }
+
+    #[test]
+    fn solid_block_is_grounded_when_standing_on_top() {
+        let (g, mut world, _block, rider) = solid_world();
+        // Move the rider up onto the block top: first approach from the left,
+        // then have it stand on top by setting position.
+        {
+            let e = world.get_mut(rider).unwrap();
+            e.position = Vec2::new(48.0, 89.0);
+        }
+        g.actor_move(&mut world, rider, 0.0, 30.0);
+        assert!(
+            g.is_grounded(&world, rider),
+            "rider standing on solid top should be grounded"
+        );
+    }
+
+    #[test]
+    fn entity_collide_detects_solid_entity_side() {
+        // Mirror `ClimbCheck`: a rider facing a solid block must report a
+        // collision when probing `CLIMB_CHECK_DIST` (2 px) ahead, so the
+        // player can grab the slab and climb up its side.
+        let (g, mut world, _block, rider) = solid_world();
+        // Place the rider flush against the block's left face (right edge at
+        // x = 40), so probing 2 px to the right overlaps the block.
+        {
+            let e = world.get_mut(rider).unwrap();
+            e.position = Vec2::new(36.0, 100.0);
+        }
+        assert!(
+            g.entity_collide(&world, rider, 2.0, 0.0),
+            "climb probe into a solid block's side should collide"
+        );
+        assert!(
+            !g.entity_collide(&world, rider, -2.0, 0.0),
+            "probing away from the block should not collide"
+        );
     }
 }

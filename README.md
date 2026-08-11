@@ -16,7 +16,7 @@ nix develop        # 进入带 fenix 工具链 + wasm32-unknown-unknown rust-std
 
 ## 一键构建
 
-仓库根目录的 `./build.sh` 会编译宿主二进制 **和** 全部 26 个 Wasm 插件，并把 `.wasm` 暂存到宿主可执行文件旁的 `plugins/` 目录（即游戏默认插件目录）：
+仓库根目录的 `./build.sh` 会编译宿主二进制 **和** 全部 32 个 Wasm 插件，并把 `.wasm` 暂存到宿主可执行文件旁的 `plugins/` 目录（即游戏默认插件目录）：
 
 ```sh
 $ nix develop
@@ -69,7 +69,7 @@ resources/    资源包（按 pack_name/namespace 分目录；不参与分发）
 
 ### 微内核 + Wasm 插件
 
-宿主用 wasmtime 加载 `.wasm`，按关卡实体类型**懒加载**（`load_plugins_for`）：0-Intro 只实例化 introcrusher/lamp/player/wire 4 个插件，而不是全部 26 个。实体导出 `entity_init / entity_update(id, dt) / entity_draw`；组件（位置、速度、碰撞盒、精灵动画、输入）通过宿主 FFI 读写。事件总线统一 ID（`PLAYER_DASH=0`、`PLAYER_JUMP=1`、`PLAYER_DEATH=2`、`REFILL=3`、`BOOST=4`、`CRUSH=5`），插件用 `host_emit` 广播。
+宿主用 wasmtime 加载 `.wasm`，按关卡实体类型**懒加载**（`load_plugins_for`）：0-Intro 只实例化 decorations/introcrusher/player 3 个插件，而不是全部 32 个。实体导出 `entity_init / entity_update(id, dt) / entity_draw`；组件（位置、速度、碰撞盒、精灵动画、输入）通过宿主 FFI 读写。事件总线统一 ID（`PLAYER_DASH=0`、`PLAYER_JUMP=1`、`PLAYER_DEATH=2`、`REFILL=3`、`BOOST=4`、`CRUSH=5`），插件用 `host_emit` 广播。
 
 ## 测试
 

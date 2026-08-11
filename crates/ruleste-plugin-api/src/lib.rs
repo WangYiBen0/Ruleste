@@ -36,4 +36,20 @@ pub mod event {
     pub const REFILL: u32 = 3;
     pub const BOOST: u32 = 4;
     pub const CRUSH: u32 = 5;
+    // Player-targeted launch/flight events (Bumper / FlyFeather / BadelineBoost).
+    // `LAUNCH` carries the launch direction as two `f32`s.
+    pub const LAUNCH: u32 = 6;
+    // `STARFLY` starts the feather-flight state; no payload.
+    pub const STARFLY: u32 = 7;
+    // `BADELINE_BOOST` launches the player up off a track platform; the payload
+    // is the target `x` the player eases towards while rising (one `f32`).
+    pub const BADELINE_BOOST: u32 = 8;
+    // `CARRIED` attaches (`1`) or releases (`0`) the player to a moving track;
+    // the carrying plugin drives the player's position while attached.
+    pub const CARRIED: u32 = 9;
+    // `SIDE_BOUNCE` is a wall spring launch: one `f32` direction (±1).
+    pub const SIDE_BOUNCE: u32 = 10;
+    // `SUPER_BOUNCE` is a floor spring launch (`Player.SuperBounce`): one `f32`
+    // `fromY` the player snaps to before being launched up at -185.
+    pub const SUPER_BOUNCE: u32 = 11;
 }

@@ -32,7 +32,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     entity.position.set_xy(x, y);
     entity.hitbox.set(w, h, 0.0, 0.0);
     entity.depth.set(8999);
-    entity.collision.platform(true);
+    entity.collision.solid(true);
 }
 
 #[unsafe(no_mangle)]

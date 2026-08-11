@@ -1,0 +1,13 @@
+[package]
+name = "ruleste-plugin-decorations"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Consolidated Celeste scenery/ambience entity plugins (bird, bonfire, flaglines, cobwebs, debris, lamps, lightbeams, torches, wires, ...)."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api" }

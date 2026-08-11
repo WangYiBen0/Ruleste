@@ -1,0 +1,13 @@
+[package]
+name = "ruleste-plugin-intro-crusher"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "IntroCrusher entity plugin — the prologue's stone slab that shakes then crushes down."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }

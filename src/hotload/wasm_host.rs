@@ -89,6 +89,23 @@ pub struct GameState {
     /// Cached `generate_box` grids keyed by `(tile_id, tiles_x, tiles_y)` so a
     /// static slab only regenerates its adjacency pass once.
     pub tile_box_cache: HashMap<(char, usize, usize), TileGrid>,
+    /// Player dash counts published by the player plugin each frame, keyed by
+    /// entity id. Other plugins (refill gems, springs) query them to decide
+    /// whether an interaction is needed.
+    pub player_dashes: HashMap<u32, i32>,
+    /// Player stamina values published by the player plugin each frame.
+    pub player_stamina: HashMap<u32, f32>,
+    /// Player state numbers published by the player plugin each frame, so
+    /// springs etc. can skip interactions the player forbids mid-dash.
+    pub player_states: HashMap<u32, u32>,
+    /// Per-plugin event delivery cursor: how many entries of `events` each
+    /// plugin has already consumed. `host_drain_events` hands each plugin its
+    /// own view of the shared bus, so any number of plugins can listen without
+    /// stealing events from one another.
+    pub plugin_cursors: HashMap<String, usize>,
+    /// The plugin currently executing (set around each `update` call so the
+    /// event FFI can route delivery).
+    pub current_plugin: Option<String>,
 }
 
 impl GameState {
@@ -108,6 +125,11 @@ impl GameState {
             respawn_pos: None,
             autotiler: None,
             tile_box_cache: HashMap::new(),
+            player_dashes: HashMap::new(),
+            player_stamina: HashMap::new(),
+            player_states: HashMap::new(),
+            plugin_cursors: HashMap::new(),
+            current_plugin: None,
         }
     }
 }
@@ -353,8 +375,26 @@ impl WasmHost {
             let Some(update) = &self.plugins[idx].funcs.update else {
                 continue;
             };
+            self.store.data_mut().current_plugin = Some(self.plugins[idx].name.clone());
             if let Err(e) = update.call(&mut self.store, (id, dt)) {
                 eprintln!("ruleste: plugin update error (entity {id}): {e}");
+            }
+        }
+        self.store.data_mut().current_plugin = None;
+        // Garbage-collect events every plugin has already consumed.
+        let min_consumed = self
+            .store
+            .data()
+            .plugin_cursors
+            .values()
+            .copied()
+            .min()
+            .unwrap_or(0);
+        if min_consumed > 0 {
+            let state = self.store.data_mut();
+            state.events.drain(..min_consumed);
+            for cursor in state.plugin_cursors.values_mut() {
+                *cursor = cursor.saturating_sub(min_consumed);
             }
         }
         // A plugin may have requested a death this frame; freeze now instead of
@@ -828,6 +868,14 @@ impl WasmHost {
         )?;
         linker.func_wrap(
             "env",
+            "host_collide_solid_set",
+            |mut caller: Caller<'_, GameState>, id: u32, on: i32| {
+                let state = caller.data_mut();
+                crate::engine::physics::SolidGrid::mark_solid_entity(&mut state.world, id, on != 0);
+            },
+        )?;
+        linker.func_wrap(
+            "env",
             "host_actor_move",
             |mut caller: Caller<'_, GameState>, id: u32, h: f32, v: f32| {
                 let state = caller.data_mut();
@@ -950,6 +998,14 @@ impl WasmHost {
                     state.collected.insert(e.spawn.clone());
                     state.world.despawn(id);
                 }
+            },
+        )?;
+        // --- Remove an entity now (it still respawns on death) ---
+        linker.func_wrap(
+            "env",
+            "host_remove",
+            |mut caller: Caller<'_, GameState>, id: u32| {
+                caller.data_mut().world.despawn(id);
             },
         )?;
         // --- Set the player's respawn position (used by checkpoints) ---
@@ -1085,13 +1141,23 @@ impl WasmHost {
             },
         )?;
         // --- Drain event queue ---
+        //
+        // Delivers only the events this plugin has not consumed yet: each plugin
+        // keeps its own cursor, so a shared bus can serve any number of
+        // listeners (the player consumes `EV_LAUNCH`/`EV_REFILL` while swap and
+        // dash blocks watch `PLAYER_DASH`).
         linker.func_wrap(
             "env",
             "host_drain_events",
             |mut caller: Caller<'_, GameState>, out_buf: u32, buf_cap: u32| {
-                let events: Vec<GameEvent> = caller.data_mut().events.drain(..).collect();
+                let state = caller.data();
+                let Some(plugin) = state.current_plugin.clone() else {
+                    return 0;
+                };
+                let start = state.plugin_cursors.get(&plugin).copied().unwrap_or(0);
+                let events_len = state.events.len();
                 let mut buf = Vec::new();
-                for ev in &events {
+                for ev in state.events.iter().skip(start) {
                     buf.extend_from_slice(&ev.entity.to_le_bytes());
                     buf.extend_from_slice(&ev.kind.to_le_bytes());
                     buf.extend_from_slice(&(ev.data.len() as u32).to_le_bytes());
@@ -1099,7 +1165,10 @@ impl WasmHost {
                 }
                 let total = buf.len().min(buf_cap as usize);
                 if let Some(mem) = plugin_memory(&mut caller) {
-                    let _ = mem.write(caller, out_buf as usize, &buf[..total]);
+                    let _ = mem.write(&mut caller, out_buf as usize, &buf[..total]);
+                }
+                if let Some(cursor) = caller.data_mut().plugin_cursors.get_mut(&plugin) {
+                    *cursor = events_len;
                 }
                 total as u32
             },
@@ -1116,6 +1185,54 @@ impl WasmHost {
         linker.func_wrap("env", "host_debug_enabled", |_: Caller<'_, GameState>| {
             i32::from(DEBUG_ENABLED.load(std::sync::atomic::Ordering::Relaxed))
         })?;
+        // --- Player resource access (published by the player plugin) ---
+        linker.func_wrap(
+            "env",
+            "host_player_dashes_get",
+            |caller: Caller<'_, GameState>, id: u32| {
+                caller.data().player_dashes.get(&id).copied().unwrap_or(0)
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_player_dashes_set",
+            |mut caller: Caller<'_, GameState>, id: u32, dashes: i32| {
+                caller.data_mut().player_dashes.insert(id, dashes);
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_player_stamina_get",
+            |caller: Caller<'_, GameState>, id: u32| {
+                caller
+                    .data()
+                    .player_stamina
+                    .get(&id)
+                    .copied()
+                    .unwrap_or(0.0)
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_player_stamina_set",
+            |mut caller: Caller<'_, GameState>, id: u32, stamina: f32| {
+                caller.data_mut().player_stamina.insert(id, stamina);
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_player_state_get",
+            |caller: Caller<'_, GameState>, id: u32| {
+                caller.data().player_states.get(&id).copied().unwrap_or(0)
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_player_state_set",
+            |mut caller: Caller<'_, GameState>, id: u32, state: u32| {
+                caller.data_mut().player_states.insert(id, state);
+            },
+        )?;
         Ok(linker)
     }
 

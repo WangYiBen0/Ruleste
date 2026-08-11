@@ -43,10 +43,30 @@ pub struct Level {
     pub foregrounds: Vec<Backdrop>,
 }
 
+/// Decorative entities without gameplay collision boxes. This mirrors the
+/// entity types consolidated in the `ruleste-plugin-decorations` plugin; they
+/// are separated from `entities` so spawn-room selection only considers
+/// gameplay markers (e.g. the `player` spawn).
 fn is_decoration(name: &str) -> bool {
     matches!(
         name,
-        "wire" | "lamp" | "resortLantern" | "torch" | "hanginglamp" | "floatingDebris" | "cobweb"
+        "bird"
+            | "bonfire"
+            | "cliffflag"
+            | "cobweb"
+            | "floatingDebris"
+            | "foregroundDebris"
+            | "flutterbird"
+            | "hanginglamp"
+            | "introCar"
+            | "lamp"
+            | "lightbeam"
+            | "resortLantern"
+            | "soundSource"
+            | "SummitBackgroundManager"
+            | "torch"
+            | "towerviewer"
+            | "wire"
     ) || name.starts_with("dec")
         || name.ends_with("dec")
 }

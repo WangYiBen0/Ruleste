@@ -122,21 +122,21 @@
             // {
               pname = "ruleste-plugins";
               CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-              cargoExtraArgs = "-p ruleste-player -p ruleste-spring";
+              cargoExtraArgs = "-p ruleste-plugin-player -p ruleste-plugin-spring";
               cargoArtifacts = craneLib.buildDepsOnly (
                 commonArgs
                 // {
                   pname = "ruleste-plugins";
                   CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-                  cargoExtraArgs = "-p ruleste-player -p ruleste-spring";
+              cargoExtraArgs = "-p ruleste-plugin-player -p ruleste-plugin-spring";
                 }
               );
               installPhase = ''
                 mkdir -p $out/share/ruleste/plugins
-                cp target/wasm32-unknown-unknown/release/ruleste_player.wasm \
-                  $out/share/ruleste/plugins/ruleste_player.wasm
-                cp target/wasm32-unknown-unknown/release/ruleste_spring.wasm \
-                  $out/share/ruleste/plugins/ruleste_spring.wasm
+                cp target/wasm32-unknown-unknown/release/ruleste_plugin_player.wasm \
+                  $out/share/ruleste/plugins/ruleste_plugin_player.wasm
+                cp target/wasm32-unknown-unknown/release/ruleste_plugin_spring.wasm \
+                  $out/share/ruleste/plugins/ruleste_plugin_spring.wasm
               '';
               doInstallCargoArtifacts = false;
             }

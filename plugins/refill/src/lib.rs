@@ -126,6 +126,15 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                 && pp.y + poy < p.y + oy + h
                 && pp.y + poy + ph > p.y + oy;
             if overlap {
+                // `Refill.OnPlayer` → `player.UseRefill`: only consume the gem
+                // when the player actually needs a refill (dashes below max or
+                // stamina under the threshold), otherwise stay put.
+                let dashes = host::player_dashes(player_id);
+                let stamina = host::player_stamina(player_id);
+                let want = if st.two_dash { 2 } else { 1 };
+                if dashes >= want && stamina >= 20.0 {
+                    continue;
+                }
                 let mut buf = [0u8; 1];
                 buf[0] = u8::from(st.two_dash);
                 host::emit(player_id, host::EV_REFILL, &buf);

@@ -98,14 +98,16 @@ fn one_use_refill_is_consumed_on_touch() {
         spawn_map_attrs(&[
             ("x", MapAttr::Float(100.0)),
             ("y", MapAttr::Float(88.0)),
+            ("twoDash", MapAttr::Bool(true)),
             ("oneUse", MapAttr::Bool(true)),
         ]),
     )
     .unwrap()
     .unwrap();
 
-    // Player and refill overlap: after one update the refill reports itself
-    // consumed and the host despawns it.
+    // Player and refill overlap: the fresh player holds one dash, so a two-dash
+    // refill is actually needed and gets consumed; after one update the refill
+    // reports itself consumed and the host despawns it.
     host.update(0.016);
     let refills = host
         .game_state()
@@ -209,8 +211,12 @@ fn crushblock_registers_as_solid_platform() {
         .map(|e| e.id)
         .expect("crushBlock spawned");
     assert!(
-        host.game_state().world.solid_platforms.contains(&id),
-        "crushBlock should be registered as a solid platform"
+        host.game_state().world.solid_entities.contains(&id),
+        "crushBlock should be registered as a fully solid block"
+    );
+    assert!(
+        !host.game_state().world.solid_platforms.contains(&id),
+        "crushBlock should not be a one-way platform"
     );
 }
 

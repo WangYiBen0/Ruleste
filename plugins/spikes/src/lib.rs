@@ -127,7 +127,9 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         }
         let vel = host::Speed::new(player_id).get();
         let kills = match dir {
-            Dir::Up => vel.y >= 0.0,
+            // `OnCollide` Up additionally requires the player's feet not below
+            // the spike row (`player.Bottom <= base.Bottom`).
+            Dir::Up => vel.y >= 0.0 && py + ph <= sp.y,
             Dir::Down => vel.y <= 0.0,
             Dir::Left => vel.x >= 0.0,
             Dir::Right => vel.x <= 0.0,
