@@ -5,7 +5,10 @@
 //! platform (depth -10501) that waits until the player steps into its trigger
 //! zone, shakes for 1.2 s, then crushes straight down to its node with a
 //! cube-in ease. If the player ducks out of the shake zone it gives up early.
-//! Rendered as an autotiled snow (`'3'`) slab via `Autotiler.GenerateBox`.
+//!
+//! Implemented as a one-way `platform` (rather than a full `Solid`) so the
+//! player can ride the slab down without being pushed into the floor below —
+//! equivalent to the original `Safe = true` flag.
 //!
 //! Note: the original bails to `end` immediately when session flags `1`/`0b`
 //! are set (so a respawn doesn't re-trigger the crush). We don't have session
@@ -90,7 +93,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let entity = Entity::new(id);
     entity.position.set_xy(x, y);
     entity.hitbox.set(w, h, 0.0, 0.0);
-    entity.collision.solid(true);
+    entity.collision.platform(true);
     entity.depth.set(-10501);
     with_state(id, |st| {
         st.start = Vec2::new(x, y);

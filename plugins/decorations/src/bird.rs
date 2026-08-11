@@ -1,28 +1,14 @@
 //! `bird` entity plugin.
 //!
-//! Mirrors `Bird.cs` (the big Seasonal Suit bird). The cutscene / room-script
+//! Mirrors `BirdNPC.cs` (the big Seasonal Suit bird). The cutscene / room-script
 //! system does not exist yet, so `mode` is read and remembered but the bird
-//! only idles: `FlyAway` birds perch on a low arc near their spawn, and the
-//! procedural body keeps a slow side-to-side idle so the chapter-opening
-//! moments feel alive. Dialogue is a later host feature.
+//! only idles: `FlyAway` birds perch on a low arc near their spawn. The body
+//! is drawn from the real `characters/bird/crow00..` atlas loop.
 
-use ruleste_plugin_api::host::draw_rect;
+use ruleste_plugin_api::host::draw_image;
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
-
-const BODY: Color = Color {
-    r: 0x2a,
-    g: 0x2a,
-    b: 0x34,
-    a: 0xff,
-};
-const BELLY: Color = Color {
-    r: 0x50,
-    g: 0x58,
-    b: 0x68,
-    a: 0xff,
-};
+use ruleste_plugin_api::types::EntityId;
 
 #[derive(Debug, Default)]
 struct BirdState {
@@ -75,16 +61,8 @@ pub fn draw(id: EntityId) {
         };
         let bx = p.x + shift;
         let by = p.y - waft;
-        // Body (large), head, and beak, sized like the original's sprite box.
-        draw_rect(bx - 18.0, by - 12.0, 36.0, 24.0, BODY);
-        draw_rect(bx - 10.0, by - 6.0, 20.0, 12.0, BELLY);
-        draw_rect(bx - 22.0, by - 22.0, 12.0, 12.0, BODY);
-        draw_rect(
-            bx - 26.0,
-            by - 10.0,
-            6.0,
-            4.0,
-            Color::new(0xd8, 0x60, 0x30, 0xff),
-        );
+        let idx = (st.timer * 6.0) as usize % 16;
+        let frame = format!("characters/bird/crow{idx:02}");
+        draw_image(&frame, bx, by, 0.0, 1.0, 1.0);
     });
 }

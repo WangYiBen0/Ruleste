@@ -8,7 +8,7 @@
 //! (`Player.PointBounce`) unless they are dash-attacking. Drawing is procedural
 //! (four-point star + shield ring) so it reads clearly without the atlas art.
 
-use ruleste_plugin_api::host::{self, draw_line, draw_rect, entities_by_type};
+use ruleste_plugin_api::host::{self, draw_image, draw_line, entities_by_type};
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::{Color, EntityId, Vec2};
@@ -164,21 +164,12 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         let p = Entity::new(id).position.get();
         let bob = (st.timer * 3.0).sin() * 2.0;
         let y = p.y + bob;
-        let pulse = 1.0 + (st.timer * 7.0).sin() * 0.15;
-        let c = Color::new(0xf0, 0xe0, 0x50, 0xff);
-        let arm = 5.0 * pulse;
-        let cx = p.x;
-        draw_rect(cx - arm, y - 1.0, arm * 2.0, 2.0, c);
-        draw_rect(cx - 1.0, y - arm, 2.0, arm * 2.0, c);
-        draw_rect(
-            cx - 1.0,
-            y - 1.0,
-            2.0,
-            2.0,
-            Color::new(0xff, 0xff, 0xf0, 0xff),
-        );
+        // Real atlas sprite: the FlyFeather idles through `idle00..20`.
+        let idx = (st.timer * 6.0) as usize % 21;
+        let frame = format!("objects/flyFeather/idle{idx:02}");
+        draw_image(&frame, p.x, y, 0.0, 1.0, 1.0);
         if st.shielded {
-            // Shield ring (`Draw.Circle` approximation).
+            // Shield ring around the feather (`Draw.Circle` approximation).
             let r = 10.0 - (st.timer * 2.0).sin() * 1.5;
             let white = Color::new(0xff, 0xff, 0xff, 0xd0);
             let steps = 24;
@@ -186,9 +177,9 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
                 let a0 = i as f32 * std::f32::consts::TAU / steps as f32;
                 let a1 = (i + 1) as f32 * std::f32::consts::TAU / steps as f32;
                 draw_line(
-                    cx + a0.cos() * r,
+                    p.x + a0.cos() * r,
                     y + a0.sin() * r,
-                    cx + a1.cos() * r,
+                    p.x + a1.cos() * r,
                     y + a1.sin() * r,
                     white,
                 );

@@ -8,7 +8,7 @@
 //! and contact with a fully-extended cell is lethal. Directional contact only
 //! counts when the player moves *into* the spikes (`GetPlayerCollideIndex`).
 
-use ruleste_plugin_api::host::{self, die, draw_image, draw_rect, entities_by_type};
+use ruleste_plugin_api::host::{self, die, draw_image, entities_by_type};
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::{Color, EntityId};
@@ -217,25 +217,13 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
                 Dir::Left => (p.x - 2.0 - cell.lerp * 2.0, p.y + pos),
                 Dir::Right => (p.x + 2.0 + cell.lerp * 2.0, p.y + pos),
             };
-            let frame = format!(
-                "danger/spikes/{}_{}00",
-                st.spike_type,
-                match st.dir {
-                    Dir::Up => "up",
-                    Dir::Down => "down",
-                    Dir::Left => "left",
-                    Dir::Right => "right",
-                }
-            );
+            // Real tentacle sprite (`wiggle_h00..08` / `wiggle_v00..08`).
+            let idx = ((cell.lerp * 8.0) as usize).min(8);
+            let frame = match st.dir {
+                Dir::Up | Dir::Down => format!("danger/triggertentacle/wiggle_v{idx:02}"),
+                Dir::Left | Dir::Right => format!("danger/triggertentacle/wiggle_h{idx:02}"),
+            };
             draw_image(&frame, cx, cy, 0.0, 1.0, 1.0);
-            let a = (40.0 + 60.0 * cell.lerp) as u8;
-            let base = Color::new(0x60, 0x70, 0x78, a);
-            match st.dir {
-                Dir::Up => draw_rect(p.x, p.y - 4.0 * cell.lerp, st.size, 4.0 * cell.lerp, base),
-                Dir::Down => draw_rect(p.x, p.y, st.size, 4.0 * cell.lerp, base),
-                Dir::Left => draw_rect(p.x - 4.0 * cell.lerp, p.y, 4.0 * cell.lerp, st.size, base),
-                Dir::Right => draw_rect(p.x, p.y, 4.0 * cell.lerp, st.size, base),
-            }
         }
     });
 }

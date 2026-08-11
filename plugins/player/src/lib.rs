@@ -184,6 +184,7 @@ struct PlayerState {
     // out, then the stored aim fires a dash.
     boost_target: Vec2,
     boost_timer: f32,
+    boost_red: bool,
     // Launch (`StLaunch`): optional horizontal approach target while airborne.
     launch_approach_x: f32,
     has_launch_approach: bool,
@@ -231,6 +232,7 @@ impl Default for PlayerState {
             launched: false,
             boost_target: Vec2::ZERO,
             boost_timer: 0.0,
+            boost_red: false,
             launch_approach_x: 0.0,
             has_launch_approach: false,
             starfly_timer: 0.0,
@@ -1376,12 +1378,14 @@ fn handle_events(id: EntityId) {
             }
             ruleste_plugin_api::host::EV_BOOST => {
                 let target = read_vec2(&data);
+                let red = data.get(8).copied().unwrap_or(0) != 0;
                 with_state(id, |st| {
                     // `BoostBegin`: refill before the pull starts.
                     st.dashes = MAX_DASHES;
                     st.stamina = CLIMB_MAX_STAMINA;
                     st.boost_target = target;
                     st.boost_timer = BOOST_TIME;
+                    st.boost_red = red;
                     st.wall_slide_dir = 0;
                     new_state = Some(ST_BOOST);
                 });

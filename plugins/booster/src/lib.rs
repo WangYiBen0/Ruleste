@@ -93,9 +93,16 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                 if player_overlap(&entity) {
                     st.phase = 1;
                     st.timer = SPIN_TIME;
+                    let p = entity.position.get();
+                    // Payload: booster center as `Vec2`, plus a trailing
+                    // flag byte: `1` for red (hyper dash), `0` for green.
+                    let mut buf = [0u8; 9];
+                    buf[0..4].copy_from_slice(&p.x.to_le_bytes());
+                    buf[4..8].copy_from_slice(&p.y.to_le_bytes());
+                    buf[8] = u8::from(st.red);
                     for player_id in host::entities_by_type("player") {
                         if host::entity_alive(player_id) {
-                            host::emit(player_id, host::EV_BOOST, &[]);
+                            host::emit(player_id, host::EV_BOOST, &buf);
                             break;
                         }
                     }

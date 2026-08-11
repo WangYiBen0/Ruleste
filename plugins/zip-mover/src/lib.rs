@@ -139,9 +139,12 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let entity = Entity::new(id);
     let p = entity.position.get();
     let (w, h, ox, oy) = entity.hitbox.get();
-    host::draw_rect(p.x + ox, p.y + oy, w, h, crate_color());
-}
-
-fn crate_color() -> ruleste_plugin_api::types::Color {
-    ruleste_plugin_api::types::Color::new(0x58, 0x3c, 0x20, 0xff)
+    host::draw_image(
+        "objects/zipmover/block",
+        p.x + ox + w * 0.5,
+        p.y + oy + h * 0.5,
+        0.0,
+        1.0,
+        1.0,
+    );
 }

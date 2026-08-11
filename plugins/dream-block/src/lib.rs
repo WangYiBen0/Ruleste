@@ -6,7 +6,7 @@
 //! drifting light-grey particles and a wobbling border line plus corner
 //! blocks. Dream-dash activation and node movement are left for later passes.
 
-use ruleste_plugin_api::host;
+use ruleste_plugin_api::host::{draw_image, draw_line, draw_rect};
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::{Color, EntityId};
@@ -119,12 +119,20 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         let entity = Entity::new(id);
         let p = entity.position.get();
         let (w, h) = (st.w, st.h);
-        host::draw_rect(p.x, p.y, w, h, BACK);
+        // Real atlas slab + drifting sparkle particles.
+        draw_image(
+            "objects/dreamblock/disabled",
+            p.x + w * 0.5,
+            p.y + h * 0.5,
+            0.0,
+            1.0,
+            1.0,
+        );
         // Drifting particles inside the slab (simplified: no parallax).
         for &(px, py, layer) in &st.particles {
             let dx = ((st.timer * (1.0 + layer)) * 10.0 + px).sin() * 1.5;
             let dy = ((st.timer * (1.0 + layer)) * 7.0 + py).sin() * 1.5;
-            host::draw_rect(
+            draw_rect(
                 p.x + px + dx,
                 p.y + py + dy,
                 2.0,
@@ -132,14 +140,10 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
                 particle_color(layer),
             );
         }
-        // Wobble border (approximated as straight edges) and corner blocks.
-        host::draw_line(p.x, p.y, p.x + w, p.y, LINE);
-        host::draw_line(p.x + w, p.y, p.x + w, p.y + h, LINE);
-        host::draw_line(p.x + w, p.y + h, p.x, p.y + h, LINE);
-        host::draw_line(p.x, p.y + h, p.x, p.y, LINE);
-        host::draw_rect(p.x, p.y, 2.0, 2.0, LINE);
-        host::draw_rect(p.x + w - 2.0, p.y, 2.0, 2.0, LINE);
-        host::draw_rect(p.x, p.y + h - 2.0, 2.0, 2.0, LINE);
-        host::draw_rect(p.x + w - 2.0, p.y + h - 2.0, 2.0, 2.0, LINE);
+        // Wobble border (approximated as straight edges).
+        draw_line(p.x, p.y, p.x + w, p.y, LINE);
+        draw_line(p.x + w, p.y, p.x + w, p.y + h, LINE);
+        draw_line(p.x + w, p.y + h, p.x, p.y + h, LINE);
+        draw_line(p.x, p.y + h, p.x, p.y, LINE);
     });
 }

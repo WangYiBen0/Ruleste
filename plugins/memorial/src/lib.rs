@@ -8,28 +8,15 @@
 //! procedural stone. The sprite frames are looked up when available and fall
 //! back to the drawn stone when the atlas lacks them.
 
-use ruleste_plugin_api::host::{self, draw_image, draw_rect, entities_by_type};
+use ruleste_plugin_api::host::{self, draw_image, entities_by_type};
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugin_api::types::EntityId;
 
 ruleste_plugin_api::ruleste_meta!("memorial");
 ruleste_plugin_api::ruleste_entity_types!("memorial");
 ruleste_plugin_api::ruleste_noop_destroy!();
 ruleste_plugin_api::ruleste_noop_serialize!();
-
-const STONE: Color = Color {
-    r: 0x9c,
-    g: 0xa4,
-    b: 0xae,
-    a: 0xff,
-};
-const STONE_TOP: Color = Color {
-    r: 0xc8,
-    g: 0xd0,
-    b: 0xd8,
-    a: 0xff,
-};
 /// Proximity radius for the (not yet wired-up) memorial face-in.
 const RADIUS: f32 = 16.0;
 
@@ -60,7 +47,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     entity
         .position
         .set_xy(spawn.get_float("x", 0.0), spawn.get_float("y", 0.0));
-    entity.depth.set(0);
+    entity.depth.set(100);
 }
 
 #[unsafe(no_mangle)]
@@ -89,9 +76,6 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, _dt: f32) {
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let entity = Entity::new(id);
     let p = entity.position.get();
-    // Prefer the real atlas art when the pack provides it, otherwise the slab.
-    draw_image("objects/memorial/frame/memorial00", p.x, p.y, 0.0, 1.0, 1.0);
-    // Slab body.
-    draw_rect(p.x - 10.0, p.y - 4.0, 20.0, 14.0, STONE);
-    draw_rect(p.x - 12.0, p.y - 8.0, 24.0, 5.0, STONE_TOP);
+    // Original memorial slab: a single `scenery/memorial/memorial` atlas frame.
+    draw_image("scenery/memorial/memorial", p.x, p.y, 0.0, 1.0, 1.0);
 }

@@ -10,7 +10,7 @@
 use ruleste_plugin_api::host;
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId, Vec2};
+use ruleste_plugin_api::types::{EntityId, Vec2};
 
 ruleste_plugin_api::ruleste_meta!("star-jump-block");
 ruleste_plugin_api::ruleste_entity_types!("starJumpBlock");
@@ -154,8 +154,23 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     with_state(id, |st| {
         let p = Entity::new(id).position.get();
-        // Star slab: deep purple fill under a starlight cap.
-        host::draw_rect(p.x, p.y, st.w, st.h, Color::new(0x60, 0x38, 0xa8, 0xff));
-        host::draw_rect(p.x, p.y, st.w, 2.0, Color::new(0xd0, 0xb0, 0xf8, 0xff));
+        // Real starjump tile: horizontal edge band + a starlight cap.
+        host::draw_image(
+            "objects/starjumpBlock/edgeH00",
+            p.x + st.w * 0.5,
+            p.y,
+            0.0,
+            1.0,
+            1.0,
+        );
+        host::draw_image("objects/starjumpBlock/corner00", p.x, p.y, 0.0, 1.0, 1.0);
+        host::draw_image(
+            "objects/starjumpBlock/corner02",
+            p.x + st.w - 8.0,
+            p.y,
+            0.0,
+            1.0,
+            1.0,
+        );
     });
 }

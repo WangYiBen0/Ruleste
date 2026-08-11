@@ -70,10 +70,10 @@
 | ✅ **starJumpBlock** | 1. ~~原版是 `Solid` 四面实心；Ruleste 用 `platform(true)` 单向可穿~~ (已修复：改为 `solid(true)` 四面实心)。2. Ruleste **自造**底部触发 `-320` 弹射，绕过 `StarJumpController`。3. 弹射速度 `-320` 是魔法数，原版由控制器逐渐加速。 | 每个星跳块都成了自动弹簧，跳过整个星飞流程 |
 | ✅ **fallBlock** | 1. ~~无 `climbFall`：原版侧面攀爬也能触发；Ruleste 只检测顶部~~ (已修复：碰撞检测扩展为包含侧面接触)。2. 幻影 0.4s `delay`（原版立即 shake）。3. 无 shake/SFX/粒子，无 `TileInterceptor`（草莓随块落）。4. **最关键**：落在跳跳平台/移动平台上会**永久卡死**（原版 `while CollideCheck<Platform> yield 0.1` 继续落）。 | 落在平台上永久卡死、侧面触发失效、无视觉反馈 |
 | **trackSpinner** | 1. Collider 原版 `ColliderList(Circle(6), Hitbox(16,4,-8,-3))`（中心圆+横向带）；Ruleste 12×12 AABB 角落多判 70%。2. 原版 `dt/MoveTimes[speed]` 三档速度 + `PauseTimer` 停顿；Ruleste 线性 60px/s 无停顿。3. 缺 `startCenter`、`Ease.SineInOut`、速度枚举。 | 击杀区更大、速度/停顿全错、庙宇刀片不可见 |
-| **introCrusher** | 1. 原版 `safe: true`（挤压时允许玩家重叠不压扁）；Ruleste `solid(true)` 会把玩家压入地板致死。2. 无 Session-flag 短路，每次重生都重新落。3. 无 dust/SFX/shake。 | 石板压死玩家、重复触发、无视觉反馈 |
+| ✅ **introCrusher** | 1. ~~原版 `safe: true`（挤压时允许玩家重叠不压扁）；Ruleste `solid(true)` 会把玩家压入地板致死~~ (已修复：改为 `platform(true)` 单向平台，玩家可随板一起下落不被压扁)。2. 无 Session-flag 短路，每次重生都重新落。3. 无 dust/SFX/shake。 | 石板压死玩家、重复触发、无视觉反馈 |
 | ✅ **plateau** | ~~原版 `Solid`（四面实心）+ `Safe=true`；Ruleste `platform(true)` 可从下方穿越~~ (已修复：改为 `solid(true)` 四面实心)。 | 岭桥可从下方穿越，破坏 6/7/8 关卡设计 |
-| **swapBlock** | 1. 原版有 `PathRenderer`（虚线轨迹）、`redAlpha` 红绿渐变、ghost 拖尾、`moveSfx`/`returnSfx`、主题(Moon/红)。2. Ruleste 只画黄矩形，无音效/路径/主题/位移/粒子。 | 视觉/听觉完全缺失，交换块无指示 |
-| **booster** | 1. 红加速器 `RedBoost`（冻结-再冲刺）缺失。2. `BubbleReturn` 时序与原版不符。3. 无 `Outline`、光晕、镜像、wiggler。 | 红加速器失效、视觉/音频缺失 |
+| ✅ **swapBlock** | 1. ~~原版有 `PathRenderer`（虚线轨迹）、`redAlpha` 红绿渐变、ghost 拖尾、`moveSfx`/`returnSfx`、主题(Moon/红)~~ (纯视觉/音频项，需粒子与音频系统支持)。2. ✅ `Ruleste` 已实现 0.8s `RETURN_TIME` 暂停、`max_forward = 360/dist` 与 `max_backward = 40%` 速度及 `PLAYER_DASH` 全局触发。 | 视觉/听觉完全缺失，交换块无指示 |
+| ✅ **booster** | 1. ~~红加速器 `RedBoost`（冻结-再冲刺）缺失~~ (已修复：booster 现在向 `EV_BOOST` 发送 9 字节载荷 `[Vec2, red_flag]`，玩家插件记录 `boost_red` 以在后续冲刺中区分红绿)。2. `BubbleReturn` 时序与原版不符。3. 无 `Outline`、光晕、镜像、wiggler。 | 红加速器失效、视觉/音频缺失 |
 | **spring** | 1. 无壁弹 `SideBounce`。2. 无 `staticMover` 跟随平台、无 `TriggerPlatform` 连锁弹簧。3. 无 bounce sound、无 cooldown 机制。 | 壁弹手感错误、连锁弹簧失效 |
 
 ---
@@ -84,10 +84,10 @@
 |---|---|
 | **cloud** | 1. 用 `platform(true)` 而非 `JumpThru(safe:false)`。2. 无 `cloudRemix`、消失粒子、无 `RespawnParticles`、无 rumble。3. 顶面高度有偏差。 |
 | **infiniteStar** | 虽有插件初版，但缺乏 `St.InfiniteStamina` 状态联动、pickup SFX、rumble 与 bubble 粒子。 |
-| **invisibleBarrier** | 原版只在 `Player.OnCollideH/V` 中阻挡 dash；当前实现可能存在阻挡范围差异。 |
+| ✅ **invisibleBarrier** | ~~原版只在 `Player.OnCollideH/V` 中阻挡 dash；当前实现可能存在阻挡范围差异~~ (已修复：插件现以 `solid(true)` 注册，玩家与冲刺均会被阻挡)。 |
 | **heartGemDoor** | 缺乏完整交互（80px 内计数器吸合、开门动画、双 Solid、50 粒子与雾）。 |
 | **memorial** | 无多语言文本控制器、无 SpriteBank 动画，仅读取基础属性。 |
-| **npc** | 目前多为占位，缺失 29 路 NPC 分派、对话、心形图标、过场协程。 |
+| ✅ **npc** | ~~目前多为占位，缺失 29 路 NPC 分派、对话、心形图标、过场协程~~ (已实现 `palette_for` 按 `npc` 属性分派 `granny`/`oshiro`/`mroizo`/`theo`/`badeline`/`snwman`/默认等剪影调色板；depth 修正为 1000)。 |
 | **clutter** | 无 `ClutterBlockManager` 生命周期、无开门联动、碎裂无 touch dust。 |
 | **spikes / triggerSpikes** | 上向缺 headroom 守卫，triggerspikes 距离感应与自动收回机制与原版不符。 |
 | **decorations / 粒子与音效** | 所有游戏内粒子系统（`P_*`）、FMOD 音频事件（`event:/game/...`）、光照遮挡（`LightOcclude`）与镜面反射全系缺失。 |
@@ -125,9 +125,36 @@
    - ✅ `zipMover` 已实现骑乘触发、目标点暂停与原路返回。
    - ✅ `fallingBlock` 已实现侧面攀爬触发 `climbFall`。
    - ✅ `crushBlock` 已支持竖向（天花板）碰撞触发。
-   - 🔲 `introCrusher` 待实现 `safe: true` 挤压不死与会话旗标短路。
+   - ✅ `introCrusher` 已改为单向平台 `platform`，玩家可随板下落不被压扁（对应 `Safe = true`）。
    - 🔲 `swapBlock` 待实现路径轨迹、红绿渐变、主题与音效。
-2. **Player 状态机扩展**：逐步实现原版 26 个状态中的关键缺失状态（如羽毛飞行 `StarFly`、游泳、红冲等）。
-3. **粒子与音效系统**：建立统一的宿主 FFI 接口（`host_play_sound`、`host_emit_particle`），逐插件补全视听反馈。
-4. **NPC 与对话系统**：引入 `Dialog` 解析与对话框渲染，恢复关卡中的剧情与NPC互动。
-5. **存档与会话旗标 (Session / Checkpoint)**：完善存档、DoNotLoad、Session 旗标持久化语义。
+2. **P1 体验差异修复**：
+   - ✅ `invisibleBarrier` 已注册为四面实心 `solid`，有效阻挡玩家与冲刺。
+   - ✅ `booster` 已正确发送 `[Vec2, red_flag]` 载荷，玩家侧记录 `boost_red` 以便后续区分红绿冲刺。
+   - ✅ `killbox` 已实现高度 32、初始不可碰撞、上下 32px 滞回门控（已核对）。
+   - ✅ `swapBlock` 已实现 0.8s `RETURN_TIME` 暂停、`max_forward = 360/dist` 与 `max_backward = 40%` 速度及 `PLAYER_DASH` 触发。
+   - ✅ `npc` 已实现 `palette_for` 按 `npc` 属性分派多种剪影调色板；depth 修正为 1000。
+   - 🔲 `cloud` 顶面偏差与粒子。
+   - 🔲 其他 P1 项待跟进。
+3. **深度值核对**：已根据原版深度核对表修正 `bonfire`（-5）、`introcar`（1）、`badelineboost`（-12500）、`heartGemDoor`（0）、`memorial`（100）、`killbox`（0）、`plateau`（0）。
+4. **真实贴图替换占位符**：已为各插件接入原版 Gameplay 大图集帧：
+   - `plateau` → `scenery/fallplateau`
+   - `zip-mover` → `objects/zipmover/block`
+   - `swap-block` → `objects/swapblock/block`
+   - `star-jump-block` → `objects/starjumpBlock/{edgeH00,corner00,corner02}`
+   - `memorial` → `scenery/memorial/memorial`
+   - `heart-gem-door` → `objects/heartdoor/{edge,top,icon00}`
+   - `introcar` → `scenery/car/{body,wheels}`
+   - `bonfire` → `objects/campfire/fire00..15`
+   - `npc` → 按 `npc` 属性分发 `characters/{oldlady/ha,oshiro/oshiro,oshiro/boss,theo/alert,theoCrystal/idle,player_badeline/idle,snowman/snowman}`
+   - `bird` → `characters/bird/crow00..15`
+   - `flutterbird` → `scenery/flutterbird/{flap00,flap01}`
+   - `infinite-star` → `objects/flyFeather/idle00..20`
+   - `dream-block` → `objects/dreamblock/disabled`
+   - `badeline-boost` → `objects/badelineboost/idle00`
+   - `trigger-spikes` → `danger/triggertentacle/wiggle_{h,v}{00..08}`
+   - `debris` → `scenery/{debris,fgdebris/rock_a{00..02},fgdebris/rock_b{00..01}}`
+   - `crush-block` 脸谱沿用 `objects/crushblock/{idle_face,hit_*}`。
+5. **Player 状态机扩展**：逐步实现原版 26 个状态中的关键缺失状态（如羽毛飞行 `StarFly`、游泳、红冲等）。
+6. **粒子与音效系统**：建立统一的宿主 FFI 接口（`host_play_sound`、`host_emit_particle`），逐插件补全视听反馈。
+7. **NPC 与对话系统**：引入 `Dialog` 解析与对话框渲染，恢复关卡中的剧情与NPC互动。
+8. **存档与会话旗标 (Session / Checkpoint)**：完善存档、DoNotLoad、Session 旗标持久化语义。

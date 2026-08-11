@@ -11,7 +11,7 @@
 use ruleste_plugin_api::host;
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId, Vec2};
+use ruleste_plugin_api::types::{EntityId, Vec2};
 
 ruleste_plugin_api::ruleste_meta!("swap-block");
 ruleste_plugin_api::ruleste_entity_types!("swapBlock");
@@ -139,13 +139,13 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let entity = Entity::new(id);
     let p = entity.position.get();
     let (w, h, ox, oy) = entity.hitbox.get();
-    // Dashed yellow block: bright fill with a dark dashed outline.
-    host::draw_rect(p.x + ox, p.y + oy, w, h, Color::new(0xd8, 0xc0, 0x3a, 0xff));
-    host::draw_rect(
-        p.x + ox,
-        p.y + oy,
-        w,
-        2.0,
-        Color::new(0x7a, 0x64, 0x18, 0xff),
+    // Yellow swap-block slab (original Celeste atlas frame).
+    host::draw_image(
+        "objects/swapblock/block",
+        p.x + ox + w * 0.5,
+        p.y + oy + h * 0.5,
+        0.0,
+        1.0,
+        1.0,
     );
 }

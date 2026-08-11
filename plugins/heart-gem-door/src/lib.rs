@@ -10,34 +10,22 @@
 //! making the door move before the inventory system exists would trap the
 //! player; resting closed is the safe default.
 
-use ruleste_plugin_api::host::draw_rect;
+use ruleste_plugin_api::host::draw_image;
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugin_api::types::EntityId;
 
 ruleste_plugin_api::ruleste_meta!("heart-gem-door");
 ruleste_plugin_api::ruleste_entity_types!("heartGemDoor");
 ruleste_plugin_api::ruleste_noop_destroy!();
 ruleste_plugin_api::ruleste_noop_serialize!();
 
-const DOOR: Color = Color {
-    r: 0x3e,
-    g: 0x44,
-    b: 0x52,
-    a: 0xff,
-};
-const EDGE: Color = Color {
-    r: 0x66,
-    g: 0x70,
-    b: 0x86,
-    a: 0xff,
-};
-const HEART: Color = Color {
-    r: 0xd0,
-    g: 0x38,
-    b: 0x60,
-    a: 0xff,
-};
+const DOOR_FRAMES: [&str; 4] = [
+    "objects/heartdoor/edge",
+    "objects/heartdoor/top",
+    "objects/heartdoor/icon00",
+    "objects/heartdoor/icon01",
+];
 
 #[derive(Debug, Default)]
 struct DoorState {
@@ -72,7 +60,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
         0.0,
         0.0,
     );
-    entity.depth.set(500);
+    entity.depth.set(0);
     with_state(id, |st| {
         st.requires = spawn.get_float("requires", 0.0) as u32;
     });
@@ -86,13 +74,31 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     with_state(id, |st| {
         let p = Entity::new(id).position.get();
         let (w, h, ox, oy) = Entity::new(id).hitbox.get();
-        // Door slab with a heart medallion at its center.
-        draw_rect(p.x + ox, p.y + oy, w, h, DOOR);
-        draw_rect(p.x + ox, p.y + oy, w, 3.0, EDGE);
-        let hx = p.x + w * 0.5;
-        let hy = p.y + oy + h * 0.6;
-        draw_rect(hx - 6.0, hy, 12.0, 8.0, HEART);
-        draw_rect(hx - 2.0, hy - 6.0, 4.0, 6.0, HEART);
+        // Frame edge / top / heart medallion from the gameplay atlas.
+        draw_image(
+            DOOR_FRAMES[0],
+            p.x + ox + w * 0.5,
+            p.y + oy + 2.0,
+            0.0,
+            1.0,
+            1.0,
+        );
+        draw_image(
+            DOOR_FRAMES[1],
+            p.x + ox + w * 0.5,
+            p.y + oy + h * 0.5,
+            0.0,
+            1.0,
+            1.0,
+        );
+        draw_image(
+            DOOR_FRAMES[2],
+            p.x + ox + w * 0.5,
+            p.y + oy + h * 0.7,
+            0.0,
+            1.0,
+            1.0,
+        );
         let _ = st.requires;
     });
 }

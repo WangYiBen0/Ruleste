@@ -2,10 +2,10 @@
 //!
 //! Mirrors the `Bonfire` campfire found in the Old Site: a log pile whose
 //! flame flickers on a looping clock. Ember particles need an emitter system
-//! the host does not have, so the fire is drawn procedurally as stacked
-//! flame rectangles whose height and hue pulse with a sine.
+//! the host does not have, so the fire is drawn from the real
+//! `objects/campfire/fire00..15` atlas loop and the log pile stays procedural.
 
-use ruleste_plugin_api::host::draw_rect;
+use ruleste_plugin_api::host::{draw_image, draw_rect};
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::{Color, EntityId};
@@ -16,6 +16,7 @@ const LOG_COLOR: Color = Color {
     b: 0x18,
     a: 0xff,
 };
+const FIRE_FPS: f32 = 12.0;
 
 #[derive(Debug, Default)]
 struct FireState {
@@ -43,7 +44,7 @@ pub fn init(id: EntityId, data: *const u8, len: u32) {
     entity
         .position
         .set_xy(spawn.get_float("x", 0.0), spawn.get_float("y", 0.0));
-    entity.depth.set(2000);
+    entity.depth.set(-5);
 }
 
 pub fn update(id: EntityId, dt: f32) {
@@ -55,40 +56,11 @@ pub fn update(id: EntityId, dt: f32) {
 pub fn draw(id: EntityId) {
     with_state(id, |st| {
         let p = Entity::new(id).position.get();
-        // Log pile.
+        // Log pile (procedural — there's no atlas log frame).
         draw_rect(p.x - 10.0, p.y - 2.0, 20.0, 4.0, LOG_COLOR);
-        // Flickering flame: two layered triangles approximated by stacked
-        // rects whose heights follow independent sines.
-        let flicker = 1.0 + (st.timer * 9.0).sin() * 0.15;
-        let sway = (st.timer * 7.0).sin() * 1.5;
-        let outer_f = 6.0 * flicker;
-        let inner_f = 4.0 * (1.0 + (st.timer * 12.0 + 1.3).sin() * 0.2);
-        let core = Color {
-            r: 0xff,
-            g: 0xe0,
-            b: 0x60,
-            a: 0xf0,
-        };
-        let mid = Color {
-            r: 0xe0,
-            g: 0x80,
-            b: 0x20,
-            a: 0xe8,
-        };
-        let outer = Color {
-            r: 0x90,
-            g: 0x30,
-            b: 0x10,
-            a: 0xc0,
-        };
-        draw_rect(p.x - 5.0, p.y - inner_f, 10.0, inner_f, core);
-        draw_rect(p.x - 8.0 + sway, p.y - outer_f, 16.0, outer_f, mid);
-        draw_rect(
-            p.x - 10.0 + sway * 0.5,
-            p.y - outer_f * 1.3,
-            20.0,
-            outer_f * 1.3,
-            outer,
-        );
+        // Flame loop drawn from the real gameplay atlas.
+        let idx = (st.timer * FIRE_FPS) as usize % 16;
+        let frame = format!("objects/campfire/fire{idx:02}");
+        draw_image(&frame, p.x, p.y - 10.0, 0.0, 1.0, 1.0);
     });
 }
