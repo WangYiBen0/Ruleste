@@ -507,3 +507,148 @@ impl Renderer {
         }
     }
 }
+
+/// Text rendering utilities.
+impl Renderer {
+    /// Draw text at the specified position with the given font and color.
+    /// Text is drawn left-aligned; for centered or right-aligned text, use
+    /// `measure_text` to compute the offset.
+    ///
+    /// For now, this uses a simple glyph-by-glyph rendering approach.
+    /// A production implementation would batch glyphs into a single draw call.
+    pub fn draw_text(
+        &mut self,
+        font: &crate::data::font::SpriteFont,
+        text: &str,
+        x: f32,
+        y: f32,
+        color: (u8, u8, u8, u8),
+    ) {
+        let mut cursor_x = x;
+        let mut prev_char: Option<char> = None;
+
+        for c in text.chars() {
+            if let Some(glyph) = font.glyph(c) {
+                // Apply kerning if enabled
+                if font.use_kerning && prev_char.is_some() {
+                    cursor_x += font.spacing as f32;
+                }
+
+                // Draw the glyph (placeholder: draw a rectangle for now)
+                // A real implementation would render from a texture atlas
+                let bounds = glyph.bounds;
+                let dst = FRect::new(
+                    cursor_x + bounds.x as f32,
+                    y + bounds.y as f32,
+                    bounds.width as f32,
+                    bounds.height as f32,
+                );
+
+                self.canvas
+                    .set_draw_color(SdlColor::RGBA(color.0, color.1, color.2, color.3));
+                if let Err(e) = self.canvas.fill_rect(dst) {
+                    eprintln!("Failed to draw glyph '{c}': {e}");
+                }
+
+                cursor_x += glyph.advance as f32;
+            }
+            prev_char = Some(c);
+        }
+    }
+
+    /// Draw centered text at the specified position.
+    pub fn draw_text_centered(
+        &mut self,
+        font: &crate::data::font::SpriteFont,
+        text: &str,
+        center_x: f32,
+        y: f32,
+        color: (u8, u8, u8, u8),
+    ) {
+        let width = font.measure_string(text) as f32;
+        let x = center_x - width / 2.0;
+        self.draw_text(font, text, x, y, color);
+    }
+
+    /// Draw right-aligned text.
+    pub fn draw_text_right(
+        &mut self,
+        font: &crate::data::font::SpriteFont,
+        text: &str,
+        right_x: f32,
+        y: f32,
+        color: (u8, u8, u8, u8),
+    ) {
+        let width = font.measure_string(text) as f32;
+        let x = right_x - width;
+        self.draw_text(font, text, x, y, color);
+    }
+
+    /// Measure text width.
+    pub fn measure_text(font: &crate::data::font::SpriteFont, text: &str) -> f32 {
+        font.measure_string(text) as f32
+    }
+
+    /// Draw text with word wrapping.
+    ///
+    /// Returns the total height of the rendered text.
+    pub fn draw_text_wrapped(
+        &mut self,
+        font: &crate::data::font::SpriteFont,
+        text: &str,
+        x: f32,
+        mut y: f32,
+        max_width: f32,
+        color: (u8, u8, u8, u8),
+    ) -> f32 {
+        let line_height = font.line_spacing as f32;
+        let mut current_width = 0.0;
+        let mut word_start = 0;
+        let mut current_line = String::new();
+
+        for (i, c) in text.chars().chain(Some(' ')).enumerate() {
+            if c == ' ' || c == '\n' {
+                // Word boundary
+                let word = &text[word_start..i];
+                let word_width = Renderer::measure_text(font, word);
+
+                if current_width == 0.0 || current_width + word_width <= max_width {
+                    // Word fits on current line
+                    if !current_line.is_empty() {
+                        current_line.push(' ');
+                        current_width += font.spacing as f32;
+                    }
+                    current_line.push_str(word);
+                    current_width += word_width;
+                } else {
+                    // Need to wrap
+                    self.draw_text(font, &current_line, x, y, color);
+                    y += line_height;
+                    current_line.clear();
+                    current_line.push_str(word);
+                    current_width = word_width;
+                }
+
+                word_start = i + 1;
+
+                if c == '\n' {
+                    // Explicit newline
+                    if !current_line.is_empty() {
+                        self.draw_text(font, &current_line, x, y, color);
+                        y += line_height;
+                        current_line.clear();
+                        current_width = 0.0;
+                    }
+                }
+            }
+        }
+
+        // Draw the last line
+        if !current_line.is_empty() {
+            self.draw_text(font, &current_line, x, y, color);
+            y += line_height;
+        }
+
+        y - (y - line_height) // Return total height
+    }
+}

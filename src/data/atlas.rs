@@ -187,7 +187,7 @@ impl AtlasPage {
 }
 
 /// A loaded atlas: multiple texture pages plus a global id -> frame index.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Atlas {
     pub pages: Vec<AtlasPage>,
     /// Maps a frame id to a `(page index, frame index)`.
@@ -233,9 +233,7 @@ impl Atlas {
         let mut frame_index = HashMap::new();
         for page in &meta.pages {
             for frame in &page.frames {
-                let data_path = dir
-                    .join(&page.name)
-                    .join(format!("{}.data", frame.id.replace('/', "_")));
+                let data_path = dir.join(&page.name).join(&frame.id).with_extension("data");
                 let bytes = std::fs::read(&data_path)
                     .map_err(|e| ReadError::new(format!("read {}: {e}", data_path.display())))?;
                 let mut decoded = AtlasPage::decode(frame.id.clone(), &bytes)?;
@@ -293,4 +291,82 @@ impl Atlas {
         let (pi, fi) = self.frame_index.get(id)?;
         Some(self.pages[*pi].frames[*fi].clip)
     }
+}
+
+/// Guesses the packer flavor of a single `.meta` atlas from our converted
+/// directory layout:
+/// * `Packer` (`Gameplay`) stores numbered page textures right next to the
+///   meta (`Gameplay0.data`).
+/// * `PackerNoAtlas` (`Misc`, each chapter's `CompleteScreens`) stores each
+///   frame as its own texture under a subdirectory named after the page.
+fn load_one(dir: &Path, meta_name: &str) -> Option<Atlas> {
+    let base = dir.join(format!("{meta_name}.meta"));
+    if !base.exists() {
+        return None;
+    }
+    let meta = AtlasMeta::from_file(&base).ok()?;
+    let first = meta.pages.first()?;
+    // `Packer`: a page texture `<page.name>.data` sits next to the meta.
+    let packed = dir.join(format!("{}.data", first.name)).is_file();
+    let loaded = if packed {
+        Atlas::load(&base).ok()?
+    } else {
+        Atlas::load_no_pack(&base).ok()?
+    };
+    Some(loaded)
+}
+
+/// Loads and merges every atlas in an `Atlases/` directory.
+///
+/// This is the pack-level entry point replacing the hardcoded
+/// `Gameplay.meta` + `Misc.meta` couple in earlier versions: every converted
+/// atlas in the directory becomes available to sprite/backdrop/plugin lookups.
+///
+/// Merge order matters: later atlases override earlier frame ids, so the two
+/// most depended-on atlases are merged last.
+///   `Gameplay`  — shared entity/tileset frames.
+///   `Misc`      — no-pack backdrops.
+/// Everything else (chapter `CompleteScreens` screenshots etc.) is merged
+/// first; those ids (`00`, `01`, ...) never collide with `Gameplay`'s paths.
+pub fn load_atlas_dir(dir: &Path) -> ReadResult<Atlas> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Err(ReadError::new(format!("read atlas dir {}", dir.display())));
+    };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            name.strip_suffix(".meta").map(str::to_string)
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+
+    let mut atlas = Atlas::default();
+    let mut failures = Vec::new();
+    for name in &names {
+        if name == "Gameplay" || name == "Misc" {
+            continue;
+        }
+        match load_one(dir, name) {
+            Some(a) => atlas.merge(a),
+            None => failures.push(name.clone()),
+        }
+    }
+    // Highest priority last.
+    for name in ["Misc", "Gameplay"] {
+        match load_one(dir, name) {
+            Some(a) => atlas.merge(a),
+            None => failures.push(name.to_string()),
+        }
+    }
+    if !failures.is_empty() {
+        eprintln!(
+            "ruleste: failed to load {} atlas(es) from {}: {:?}",
+            failures.len(),
+            dir.display(),
+            failures
+        );
+    }
+    Ok(atlas)
 }

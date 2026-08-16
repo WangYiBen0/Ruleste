@@ -6,6 +6,8 @@
 pub mod atlas;
 pub mod audio;
 pub mod binary_packer;
+pub mod dialog;
+pub mod font;
 pub mod ogg;
 pub mod pack;
 pub mod reader;
