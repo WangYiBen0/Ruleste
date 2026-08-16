@@ -1015,6 +1015,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-intro-car"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugin-api",
+]
+
+[[package]]
 name = "ruleste-plugin-intro-crusher"
 version = "0.1.0"
 dependencies = [

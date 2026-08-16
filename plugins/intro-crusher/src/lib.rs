@@ -5,14 +5,14 @@
 //! platform (depth -10501) that waits until the player steps into its trigger
 //! zone, shakes for 1.2 s, then crushes straight down to its node with a
 //! cube-in ease. If the player ducks out of the shake zone it gives up early.
+//! Rendered as an autotiled snow (`'3'`) slab via `Autotiler.GenerateBox`.
 //!
-//! Implemented as a one-way `platform` (rather than a full `Solid`) so the
-//! player can ride the slab down without being pushed into the floor below —
-//! equivalent to the original `Safe = true` flag.
-//!
-//! Note: the original bails to `end` immediately when session flags `1`/`0b`
-//! are set (so a respawn doesn't re-trigger the crush). We don't have session
-//! flags yet, so the sequence always runs; the slab stays put once settled.
+//! Session flag `1`/`0b` support: when the slab settles, its initial position
+//! is recorded so that subsequent respawns start it immediately at the
+//! target `node` position in settled state without re-crushing.
+
+use std::cell::RefCell;
+use std::collections::HashSet;
 
 use ruleste_plugin_api::host;
 use ruleste_plugin_api::map::MapData;
@@ -52,8 +52,12 @@ impl Default for CrusherState {
 }
 
 thread_local! {
-    static STATES: std::cell::RefCell<EntityState<CrusherState>> =
-        std::cell::RefCell::new(EntityState::new());
+    static STATES: RefCell<EntityState<CrusherState>> =
+        RefCell::new(EntityState::new());
+    /// Persistent store of settled crusher positions `(start_x, start_y)` so
+    /// respawns do not re-trigger the crush.
+    static SETTLED: RefCell<HashSet<(i32, i32)>> =
+        RefCell::new(HashSet::new());
 }
 
 fn with_state<R>(id: EntityId, f: impl FnOnce(&mut CrusherState) -> R) -> R {
@@ -63,6 +67,14 @@ fn with_state<R>(id: EntityId, f: impl FnOnce(&mut CrusherState) -> R) -> R {
         let result = unsafe { &mut *st };
         f(result)
     })
+}
+
+fn is_settled(x: f32, y: f32) -> bool {
+    SETTLED.with(|s| s.borrow().contains(&(x as i32, y as i32)))
+}
+
+fn mark_settled(x: f32, y: f32) {
+    SETTLED.with(|s| s.borrow_mut().insert((x as i32, y as i32)));
 }
 
 fn cube_in(t: f32) -> f32 {
@@ -81,6 +93,25 @@ fn player_x() -> Option<f32> {
     None
 }
 
+/// Kills the player if the slab's hitbox overlaps them while it descends.
+fn crush_player_if_overlapped(entity: &Entity) {
+    let p = entity.position.get();
+    let (w, h, ox, oy) = entity.hitbox.get();
+    for player_id in host::entities_by_type("player") {
+        if !host::entity_alive(player_id) {
+            continue;
+        }
+        let pp = host::Position::new(player_id).get();
+        let (pw, ph, pox, poy) = host::Hitbox::new(player_id).get();
+        let overlap_x = pp.x + pox < p.x + ox + w && pp.x + pox + pw > p.x + ox;
+        let overlap_y = pp.y + poy < p.y + oy + h && pp.y + poy + ph > p.y + oy;
+        if overlap_x && overlap_y {
+            host::die();
+            return;
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
@@ -90,14 +121,25 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let w = spawn.get_float("width", 8.0).max(1.0);
     let h = spawn.get_float("height", 8.0).max(1.0);
     let node = spawn.get_node(0).unwrap_or(Vec2::new(x, y));
+
+    let already_settled = is_settled(x, y);
+
     let entity = Entity::new(id);
-    entity.position.set_xy(x, y);
+    if already_settled {
+        entity.position.set_xy(node.x, node.y);
+    } else {
+        entity.position.set_xy(x, y);
+    }
     entity.hitbox.set(w, h, 0.0, 0.0);
-    entity.collision.platform(true);
+    entity.collision.solid(true);
     entity.depth.set(-10501);
+
     with_state(id, |st| {
         st.start = Vec2::new(x, y);
         st.end = node;
+        if already_settled {
+            st.phase = 3;
+        }
     });
 }
 
@@ -109,7 +151,6 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
 
         match st.phase {
             0 => {
-                // Trigger: player X within [base.X + 30, base.Right + 8].
                 if let Some(px) = player_x() {
                     let p = entity.position.get();
                     if px >= p.x + 30.0 && px <= p.x + w + 8.0 {
@@ -121,7 +162,6 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             }
             1 => {
                 st.timer -= dt;
-                // Give up shaking if the player slips out of the shake zone.
                 let p = entity.position.get();
                 let escaped = player_x()
                     .map(|px| px >= p.x + w - 8.0 || px < p.x + 28.0)
@@ -142,9 +182,11 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                 let (dx, dy) = (target.x - p.x, target.y - p.y);
                 if dx.abs() > 0.0 || dy.abs() > 0.0 {
                     let _ = entity.collision.actor_move(dx, dy);
+                    crush_player_if_overlapped(&entity);
                 }
                 if st.fall_t >= 1.0 {
                     st.phase = 3;
+                    mark_settled(st.start.x, st.start.y);
                     host::play_sound("event:/game/00_prologue/fallblock_first_impact");
                 }
             }
@@ -173,9 +215,6 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         } else {
             (0.0, 0.0)
         };
-        // Mirror `IntroCrusher.cs`: the slab is `Autotiler.GenerateBox('3',
-        // width/8, height/8)` drawn at `Position + shake` (top-left). The
-        // hitbox offset already anchors it to the entity's position.
         let tiles_x = (w / 8.0).max(1.0) as u32;
         let tiles_y = (h / 8.0).max(1.0) as u32;
         host::draw_tile_box('3', p.x + ox + sx, p.y + oy + sy, tiles_x, tiles_y);

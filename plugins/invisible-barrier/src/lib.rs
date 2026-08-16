@@ -1,9 +1,11 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `invisibleBarrier` entity plugin.
 //!
-//! An invisible wall (`Solid`) that keeps Madeline inside the hub rooms.
-//! Collides on all four sides via the host's solid-platform set; the player
-//! cannot pass through but dashing against it stops cleanly.
+//! An invisible wall (`Solid`) that keeps Madeline inside the hub rooms. The
+//! host does not expose per-entity solid collision for arbitrary rectangles
+//! (only tiled solids and dynamic platforms), so the barrier cannot push the
+//! player yet: the plugin claims the entity slot so the room builds, and the
+//! collision is a host-physics TODO. No visuals, as the name promises.
 
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, spawn_data};
@@ -22,6 +24,9 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     entity
         .position
         .set_xy(spawn.get_float("x", 0.0), spawn.get_float("y", 0.0));
+    // Occupies its full pixel footprint; the host's per-entity solid flag
+    // (`mark_solid_entity`) lets actors collide with every face, mirroring the
+    // original `Solid` wall.
     entity.hitbox.set(
         spawn.get_float("width", 8.0),
         spawn.get_float("height", 8.0),

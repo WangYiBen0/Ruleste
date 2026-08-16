@@ -1,7 +1,8 @@
-# references & EXOK's Restricted assets
+# references & Restricted assets
 references/
 resources/Celeste
 maps/Celeste
+libfmod.so
 
 # Nix https://github.com/github/gitignore/blob/main/Nix.gitignore
 ## Ignore build outputs from performing a nix-build or `nix build` command

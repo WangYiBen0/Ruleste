@@ -140,8 +140,15 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                 }
                 Orientation::WallLeft => {
                     if state != ST_DASH {
-                        // `SideBounce(1, base.Right, base.CenterY)`.
-                        host::emit(id, host::EV_SIDE_BOUNCE, &[1]);
+                        // `SideBounce(1, base.Right, base.CenterY)`: spring on the
+                        // left wall, so bounce toward `+x` from its right edge.
+                        let from_x = sp.x + sox + sw;
+                        let from_y = sp.y + soy + sh * 0.5;
+                        let mut buf = Vec::new();
+                        buf.push(1);
+                        push_f32(&mut buf, from_x);
+                        push_f32(&mut buf, from_y);
+                        host::emit(id, host::EV_SIDE_BOUNCE, &buf);
                         st.cooldown = 0.2;
                         break;
                     }
@@ -149,7 +156,13 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                 Orientation::WallRight => {
                     if state != ST_DASH {
                         // `SideBounce(-1, base.Left, base.CenterY)`.
-                        host::emit(id, host::EV_SIDE_BOUNCE, &[255]);
+                        let from_x = sp.x + sox;
+                        let from_y = sp.y + soy + sh * 0.5;
+                        let mut buf = Vec::new();
+                        buf.push(255);
+                        push_f32(&mut buf, from_x);
+                        push_f32(&mut buf, from_y);
+                        host::emit(id, host::EV_SIDE_BOUNCE, &buf);
                         st.cooldown = 0.2;
                         break;
                     }

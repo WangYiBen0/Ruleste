@@ -6,15 +6,28 @@
 //! is 96 wide), with `SurfaceSoundIndex = 23`. Level styling
 //! (`Plateau.Level`) only picks the palette; the base stone stays.
 
-use ruleste_plugin_api::host::draw_image;
+use ruleste_plugin_api::host::draw_rect;
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugin_api::types::{Color, EntityId};
 
 ruleste_plugin_api::ruleste_meta!("plateau");
 ruleste_plugin_api::ruleste_entity_types!("plateau");
 ruleste_plugin_api::ruleste_noop_destroy!();
 ruleste_plugin_api::ruleste_noop_serialize!();
+
+const STONE: Color = Color {
+    r: 0x50,
+    g: 0x56,
+    b: 0x60,
+    a: 0xff,
+};
+const MOSS: Color = Color {
+    r: 0x6a,
+    g: 0x78,
+    b: 0x5a,
+    a: 0xff,
+};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
@@ -24,10 +37,11 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     entity
         .position
         .set_xy(spawn.get_float("x", 0.0), spawn.get_float("y", 0.0));
-    // Collider.Left += 8f on a 104-wide hitbox → standable run is 96 wide.
-    entity.hitbox.set(96.0, 4.0, 8.0, 0.0);
+    // `Solid(104×4)`, then `Collider.Left += 8` shifts the collision box right
+    // → the standable run is [x+8, x+112), i.e. a 104-wide solid at offset +8.
+    entity.hitbox.set(104.0, 4.0, 8.0, 0.0);
     entity.collision.solid(true);
-    entity.depth.set(0);
+    entity.depth.set(300);
 }
 
 #[unsafe(no_mangle)]
@@ -36,6 +50,6 @@ pub extern "C" fn ruleste_entity_update(_id: EntityId, _dt: f32) {}
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let p = Entity::new(id).position.get();
-    // Original plateau stone slab, drawn from the gameplay atlas.
-    draw_image("scenery/fallplateau", p.x + 52.0, p.y + 2.0, 0.0, 1.0, 1.0);
+    draw_rect(p.x, p.y, 104.0, 1.0, MOSS);
+    draw_rect(p.x, p.y + 1.0, 104.0, 3.0, STONE);
 }

@@ -1,12 +1,10 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! Strawberry collectible plugin.
 //!
-//! Mirrors `Strawberry.cs`: a 14x14 centered hitbox, a bobbing idle sprite from
-//! the `strawberry` SpriteBank entry, and the touch -> follow -> collect
-//! sequence. On touch the berry starts following the player (lagged lerp); the
-//! collect timer only advances while the player is on safe ground, so the
-//! berry is collected shortly after the player lands. The host permanently
-//! consumes it (`host_collect`), so it is not re-created on respawn.
+//! Mirrors `Strawberry.cs`: supports normal, golden, moon, and winged variants.
+//! - Golden: uses `goldberry` sprite bank.
+//! - Moon: uses `moonberry` sprite bank.
+//! - Winged: flies upward when player dashes before touching.
 
 use ruleste_plugin_api::host::{self, entities_by_type};
 use ruleste_plugin_api::map::MapData;
@@ -20,8 +18,6 @@ ruleste_plugin_api::ruleste_noop_serialize!();
 
 const BERRY_W: f32 = 14.0;
 const BERRY_H: f32 = 14.0;
-/// Follow delay constant, mirroring `Follower.FollowDelay` (0.3s worth of
-/// lerp smoothing).
 const FOLLOW_LAG: f32 = 10.0;
 const COLLECT_DELAY: f32 = 0.15;
 
@@ -32,6 +28,10 @@ struct BerryState {
     following: bool,
     collect_timer: f32,
     golden: bool,
+    moon: bool,
+    winged: bool,
+    flying_away: bool,
+    fly_timer: f32,
 }
 
 impl Default for BerryState {
@@ -42,6 +42,10 @@ impl Default for BerryState {
             following: false,
             collect_timer: 0.0,
             golden: false,
+            moon: false,
+            winged: false,
+            flying_away: false,
+            fly_timer: 0.0,
         }
     }
 }
@@ -66,24 +70,35 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let spawn: MapData = spawn_data(bytes);
     let x = spawn.get_float("x", 0.0);
     let y = spawn.get_float("y", 0.0);
-    let is_golden = spawn.get_str("_entity_type", "strawberry") == "goldenBerry";
+    let is_golden = spawn.get_str("_entity_type", "strawberry") == "goldenBerry"
+        || spawn.get_bool("golden", false);
+    let is_moon = spawn.get_bool("moon", false);
+    let is_winged = spawn.get_bool("winged", false);
+
     let entity = Entity::new(id);
     entity.position.set_xy(x, y);
-    // Hitbox offset keeps the renderer's bottom-center anchor at the berry's
-    // center (its `Position` in the original), so the centered sprite renders
-    // exactly where the entity is.
     entity
         .hitbox
         .set(BERRY_W, BERRY_H, -BERRY_W * 0.5, -BERRY_H);
     entity.depth.set(-100);
+
     if is_golden {
         entity.sprite.set_bank("goldberry");
+    } else if is_moon {
+        entity.sprite.set_bank("moonberry");
+    } else {
+        entity.sprite.set_bank("strawberry");
     }
+
     with_state(id, |st| {
         st.golden = is_golden;
+        st.moon = is_moon;
+        st.winged = is_winged;
         st.start_y = y;
+        st.flying_away = false;
+        st.fly_timer = 0.0;
     });
-    entity.sprite.play("idle");
+    entity.sprite.play(if is_winged { "flap" } else { "idle" });
 }
 
 #[unsafe(no_mangle)]
@@ -91,7 +106,31 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     with_state(id, |st| {
         let entity = Entity::new(id);
 
-        // Bob the sprite ±2px, mirroring Strawberry.Update's sine wobble.
+        if st.flying_away {
+            st.fly_timer += dt;
+            let p = entity.position.get();
+            entity.position.set_xy(p.x, p.y - 120.0 * dt);
+            if st.fly_timer > 3.0 {
+                host::remove(id);
+            }
+            return;
+        }
+
+        // Check if player dashed while winged berry is waiting
+        if st.winged && !st.following {
+            for player_id in entities_by_type("player") {
+                if host::entity_alive(player_id) {
+                    let states = host::player_state(player_id);
+                    // State 2 is Dash in original Celeste
+                    if states == 2 {
+                        st.flying_away = true;
+                        entity.sprite.play("fly");
+                    }
+                }
+            }
+        }
+
+        // Bob the sprite ±2px
         if !st.following {
             st.wobble += dt * 4.0;
             let p = entity.position.get();
@@ -113,6 +152,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             let py = pp.y + poy;
 
             let touch = !st.following
+                && !st.flying_away
                 && px < bx + BERRY_W * 0.5
                 && px + pw > bx - BERRY_W * 0.5
                 && py < by + BERRY_H * 0.5
@@ -127,7 +167,6 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                 });
             }
             if st.following {
-                // Follow the player's hitbox center with a lag.
                 let target_x = px + pw * 0.5;
                 let target_y = py + ph * 0.5;
                 let p = entity.position.get();
@@ -136,7 +175,6 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                 let ny = p.y + (target_y - p.y) * k;
                 entity.position.set_xy(nx, ny);
 
-                // Collect while the player is on safe ground.
                 if host::Collision::new(player_id).is_grounded() {
                     st.collect_timer += dt;
                     if st.collect_timer >= COLLECT_DELAY {
@@ -158,7 +196,10 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let entity = Entity::new(id);
-    if !entity.sprite.animation().starts_with("idle") {
+    let anim = entity.sprite.animation();
+    if anim.is_empty()
+        || (!anim.starts_with("idle") && !anim.starts_with("flap") && !anim.starts_with("fly"))
+    {
         entity.sprite.play("idle");
     }
 }

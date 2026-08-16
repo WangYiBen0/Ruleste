@@ -18,6 +18,8 @@ pub const EV_BADELINE_BOOST: u32 = crate::event::BADELINE_BOOST;
 pub const EV_CARRIED: u32 = crate::event::CARRIED;
 pub const EV_SIDE_BOUNCE: u32 = crate::event::SIDE_BOUNCE;
 pub const EV_SUPER_BOUNCE: u32 = crate::event::SUPER_BOUNCE;
+pub const EV_DASH_BLOCK: u32 = crate::event::DASH_BLOCK;
+pub const EV_DREAM_DASH_GRANTED: u32 = crate::event::DREAM_DASH_GRANTED;
 
 #[allow(dead_code)]
 #[link(wasm_import_module = "env")]

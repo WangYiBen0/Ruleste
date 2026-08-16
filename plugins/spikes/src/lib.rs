@@ -127,8 +127,6 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         }
         let vel = host::Speed::new(player_id).get();
         let kills = match dir {
-            // `OnCollide` Up additionally requires the player's feet not below
-            // the spike row (`player.Bottom <= base.Bottom`).
             Dir::Up => vel.y >= 0.0 && py + ph <= sp.y,
             Dir::Down => vel.y <= 0.0,
             Dir::Left => vel.x >= 0.0,
@@ -148,7 +146,14 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         let sp = entity.position.get();
         let tiles = (st.size / 8.0).max(1.0) as usize;
         for j in 0..tiles {
-            let frame = format!("danger/spikes/{}_{}00", st.spike_type, st.dir.suffix());
+            // Pick pseudo-random variant _00, _01, or _02 per segment
+            let variant = (id as usize * 31 + j * 17) % 3;
+            let frame = format!(
+                "danger/spikes/{}_{}{:02}",
+                st.spike_type,
+                st.dir.suffix(),
+                variant
+            );
             let (cx, cy) = match st.dir {
                 Dir::Up => (sp.x + (j as f32 + 0.5) * 8.0, sp.y - 3.5),
                 Dir::Down => (sp.x + (j as f32 + 0.5) * 8.0, sp.y + 3.5),

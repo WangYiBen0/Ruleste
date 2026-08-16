@@ -52,7 +52,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     entity
         .hitbox
         .set(spawn.get_float("width", 8.0), BOX_HEIGHT, 0.0, 0.0);
-    entity.depth.set(0);
+    entity.depth.set(-1_000_000);
 }
 
 #[unsafe(no_mangle)]

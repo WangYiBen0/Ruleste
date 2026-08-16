@@ -91,7 +91,26 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ruleste_entity_draw(_id: EntityId) {}
+pub extern "C" fn ruleste_entity_draw(id: EntityId) {
+    use ruleste_plugin_api::host::draw_line;
+    use ruleste_plugin_api::types::Color;
+    with_state(id, |st| {
+        let entity = Entity::new(id);
+        let p = entity.position.get();
+        // `BladeSpinner` visual: four thin blades radiating from the kill
+        // circle, rotated by the orbit angle so the spinner reads as a
+        // hazard even though the sprite is missing.
+        let angle = ANGLE_START + (ANGLE_END - ANGLE_START) * st.percent;
+        let blade_len = 6.0;
+        let blade = Color::new(220, 220, 230, 255);
+        for i in 0..4 {
+            let a = angle + (i as f32) * (std::f32::consts::FRAC_PI_2);
+            let dx = a.cos();
+            let dy = a.sin();
+            draw_line(p.x, p.y, p.x + dx * blade_len, p.y + dy * blade_len, blade);
+        }
+    });
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {

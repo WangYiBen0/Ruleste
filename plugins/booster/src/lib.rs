@@ -24,6 +24,10 @@ const RESPAWN_TIME: f32 = 1.0;
 const SPIN_TIME: f32 = 0.45;
 const POP_TIME: f32 = 0.3;
 
+/// The booster's collider is `Circle(10, 0, 2)`: its center sits 2 px below
+/// the spawn position.
+const CENTER_OY: f32 = 2.0;
+
 /// 0 = idle, 1 = spinning (boosting), 2 = popping, 3 = respawning.
 #[derive(Debug, Default)]
 struct BoosterState {
@@ -94,11 +98,12 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                     st.phase = 1;
                     st.timer = SPIN_TIME;
                     let p = entity.position.get();
-                    // Payload: booster center as `Vec2`, plus a trailing
-                    // flag byte: `1` for red (hyper dash), `0` for green.
+                    // Payload: booster center (`Circle(10, 0, 2)` → +2 y) then a
+                    // red flag, mirroring `Booster.OnPlayer` → `player.Boost` /
+                    // `player.RedBoost`. The player uses the target to pull in.
                     let mut buf = [0u8; 9];
                     buf[0..4].copy_from_slice(&p.x.to_le_bytes());
-                    buf[4..8].copy_from_slice(&p.y.to_le_bytes());
+                    buf[4..8].copy_from_slice(&(p.y + CENTER_OY).to_le_bytes());
                     buf[8] = u8::from(st.red);
                     for player_id in host::entities_by_type("player") {
                         if host::entity_alive(player_id) {

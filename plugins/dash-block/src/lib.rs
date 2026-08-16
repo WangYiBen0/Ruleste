@@ -1,12 +1,16 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 //! `dashBlock` entity plugin — rewritten to mirror `DashBlock.cs`.
 //!
-//! The sealed stone slab only gives way to a dash: a `PLAYER_DASH` event arms a
-//! short window, and if the player overlaps the slab while that window is live
-//! the block breaks (`OnDashCollide`). `permanent` blocks shatter for the
-//! session (`host_collect`, kept out of respawns); the rest disappear until the
-//! next death respawn (`host_remove`). A `canDash=false` block holds through
-//! normal dashes (the original only breaks it via the superdash).
+//! The block is a fully solid `Solid` (`DashBlock` extends `Solid`): the player
+//! collides with it and can stand on it. A DASH against one of its faces breaks
+//! it (`OnDashCollide` → `OnDashed`), signalled by the player plugin's
+//! `EV_DASH_BLOCK` (payload: hit-face direction + the player state at dash
+//! time). `canDash=false` blocks only break during the red dash (state 5) or
+//! summit launch (state 10), mirroring the `player.StateMachine.State` gate in
+//! `OnDashed`; otherwise the dash returns `NormalCollision` and the player just
+//! bounces. `permanent` blocks shatter for the session (`host_collect`, kept
+//! out of respawns); the rest disappear until the next death respawn
+//! (`host_remove`).
 
 use ruleste_plugin_api::host;
 use ruleste_plugin_api::map::MapData;
@@ -18,8 +22,10 @@ ruleste_plugin_api::ruleste_entity_types!("dashBlock");
 ruleste_plugin_api::ruleste_noop_destroy!();
 ruleste_plugin_api::ruleste_noop_serialize!();
 
-/// How long after a dash starts the block still breaks on contact.
-const DASH_WINDOW: f32 = 0.2;
+/// `Player.StateMachine.State` values a `canDash=false` block still breaks for
+/// (`OnDashed`: `!canDash && state != 5 && state != 10 → NormalCollision`).
+const ST_RED_DASH: u32 = 5;
+const ST_SUMMIT_LAUNCH: u32 = 10;
 
 #[derive(Debug, Default)]
 struct DashBlockState {
@@ -28,7 +34,6 @@ struct DashBlockState {
     broken: bool,
     can_dash: bool,
     permanent: bool,
-    window: f32,
 }
 
 thread_local! {
@@ -56,6 +61,8 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let entity = Entity::new(id);
     entity.position.set_xy(x, y);
     entity.hitbox.set(w, h, 0.0, 0.0);
+    // `DashBlock : Solid` — collidable on every face, landable on top.
+    entity.collision.solid(true);
     entity.depth.set(500);
     with_state(id, |st| {
         st.w = w;
@@ -65,24 +72,10 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     });
 }
 
-fn player_overlaps(id: EntityId) -> bool {
-    let p = Entity::new(id).position.get();
-    let (w, h, ox, oy) = Entity::new(id).hitbox.get();
-    for player_id in host::entities_by_type("player") {
-        if !host::entity_alive(player_id) {
-            continue;
-        }
-        let pp = host::Position::new(player_id).get();
-        let (pw, ph, pox, poy) = host::Hitbox::new(player_id).get();
-        if pp.x + pox < p.x + ox + w
-            && pp.x + pox + pw > p.x + ox
-            && pp.y + poy < p.y + oy + h
-            && pp.y + poy + ph > p.y + oy
-        {
-            return true;
-        }
-    }
-    false
+/// `OnDashed(player, direction)`: a dash may only break the block when
+/// `canDash` or the player is in a state that punches through (`5`/`10`).
+fn dash_can_break(st: &DashBlockState, state_at_dash: u32) -> bool {
+    st.can_dash || state_at_dash == ST_RED_DASH || state_at_dash == ST_SUMMIT_LAUNCH
 }
 
 #[unsafe(no_mangle)]
@@ -91,27 +84,24 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         if st.broken {
             return;
         }
-        // `DashListener`-style trigger: every dash arms the window; the block
-        // only shatters if the player is actually on it during the window.
-        for (_, kind, _) in host::drain_events() {
-            if kind == ruleste_plugin_api::plugin::event::PLAYER_DASH {
-                st.window = DASH_WINDOW;
-                break;
-            }
-        }
-        if st.window > 0.0 {
-            st.window -= dt;
-            if st.can_dash && player_overlaps(id) {
-                st.broken = true;
-                if st.permanent {
-                    // Shattered for the session (`RemoveAndFlagAsGone`).
-                    host::collect(id);
-                } else {
-                    // Broken this life; returns on the next respawn.
-                    host::remove(id);
+        // `OnDashed`: the player plugin reports a dash against this face; the
+        // block breaks when the `canDash` gate passes.
+        for (_, kind, data) in host::drain_events() {
+            if kind == ruleste_plugin_api::plugin::event::DASH_BLOCK {
+                let state_at_dash = data.get(8).copied().unwrap_or(0) as u32;
+                if dash_can_break(st, state_at_dash) {
+                    st.broken = true;
+                    if st.permanent {
+                        // Shattered for the session (`RemoveAndFlagAsGone`).
+                        host::collect(id);
+                    } else {
+                        // Broken this life; returns on the next respawn.
+                        host::remove(id);
+                    }
                 }
             }
         }
+        let _ = dt;
     });
 }
 

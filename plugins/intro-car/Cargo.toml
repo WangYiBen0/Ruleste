@@ -1,0 +1,13 @@
+[package]
+name = "ruleste-plugin-intro-car"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Intro car platform plugin for Ruleste"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }

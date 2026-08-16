@@ -8,7 +8,7 @@
 //! and contact with a fully-extended cell is lethal. Directional contact only
 //! counts when the player moves *into* the spikes (`GetPlayerCollideIndex`).
 
-use ruleste_plugin_api::host::{self, die, draw_image, entities_by_type};
+use ruleste_plugin_api::host::{self, die, draw_image, draw_rect, entities_by_type};
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::{Color, EntityId};
@@ -110,7 +110,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     entity
         .position
         .set_xy(spawn.get_float("x", 0.0), spawn.get_float("y", 0.0));
-    entity.depth.set(-1);
+    entity.depth.set(-50);
     STATES.with(|s| {
         s.borrow_mut().insert(
             id,
@@ -133,11 +133,23 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     with_state(id, |st| {
-        for cell in st.cells.iter_mut() {
+        // Compute which triggered cells are still player-overlapped this frame
+        // so a lingering player keeps the emerge delay at 0.05s.
+        let linger: Vec<bool> = st
+            .cells
+            .iter()
+            .enumerate()
+            .map(|(i, c)| c.triggered && c.delay > 0.0 && player_overlaps(id, st, i))
+            .collect();
+        for (i, cell) in st.cells.iter_mut().enumerate() {
             if cell.triggered {
                 if cell.delay > 0.0 {
-                    // Emerge delay: holds at 0.05 while the player lingers.
                     cell.delay -= dt;
+                    if cell.delay <= 0.0 && linger[i] {
+                        // `EmergeDelay` holds at 0.05s while the player stays
+                        // in the cell (TriggerSpikes.cs:55-62).
+                        cell.delay = 0.05;
+                    }
                 } else {
                     cell.lerp = approach(cell.lerp, 1.0, EXTEND_RATE * dt);
                 }
@@ -145,13 +157,58 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                 cell.lerp = approach(cell.lerp, 0.0, 4.0 * dt);
             }
         }
-        kill_when_extended(id, st, dt);
+        kill_when_extended(id, st);
     });
+}
+
+/// Whether a living player currently overlaps cell `i` of the strip and is
+/// moving toward the spikes (`GetPlayerCollideIndex` gate).
+fn player_overlaps(id: EntityId, st: &TriggerState, i: usize) -> bool {
+    let p = Entity::new(id).position.get();
+    let base = match st.dir {
+        Dir::Up | Dir::Down => p.x,
+        Dir::Left | Dir::Right => p.y,
+    };
+    let cell_lo = base + i as f32 * CELL;
+    let cell_hi = cell_lo + CELL;
+    for player_id in entities_by_type("player") {
+        if !host::entity_alive(player_id) {
+            continue;
+        }
+        let pp = host::Position::new(player_id).get();
+        let (pw, ph, pox, poy) = host::Hitbox::new(player_id).get();
+        let pv = host::Speed::new(player_id).get();
+        if !st.dir.approach_ok(pv.x, pv.y) {
+            continue;
+        }
+        let (strip_lo, strip_hi) = match st.dir {
+            Dir::Up | Dir::Down => (pp.x + pox, pp.x + pox + pw),
+            Dir::Left | Dir::Right => (pp.y + poy, pp.y + poy + ph),
+        };
+        if strip_hi <= cell_lo || strip_lo >= cell_hi {
+            continue;
+        }
+        let (band_lo, band_hi) = match st.dir {
+            Dir::Up => (p.y - CELL, p.y),
+            Dir::Down => (p.y, p.y + CELL),
+            Dir::Left => (p.x - CELL, p.x),
+            Dir::Right => (p.x, p.x + CELL),
+        };
+        let (perp_lo, perp_hi) = match st.dir {
+            Dir::Up | Dir::Down => (pp.y + poy, pp.y + poy + ph),
+            Dir::Left | Dir::Right => (pp.x + pox, pp.x + pox + pw),
+        };
+        if perp_hi <= band_lo || perp_lo >= band_hi {
+            continue;
+        }
+        return true;
+    }
+    false
 }
 
 /// Contact handling. Only cells that overlap the player's projection onto the
 /// strip (and where the player is moving toward the spikes) are considered.
-fn kill_when_extended(id: EntityId, st: &mut TriggerState, _dt: f32) {
+fn kill_when_extended(id: EntityId, st: &mut TriggerState) {
     let p = Entity::new(id).position.get();
     let player = entities_by_type("player");
     for player_id in player {
@@ -217,13 +274,25 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
                 Dir::Left => (p.x - 2.0 - cell.lerp * 2.0, p.y + pos),
                 Dir::Right => (p.x + 2.0 + cell.lerp * 2.0, p.y + pos),
             };
-            // Real tentacle sprite (`wiggle_h00..08` / `wiggle_v00..08`).
-            let idx = ((cell.lerp * 8.0) as usize).min(8);
-            let frame = match st.dir {
-                Dir::Up | Dir::Down => format!("danger/triggertentacle/wiggle_v{idx:02}"),
-                Dir::Left | Dir::Right => format!("danger/triggertentacle/wiggle_h{idx:02}"),
-            };
+            let frame = format!(
+                "danger/spikes/{}_{}00",
+                st.spike_type,
+                match st.dir {
+                    Dir::Up => "up",
+                    Dir::Down => "down",
+                    Dir::Left => "left",
+                    Dir::Right => "right",
+                }
+            );
             draw_image(&frame, cx, cy, 0.0, 1.0, 1.0);
+            let a = (40.0 + 60.0 * cell.lerp) as u8;
+            let base = Color::new(0x60, 0x70, 0x78, a);
+            match st.dir {
+                Dir::Up => draw_rect(p.x, p.y - 4.0 * cell.lerp, st.size, 4.0 * cell.lerp, base),
+                Dir::Down => draw_rect(p.x, p.y, st.size, 4.0 * cell.lerp, base),
+                Dir::Left => draw_rect(p.x - 4.0 * cell.lerp, p.y, 4.0 * cell.lerp, st.size, base),
+                Dir::Right => draw_rect(p.x, p.y, 4.0 * cell.lerp, st.size, base),
+            }
         }
     });
 }

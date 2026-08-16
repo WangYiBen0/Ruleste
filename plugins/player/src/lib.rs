@@ -83,6 +83,8 @@ const CLIMB_CHECK_DIST: f32 = 2.0;
 
 // Dashing.
 const DASH_SPEED: f32 = 240.0;
+/// `RedDashCoroutine` launch speed: the sustained red-boost dash.
+const RED_DASH_SPEED: f32 = 240.0;
 const END_DASH_SPEED: f32 = 160.0;
 const END_DASH_UP_MULT: f32 = 0.75;
 const DASH_TIME: f32 = 0.15;
@@ -134,6 +136,7 @@ const ST_NORMAL: u32 = 0;
 const ST_CLIMB: u32 = 1;
 const ST_DASH: u32 = 2;
 const ST_BOOST: u32 = 4;
+const ST_RED_DASH: u32 = 5;
 const ST_LAUNCH: u32 = 7;
 const ST_SUMMIT_LAUNCH: u32 = 10;
 const ST_STARFLY: u32 = 19;
@@ -181,7 +184,8 @@ struct PlayerState {
     before_dash_speed: Vec2,
     launched: bool,
     // Booster (`StBoost`): pull toward the booster center until the timer runs
-    // out, then the stored aim fires a dash.
+    // out, then the stored aim fires a dash. `boost_red` marks a red booster:
+    // its exit launch is a sustained `StRedDash` instead of a normal dash.
     boost_target: Vec2,
     boost_timer: f32,
     boost_red: bool,
@@ -292,10 +296,14 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     let grounded = entity.collision.is_grounded();
 
     // On the ground dashes refill — but only once `dashRefillCooldownTimer`
-    // expires, otherwise a dash landing instantly recharges.
+    // expires, otherwise a dash landing instantly recharges. `wallSlideTimer`
+    // likewise resets on the ground (`Player.Update`, `state != 1`).
     if grounded && st.dash_refill_cooldown <= 0.0 {
         st.dashes = MAX_DASHES;
         st.jump_grace = JUMP_GRACE_TIME;
+    }
+    if grounded {
+        st.wall_slide_timer = WALL_SLIDE_TIME;
     }
 
     // Common per-frame timers (`Player.Update`).
@@ -306,7 +314,6 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     if st.dash_attack_timer > 0.0 {
         st.dash_attack_timer -= dt;
     }
-    st.wall_slide_timer -= dt;
     st.wall_boost_timer -= dt;
     st.low_friction_stop -= dt;
 
@@ -338,6 +345,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         ST_CLIMB => climb_update(&entity, &mut st, &mut speed, dt, move_x, move_y, grounded),
         ST_DASH => dash_update(&entity, &mut st, &mut speed, dt),
         ST_BOOST => boost_update(&entity, &mut st, &mut speed, dt),
+        ST_RED_DASH => red_dash_update(&entity, &mut st, &mut speed, dt),
         ST_LAUNCH => launch_update(&entity, &mut st, &mut speed, dt),
         ST_SUMMIT_LAUNCH => summit_launch_update(&entity, &mut st, &mut speed, dt),
         ST_STARFLY => starfly_update(&entity, &mut st, &mut speed, dt, move_x, move_y, grounded),
@@ -356,9 +364,13 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         }
     }
 
-    // `StDash`/`StBoost`/`StStarFly` move inside their own updates; the other
-    // states get the shared `Actor.MoveH/MoveV` pass here.
-    if st.state != ST_DASH && st.state != ST_BOOST && st.state != ST_STARFLY {
+    // `StDash`/`StBoost`/`StRedDash`/`StStarFly` move inside their own updates;
+    // the other states get the shared `Actor.MoveH/MoveV` pass here.
+    if st.state != ST_DASH
+        && st.state != ST_BOOST
+        && st.state != ST_RED_DASH
+        && st.state != ST_STARFLY
+    {
         move_and_collide(&entity, &mut st, &mut speed, dt);
     }
     entity.speed.set(speed);
@@ -514,10 +526,17 @@ fn normal_update(
         let wall_right = entity.collision.check(WALL_CHECK_DIST, 0.0);
         let toward_wall = (move_x < 0.0 && wall_left) || (move_x > 0.0 && wall_right);
         let grab_wall = (move_x == 0.0 && Input::button(input::CLIMB)) && (wall_left || wall_right);
-        if speed.y >= 0.0 && (toward_wall || grab_wall) && can_unduck(entity, st.ducking) {
+        if speed.y >= 0.0
+            && (toward_wall || grab_wall)
+            && st.wall_slide_timer > 0.0
+            && can_unduck(entity, st.ducking)
+        {
             let dir = if wall_right { 1 } else { -1 };
             st.wall_slide_dir = dir;
-            st.wall_slide_timer = WALL_SLIDE_TIME;
+            // `wallSlideTimer` decays only while actually sliding
+            // (`Player.Update`: `wallSlideDir != 0`), so the slide ramps
+            // 20 → 160 px/s as the timer runs out and ends at 0.
+            st.wall_slide_timer = (st.wall_slide_timer - dt).max(0.0);
             target = MAX_FALL
                 + (WALL_SLIDE_START_MAX - MAX_FALL) * (st.wall_slide_timer / WALL_SLIDE_TIME);
             // Grab during a slide transitions straight into a climb.
@@ -757,60 +776,80 @@ fn dash_update(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt: f32)
         st.jump_grace = JUMP_GRACE_TIME;
     }
 
-    if st.dash_timer <= 0.0 || result.hit_wall_left || result.hit_wall_right || result.hit_ceiling {
-        // Dash end: forward/up tapering mirrors `DashCoroutine`'s tail. A
-        // crush block in the hit direction is told via `EV_CRUSH` (with the
-        // wall direction) so the block can start its attack; `dashCooldownTimer`
-        // is only ever set at dash start.
-        st.dash_timer = 0.0;
-        let (wall_dir_h, wall_dir_v) = if result.hit_wall_left {
-            (-1, 0)
+    // Dash end: the coroutine's `yield return 0.15f` is the only thing that
+    // ends the dash (`DashCoroutine`); a wall/ceiling hit zeroes that axis of
+    // speed (like `OnCollideH`/`OnCollideV`) but the dash state persists until
+    // the timer runs out. Colliding with a crush/dash block fires their events.
+    if result.hit_wall_left || result.hit_wall_right || result.hit_ceiling {
+        let hit_axis = if result.hit_wall_left {
+            Some(Vec2::new(-1.0, 0.0))
         } else if result.hit_wall_right {
-            (1, 0)
-        } else if result.hit_ceiling {
-            (0, -1)
+            Some(Vec2::new(1.0, 0.0))
+        } else if result.hit_ceiling && d.y < 0.0 {
+            // Vertical crush blocks activate from an upward dash into their
+            // underside (`OnDashed` gets the dash direction).
+            Some(Vec2::new(0.0, -1.0))
+        } else if result.on_ground && d.y > 0.0 {
+            // `CrushBlock.OnDashed` also fires from a downward dash landing
+            // on the block's top — the original fires through `OnCollideV`
+            // when `Direction.Y == Math.Sign(DashDir.Y)`.
+            Some(Vec2::new(0.0, 1.0))
         } else {
-            (0, 0)
+            None
         };
-        if wall_dir_h != 0 && dash_hits_crushblock_dir(entity, wall_dir_h) {
-            emit_crush_dir(entity.id, wall_dir_h, 0);
-        }
-        if wall_dir_v != 0 && dash_hits_crushblock_dir(entity, wall_dir_v) {
-            emit_crush_dir(entity.id, 0, wall_dir_v);
-        }
-        if result.hit_wall_left || result.hit_wall_right || result.hit_ceiling {
-            // Reflect the tail speed off the wall/ceiling.
-            let dx = if result.hit_wall_left {
-                -1.0
-            } else if result.hit_wall_right {
-                1.0
-            } else {
-                d.x
-            };
-            let dy = if result.hit_ceiling { 1.0 } else { d.y };
-            let n = (dx * dx + dy * dy).sqrt().max(1.0);
-            *speed = Vec2::new(dx / n * END_DASH_SPEED, dy / n * END_DASH_SPEED);
-        } else if d.y <= 0.0 {
-            *speed = Vec2::new(d.x * END_DASH_SPEED, d.y * END_DASH_SPEED);
-            if speed.y < 0.0 {
-                speed.y *= END_DASH_UP_MULT;
+        if let Some(hit_vec) = hit_axis {
+            if dash_hits_entity_type(entity, "crushBlock", hit_vec) {
+                emit_crush_dir(entity.id, hit_vec);
             }
+            if dash_hits_entity_type(entity, "dashBlock", hit_vec) {
+                // `OnDashCollide` → `DashBlock.OnDashed`: the block breaks and
+                // the player rebounds. The payload carries the dash direction
+                // and the state at dash time, so the block can still apply the
+                // `canDash` gate (`OnDashed` checks `player.StateMachine.State`).
+                emit_dash_block(entity.id, hit_vec, st.state);
+            }
+        }
+        if result.hit_wall_left || result.hit_wall_right {
+            speed.x = 0.0;
+        }
+        if result.hit_ceiling {
+            speed.y = 0.0;
+            st.var_jump_timer = 0.0;
+        }
+    }
+
+    st.dash_timer -= dt;
+    if st.dash_timer <= 0.0 {
+        // `DashCoroutine` end: `Speed = DashDir * 160`, up-dashes get a 0.75x
+        // climb, and the state returns to normal on its own.
+        *speed = Vec2::new(d.x * END_DASH_SPEED, d.y * END_DASH_SPEED);
+        if speed.y < 0.0 {
+            speed.y *= END_DASH_UP_MULT;
         }
         return ST_NORMAL;
     }
 
-    st.dash_timer -= dt;
-
     ST_DASH
 }
 
-/// Emits `EV_CRUSH` toward a crush block in wall direction `h` and `v` (sign),
-/// the payload the block uses to decide whether it can activate (`CanActivate`).
-fn emit_crush_dir(id: EntityId, h: i32, v: i32) {
-    let mut buf = [0u8; 2];
-    buf[0] = (h.clamp(-1, 1)) as i8 as u8;
-    buf[1] = (v.clamp(-1, 1)) as i8 as u8;
+/// Emits `EV_CRUSH` toward crush blocks, the payload the dash direction
+/// (`±1` on the axis that hit), which the block negates into its crush axis.
+fn emit_crush_dir(id: EntityId, dir: Vec2) {
+    let mut buf = [0u8; 8];
+    buf[0..4].copy_from_slice(&dir.x.to_le_bytes());
+    buf[4..8].copy_from_slice(&dir.y.to_le_bytes());
     ruleste_plugin_api::host::emit(id, ruleste_plugin_api::host::EV_CRUSH, &buf);
+}
+
+/// Emits `EV_DASH_BLOCK` toward a dashe block: the hit face direction (`±1` on
+/// the axis) plus the player state at dash time, so the block can apply the
+/// `canDash` gate (`OnDashed` reads `player.StateMachine.State`).
+fn emit_dash_block(id: EntityId, dir: Vec2, state: u32) {
+    let mut buf = Vec::with_capacity(12);
+    buf.extend_from_slice(&dir.x.to_le_bytes());
+    buf.extend_from_slice(&dir.y.to_le_bytes());
+    buf.push(state as u8);
+    ruleste_plugin_api::host::emit(id, ruleste_plugin_api::host::EV_DASH_BLOCK, &buf);
 }
 
 // ---------------------------------------------------------------------------
@@ -819,22 +858,126 @@ fn emit_crush_dir(id: EntityId, h: i32, v: i32) {
 // ---------------------------------------------------------------------------
 
 /// `StBoost` (`Player.BoostUpdate`): pulled toward the booster center for
-/// `BOOST_TIME`, then a dash fires in the held aim. `BoostBegin` refills.
+/// `BOOST_TIME`, then a dash fires in the held aim — a normal dash for green
+/// boosters, a sustained red dash for `red` ones. `BoostBegin` refills.
 fn boost_update(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt: f32) -> u32 {
-    let aim = Input::axis(input::MOVE_RIGHT) - Input::axis(input::MOVE_LEFT);
+    let aim_x = Input::axis(input::MOVE_RIGHT) - Input::axis(input::MOVE_LEFT);
+    let aim_y = Input::axis(input::MOVE_DOWN) - Input::axis(input::MOVE_UP);
+    // `BoostTarget - Collider.Center + aim * 3`, the collider center being
+    // `(0, -5.5)` for the normal 8×11 hitbox.
     let p = entity.position.get();
-    let target = Vec2::new(st.boost_target.x + aim * 3.0, st.boost_target.y);
+    let target = Vec2::new(
+        st.boost_target.x + aim_x * 3.0,
+        st.boost_target.y + 5.5 + aim_y * 3.0,
+    );
     let moved = approach_point(p, target, BOOST_APPROACH_SPEED * dt);
     entity.position.set_xy(moved.x, moved.y);
 
+    // `BoostUpdate` fires the launch as soon as the dash button is pressed;
+    // the `BOOST_TIME` timer is only the fallback (`BoostCoroutine`).
+    if Input::pressed(input::DASH) {
+        if st.boost_red {
+            red_dash_build(st, speed, aim_x, aim_y);
+            return ST_RED_DASH;
+        }
+        start_dash(entity, st, speed, aim_x, aim_y);
+        return ST_DASH;
+    }
     st.boost_timer -= dt;
     if st.boost_timer <= 0.0 {
-        // `BoostCoroutine` exit: a dash in the current aim direction.
-        let move_y = Input::axis(input::MOVE_DOWN) - Input::axis(input::MOVE_UP);
-        start_dash(entity, st, speed, aim, move_y);
+        // `BoostCoroutine` exit: if the player hasn't already fired a dash, it
+        // does here — a normal dash, or the sustained red dash for red pads.
+        if st.boost_red {
+            red_dash_build(st, speed, aim_x, aim_y);
+            return ST_RED_DASH;
+        }
+        start_dash(entity, st, speed, aim_x, aim_y);
         return ST_DASH;
     }
     ST_BOOST
+}
+
+/// Builds the `StRedDash` launch: dash direction from the aimed input (facing
+/// if no aim), full 240 speed, and a `RedDashBegin`-style cooldown so the
+/// player can't immediately dash again.
+fn red_dash_build(st: &mut PlayerState, speed: &mut Vec2, aim_x: f32, aim_y: f32) {
+    let dir = if aim_x != 0.0 || aim_y != 0.0 {
+        normalize(aim_x, aim_y)
+    } else {
+        Vec2::new(st.facing as f32, 0.0)
+    };
+    st.dash_dir = dir;
+    if dir.x != 0.0 {
+        st.facing = if dir.x > 0.0 { 1 } else { -1 };
+    }
+    // `RedDashBegin`: `DashDir = (Speed = Vector2.Zero)`, then the coroutine
+    // sets `Speed = CorrectDashPrecision(lastAim) * 240f`.
+    st.dash_cooldown = DASH_COOLDOWN;
+    st.dash_refill_cooldown = DASH_REFILL_COOLDOWN;
+    st.dash_attack_timer = DASH_ATTACK_TIME;
+    st.wall_slide_timer = WALL_SLIDE_TIME;
+    *speed = Vec2::new(dir.x * RED_DASH_SPEED, dir.y * RED_DASH_SPEED);
+    Input::consume(input::DASH);
+}
+
+/// `StRedDash` (`Player.RedDashUpdate`): a sustained 240-speed dash that
+/// persists until the player hits a wall/ceiling, dashes again, or jumps out
+/// (`SuperWallJump`). The speed is rewritten each frame so the boost never
+/// decays while airborne.
+fn red_dash_update(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt: f32) -> u32 {
+    // A fresh dash input re-dashes with the held aim (`CanDash`).
+    if can_dash(*st) && Input::pressed(input::DASH) {
+        let mx = Input::axis(input::MOVE_RIGHT) - Input::axis(input::MOVE_LEFT);
+        let my = Input::axis(input::MOVE_DOWN) - Input::axis(input::MOVE_UP);
+        start_dash(entity, st, speed, mx, my);
+        return ST_DASH;
+    }
+    // Super/wall jumps leave the red dash the same as from a normal dash.
+    if Input::pressed(input::JUMP) && can_unduck(entity, st.ducking) {
+        if wall_jump_check(entity, 1) {
+            wall_jump(entity, st, speed, -1);
+            Input::consume(input::JUMP);
+            return ST_NORMAL;
+        }
+        if wall_jump_check(entity, -1) {
+            wall_jump(entity, st, speed, 1);
+            Input::consume(input::JUMP);
+            return ST_NORMAL;
+        }
+    }
+
+    let d = st.dash_dir;
+    let result = entity.collision.actor_move(speed.x * dt, speed.y * dt);
+    if result.hit_wall_left || result.hit_wall_right || result.hit_ceiling {
+        let face = if result.hit_wall_left {
+            Some(Vec2::new(-1.0, 0.0))
+        } else if result.hit_wall_right {
+            Some(Vec2::new(1.0, 0.0))
+        } else if result.hit_ceiling && d.y < 0.0 {
+            Some(Vec2::new(0.0, -1.0))
+        } else {
+            None
+        };
+        if let Some(face) = face {
+            if dash_hits_entity_type(entity, "dashBlock", face) {
+                // `StRedDash` drives through a breaking dash block (`OnCollideH`
+                // forces the `OnDashCollide` result to `Ignore` for state 5);
+                // `OnDashed` still breaks it.
+                emit_dash_block(entity.id, face, ST_RED_DASH);
+                return ST_RED_DASH;
+            }
+        }
+        // `OnCollideH/V` → `StHitSquash`: the boost stops dead at a surface.
+        st.dash_dir = Vec2::ZERO;
+        *speed = Vec2::ZERO;
+        return ST_NORMAL;
+    }
+    if result.on_ground {
+        st.jump_grace = JUMP_GRACE_TIME;
+    }
+    // Constant red-boost speed (`RedDashUpdate` sets `Speed = DashDir*240`).
+    *speed = Vec2::new(d.x * RED_DASH_SPEED, d.y * RED_DASH_SPEED);
+    ST_RED_DASH
 }
 
 /// `StLaunch` (`Player.LaunchUpdate`): gravity approach and horizontal decay
@@ -1076,7 +1219,6 @@ fn move_and_collide(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt:
 /// nudge flush against it: every climb-related check below probes `facing * 2`
 /// px ahead and would otherwise miss a wall we are 1–2 px short of.
 fn climb_begin(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2) {
-    st.stamina = CLIMB_MAX_STAMINA;
     speed.x = 0.0;
     speed.y *= CLIMB_GRAB_Y_MULT;
     st.wall_slide_timer = WALL_SLIDE_TIME;
@@ -1331,24 +1473,26 @@ fn set_ducking(entity: &Entity, st: &mut PlayerState, ducking: bool) {
     }
 }
 
-/// True when the dashing player overlaps a `crushBlock` entity's hitbox while
-/// hitting a wall in direction `_dir` (the payload's sign selects the block's
-/// activation axis).
-fn dash_hits_crushblock_dir(entity: &Entity, _dir: i32) -> bool {
+/// True when the dashing player occupies the hit face of a `type_name` entity:
+/// the hitbox, pushed `PROBE` px toward `face`, overlaps the entity. The probe
+/// matters because `actor_move` snaps the player flush against the solid, so a
+/// strict overlap test can't see it (`OnCollideH` compares the face against
+/// `sign(DashDir.X)` the same way).
+fn dash_hits_entity_type(entity: &Entity, type_name: &str, face: Vec2) -> bool {
+    const PROBE: f32 = 3.0;
     let p = entity.position.get();
     let (w, h, ox, oy) = entity.hitbox.get();
-    let px = p.x + ox;
-    let py = p.y + oy;
-    for block_id in ruleste_plugin_api::host::entities_by_type("crushBlock") {
-        if !ruleste_plugin_api::host::entity_alive(block_id) {
+    let px = p.x + ox + face.x * PROBE;
+    let py = p.y + oy + face.y * PROBE;
+    for eid in ruleste_plugin_api::host::entities_by_type(type_name) {
+        if !ruleste_plugin_api::host::entity_alive(eid) {
             continue;
         }
-        let bp = ruleste_plugin_api::host::Position::new(block_id).get();
-        let (bw, bh, box_, boy) = ruleste_plugin_api::host::Hitbox::new(block_id).get();
+        let bp = ruleste_plugin_api::host::Position::new(eid).get();
+        let (bw, bh, box_, boy) = ruleste_plugin_api::host::Hitbox::new(eid).get();
         let bx = bp.x + box_;
         let by = bp.y + boy;
-        let overlap = px < bx + bw && px + w > bx && py < by + bh && py + h > by;
-        if overlap {
+        if px < bx + bw && px + w > bx && py < by + bh && py + h > by {
             return true;
         }
     }
@@ -1377,15 +1521,16 @@ fn handle_events(id: EntityId) {
                 });
             }
             ruleste_plugin_api::host::EV_BOOST => {
+                // Payload: booster center (Vec2, world units) then a red flag.
+                // `Boost`/`RedBoost` keep dashes refilled (`BoostBegin`).
                 let target = read_vec2(&data);
                 let red = data.get(8).copied().unwrap_or(0) != 0;
                 with_state(id, |st| {
-                    // `BoostBegin`: refill before the pull starts.
                     st.dashes = MAX_DASHES;
                     st.stamina = CLIMB_MAX_STAMINA;
                     st.boost_target = target;
-                    st.boost_timer = BOOST_TIME;
                     st.boost_red = red;
+                    st.boost_timer = BOOST_TIME;
                     st.wall_slide_dir = 0;
                     new_state = Some(ST_BOOST);
                 });
@@ -1406,10 +1551,14 @@ fn handle_events(id: EntityId) {
                 });
             }
             ruleste_plugin_api::host::EV_SIDE_BOUNCE => {
+                // Payload: `[dir u8][from_x f32][from_y f32]`; the spring face
+                // (`base.Right`/`base.Left`) and `base.CenterY` of `Spring.cs`.
                 let dir = match data.first() {
                     Some(b) => *b as i8 as i32,
                     None => 1,
                 };
+                let from_x = read_f32(&data[1..]).unwrap_or(0.0);
+                let from_y = read_f32(&data[5..]).unwrap_or(0.0);
                 with_state(id, |st| {
                     if speed_of(id).x.abs() > SIDE_BOUNCE_SPEED
                         && (speed_of(id).x.signum() as i32) == dir
@@ -1417,6 +1566,15 @@ fn handle_events(id: EntityId) {
                         // `SideBounce` early-out: too fast in the same direction.
                         return;
                     }
+                    // `MoveV(Clamp(fromY - base.Bottom, -4, 4))` snaps the
+                    // player's feet to the spring center height, and `MoveH`
+                    // snaps the near edge onto the spring face.
+                    let p = Entity::new(id).position.get();
+                    let dy = (from_y - p.y).clamp(-4.0, 4.0);
+                    // Normal hitbox 8x11 at (-4,-11): bottom = y, left = x-4,
+                    // right = x+4.
+                    let nx = if dir > 0 { from_x + 4.0 } else { from_x - 4.0 };
+                    Entity::new(id).position.set_xy(nx, p.y + dy);
                     st.dashes = MAX_DASHES;
                     st.stamina = CLIMB_MAX_STAMINA;
                     st.jump_grace = 0.0;
@@ -1426,7 +1584,7 @@ fn handle_events(id: EntityId) {
                     st.launched = false;
                     st.force_move_x = dir as f32;
                     st.force_move_timer = SIDE_BOUNCE_FORCE_TIME;
-                    speed_override = Some(Vec2::new(SIDE_BOUNCE_SPEED * dir as f32, 0.0));
+                    speed_override = Some(Vec2::new(SIDE_BOUNCE_SPEED * dir as f32, -140.0));
                     new_state = Some(ST_NORMAL);
                 });
             }
@@ -1445,7 +1603,7 @@ fn handle_events(id: EntityId) {
                     st.launched = false;
                     st.dash_refill_cooldown = 0.0;
                     let p = Entity::new(id).position.get();
-                    Entity::new(id).position.set_xy(p.x, from_y - 11.0);
+                    Entity::new(id).position.set_xy(p.x, from_y);
                     speed_override = Some(Vec2::new(0.0, SUPER_BOUNCE_SPEED));
                     new_state = Some(ST_NORMAL);
                 });
@@ -1539,6 +1697,7 @@ fn debug_state_log(id: EntityId, st: &PlayerState) {
         ST_CLIMB => "Climb",
         ST_DASH => "Dash",
         ST_BOOST => "Boost",
+        ST_RED_DASH => "RedDash",
         ST_LAUNCH => "Launch",
         ST_SUMMIT_LAUNCH => "SummitLaunch",
         ST_STARFLY => "StarFly",
@@ -1601,6 +1760,8 @@ pub extern "C" fn ruleste_entity_serialize(id: EntityId, out_len: *mut u32) -> u
     push_u8(&mut buf, u8::from(st.carried));
     push_f32(&mut buf, st.carry_target.x);
     push_f32(&mut buf, st.carry_target.y);
+    // Version 5 field: red booster flag.
+    push_u8(&mut buf, u8::from(st.boost_red));
     unsafe { *out_len = buf.len() as u32 }
     let ptr = buf.as_ptr() as u32;
     SER_BUF.with(|b| *b.borrow_mut() = buf);
@@ -1685,6 +1846,10 @@ fn parse_state(bytes: &[u8]) -> Option<PlayerState> {
         st.starfly_last_dir = Vec2::new(r.f32()?, r.f32()?);
         st.carried = r.u8()? != 0;
         st.carry_target = Vec2::new(r.f32()?, r.f32()?);
+    }
+    // Version 5 trailing field (red booster flag).
+    if r.remaining() >= 1 {
+        st.boost_red = r.u8()? != 0;
     }
     Some(st)
 }

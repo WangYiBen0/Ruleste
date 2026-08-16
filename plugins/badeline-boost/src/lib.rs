@@ -9,10 +9,10 @@
 //! next node at 320 px/s and becomes usable again — walking the chain. A node
 //! list with a single entry keeps the boost in place.
 
-use ruleste_plugin_api::host::{self, draw_image, entities_by_type};
+use ruleste_plugin_api::host::{self, entities_by_type};
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{EntityId, Vec2};
+use ruleste_plugin_api::types::{Color, EntityId, Vec2};
 
 ruleste_plugin_api::ruleste_meta!("badeline-boost");
 ruleste_plugin_api::ruleste_entity_types!("badelineBoost");
@@ -104,7 +104,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let p = Vec2::new(spawn.get_float("x", 0.0), spawn.get_float("y", 0.0));
     entity.position.set_xy(p.x, p.y);
     entity.hitbox.set(HIT, HIT, HIT_OX, HIT_OY);
-    entity.depth.set(-12500);
+    entity.depth.set(-8500);
     with_state(id, |st| {
         // `data.NodesWithPosition`: the entity position heads the node list.
         st.nodes.push(p);
@@ -262,10 +262,22 @@ fn st_player_id() -> Option<EntityId> {
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     with_state(id, |st| {
         let p = Entity::new(id).position.get();
-        // Real atlas sprite: `idle00..07` while idle, `flash00..06` while
-        // travelling. We keep it simple here — the original swaps to flash
-        // when the player is grabbed, which we don't track yet.
-        draw_image("objects/badelineboost/idle00", p.x, p.y, 0.0, 1.0, 1.0);
-        let _ = st.phase;
+        let travelling = st.phase == Phase::Travel;
+        let pulse = 1.0 + (st.timer * 6.0).sin() * 0.12;
+        let r = if travelling { 10.0 } else { 7.0 * pulse };
+        let c = Color::new(0x70, 0x60, 0xe0, 0xe6);
+        let mut y = p.y - r;
+        while y <= p.y + r {
+            let half = (r * r - (y - p.y) * (y - p.y)).sqrt();
+            host::draw_rect(p.x - half, y, half * 2.0, 1.0, c);
+            y += 2.0;
+        }
+        host::draw_rect(
+            p.x - 2.0,
+            p.y - 2.0,
+            4.0,
+            4.0,
+            Color::new(0xe0, 0xd0, 0xff, 0xff),
+        );
     });
 }

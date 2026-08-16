@@ -52,4 +52,10 @@ pub mod event {
     // `SUPER_BOUNCE` is a floor spring launch (`Player.SuperBounce`): one `f32`
     // `fromY` the player snaps to before being launched up at -185.
     pub const SUPER_BOUNCE: u32 = 11;
+    // `DASH_BLOCK` reports a dash against a `dashBlock` face; the payload is the
+    // dash direction (two `f32`, matching the `CRUSH` payload) so the block can
+    // apply the `canDash` gate (`OnDashCollide`).
+    pub const DASH_BLOCK: u32 = 12;
+    // Player permanently gains Dream Dash ability. No payload.
+    pub const DREAM_DASH_GRANTED: u32 = 13;
 }

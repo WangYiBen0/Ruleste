@@ -16,6 +16,7 @@ members = [
   "plugins/falling-block",
   "plugins/heart-gem-door",
   "plugins/infinite-star",
+  "plugins/intro-car",
   "plugins/intro-crusher",
   "plugins/invisible-barrier",
   "plugins/killbox",

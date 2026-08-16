@@ -7,7 +7,7 @@ Ruleste 是《Celeste》游戏的非官方 Rust 重实现，采用 SDL3 从零�
 
 ## 技术栈与环境
 - 语言：Rust
-- 图形/音频/输入：SDL3
+- 图形/音频/输入：SDL3 + fmod-oxide
 - 构建系统：Cargo + Nix flakes（`flake.nix` 提供完全可复现的开发环境）
 - 代码规范：必须通过 `cargo fmt` 和 `cargo clippy`（无警告）
 - Git 提交：遵循 [Conventional Commits](https://www.conventionalcommits.org/)

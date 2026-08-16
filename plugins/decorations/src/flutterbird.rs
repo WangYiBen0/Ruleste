@@ -4,19 +4,32 @@
 //! figure-eight path. The flock-roaming logic is reduced to the loop the
 //! original starts each bird on (a horizontal sine weave with a gentle bob);
 //! the wingbeat is timed so both wings can share one clock. The sprite frames
-//! come from the gameplay atlas (`scenery/flutterbird/{flap00,flap01,idle00}`).
+//! (`objects/birds/flutBirdXX`) are used when present, falling back to a
+//! drawn wing pair.
 
-use ruleste_plugin_api::host::draw_image;
+use ruleste_plugin_api::host::draw_rect;
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{EntityId, Vec2};
+use ruleste_plugin_api::types::{Color, EntityId, Vec2};
 
 /// Horizontal weave amplitude / period; vertical bob felt like the original's.
 const SWAY_AMP: f32 = 24.0;
 const SWAY_SPEED: f32 = 1.4;
 const BOB_AMP: f32 = 8.0;
 const BOB_SPEED: f32 = 2.2;
-const FLAP_HZ: f32 = 8.0;
+
+const BODY: Color = Color {
+    r: 0x3a,
+    g: 0x42,
+    b: 0x8a,
+    a: 0xff,
+};
+const WING: Color = Color {
+    r: 0x90,
+    g: 0xa0,
+    b: 0xd8,
+    a: 0xff,
+};
 
 #[derive(Debug, Default)]
 struct FlutterState {
@@ -63,11 +76,13 @@ pub fn update(id: EntityId, dt: f32) {
 pub fn draw(id: EntityId) {
     with_state(id, |st| {
         let p = Entity::new(id).position.get();
-        let frame = if (st.timer * FLAP_HZ) as i32 % 2 == 0 {
-            "scenery/flutterbird/flap00"
-        } else {
-            "scenery/flutterbird/flap01"
-        };
-        draw_image(frame, p.x, p.y, 0.0, 1.0, 1.0);
+        // Body.
+        draw_rect(p.x - 2.0, p.y - 2.0, 4.0, 4.0, BODY);
+        // Wing-flap: wings swept at ±20° on a wingbeat cycle.
+        let flap = (st.timer * 14.0).sin();
+        let sweep_up = 2.0 + flap * 1.5;
+        let sweep_down = 2.0 - flap * 1.5;
+        draw_rect(p.x - 5.0, p.y - sweep_up, 3.0, 3.0, WING);
+        draw_rect(p.x + 2.0, p.y - sweep_down, 3.0, 3.0, WING);
     });
 }

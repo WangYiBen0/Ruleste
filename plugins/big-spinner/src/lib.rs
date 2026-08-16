@@ -9,7 +9,7 @@
 //! A `node` attribute makes the bumper oscillate between its spawn point and
 //! the node over `MoveCycleTime`.
 
-use ruleste_plugin_api::host::{self, draw_image, entities_by_type};
+use ruleste_plugin_api::host::{self, draw_line, entities_by_type};
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugin_api::types::{Color, EntityId, Vec2};
@@ -25,6 +25,8 @@ const BUMPER_R: f32 = 12.0;
 const RESPAWN_TIME: f32 = 0.6;
 /// `MoveCycleTime`: one leg of the node oscillation.
 const MOVE_CYCLE_TIME: f32 = 1.8181819;
+
+const SEGMENTS: usize = 8;
 
 #[derive(Debug, Default)]
 struct BumperState {
@@ -53,6 +55,10 @@ fn with_state<R>(id: EntityId, f: impl FnOnce(&mut BumperState) -> R) -> R {
         let result = unsafe { &mut *st };
         f(result)
     })
+}
+
+fn ring_point(cx: f32, cy: f32, radius: f32, angle: f32) -> (f32, f32) {
+    (cx + angle.cos() * radius, cy + angle.sin() * radius)
 }
 
 /// `Ease.CubeInOut`, matching `Tween.Create(..., Ease.CubeInOut, ...)`.
@@ -162,22 +168,22 @@ fn safe_normalize(x: f32, y: f32) -> (f32, f32) {
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     with_state(id, |st| {
         let p = Entity::new(id).position.get();
-        // Real bumper atlas: `Idle00..44` loops while idle,
-        // `Evil00..42` when in fire mode.
-        let prefix = if st.fire_mode {
-            "objects/Bumper/Evil"
+        let color = if st.fire_mode {
+            Color::new(0xe8, 0x60, 0x40, 0xf0)
+        } else if st.respawn_timer > 0.0 {
+            Color::new(0x40, 0x60, 0x80, 0xa0)
         } else {
-            "objects/Bumper/Idle"
+            Color::new(0xb0, 0x84, 0xe8, 0xf0)
         };
-        let count = if st.fire_mode { 43 } else { 45 };
-        let idx = (st.angle * 12.0) as usize % count;
-        let frame = format!("{prefix}{idx:02}");
-        draw_image(&frame, p.x, p.y, 0.0, 1.0, 1.0);
-        if st.respawn_timer > 0.0 {
-            // Brief cool-down tint: overlay the outline a little transparent.
-            let alpha = (st.respawn_timer / RESPAWN_TIME * 255.0) as u8;
-            let color = Color::new(0x40, 0x60, 0x80, alpha);
-            ruleste_plugin_api::host::draw_image_color("objects/Bumper/outline", p.x, p.y, color);
+        let inner = BUMPER_R * 0.6;
+        for i in 0..SEGMENTS {
+            let a0 = st.angle + i as f32 * std::f32::consts::TAU / SEGMENTS as f32;
+            let a1 = st.angle + (i + 1) as f32 * std::f32::consts::TAU / SEGMENTS as f32;
+            let (x0, y0) = ring_point(p.x, p.y, BUMPER_R, a0);
+            let (x1, y1) = ring_point(p.x, p.y, BUMPER_R, a1);
+            draw_line(x0, y0, x1, y1, color);
+            let (ix0, iy0) = ring_point(p.x, p.y, inner, a0);
+            draw_line(ix0, iy0, x0, y0, color);
         }
     });
 }

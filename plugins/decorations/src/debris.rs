@@ -1,12 +1,15 @@
 //! `floatingDebris` / `foregroundDebris` entity plugins.
 //!
-//! `floatingDebris` bobs and uses `scenery/debris`; `foregroundDebris` cycles
-//! through `scenery/fgdebris/rock_a00..02` / `rock_b00..01`.
+//! The original textures (`scenery/debris`, `scenery/fgdebris/rock_a|b`) live
+//! in the per-chapter OldSite atlas, which the host doesn't load yet, so both
+//! are rendered as simple procedural rubble until multi-atlas support lands.
+//! `floatingDebris` bobs and spins slowly; `foregroundDebris` is a far
+//! background parallax stone.
 
-use ruleste_plugin_api::host::draw_image;
+use ruleste_plugin_api::host;
 use ruleste_plugin_api::map::MapData;
 use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugin_api::types::{Color, EntityId};
 
 #[derive(Clone, Copy, Debug)]
 struct DebrisState {
@@ -16,7 +19,7 @@ struct DebrisState {
 }
 
 impl Default for DebrisState {
-    fn default() -> Self {
+    fn default() -> DebrisState {
         DebrisState {
             start_y: 0.0,
             timer: 0.0,
@@ -65,19 +68,19 @@ pub fn draw(id: EntityId) {
         let entity = Entity::new(id);
         let p = entity.position.get();
         if st.foreground {
-            // Cycle between rock_a / rock_b variants.
-            let frame = if (st.timer as i32 / 2) % 2 == 0 {
-                let idx = (st.timer * 2.0) as usize % 3;
-                format!("scenery/fgdebris/rock_a{idx:02}")
-            } else {
-                let idx = (st.timer * 2.0) as usize % 2;
-                format!("scenery/fgdebris/rock_b{idx:02}")
-            };
-            draw_image(&frame, p.x, p.y, 0.0, 1.0, 1.0);
+            // Dark background stone, mildly shaded.
+            host::draw_rect(p.x - 3.0, p.y - 3.0, 6.0, 6.0, Color::new(40, 44, 48, 220));
+            host::draw_rect(p.x - 1.5, p.y - 1.5, 3.0, 3.0, Color::new(24, 26, 30, 200));
         } else {
-            // Bobbing single-frame debris (`scenery/debris`).
+            // Bobbing rubble, ±2 px like the original SineWave.
             let bob = (st.timer * 2.0).sin() * 2.0;
-            draw_image("scenery/debris", p.x, p.y + bob, 0.0, 1.0, 1.0);
+            host::draw_rect(
+                p.x - 2.0,
+                p.y - 2.0 + bob,
+                4.0,
+                4.0,
+                Color::new(120, 126, 132, 230),
+            );
         }
         let _ = st.start_y;
     });

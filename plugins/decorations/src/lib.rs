@@ -18,7 +18,6 @@ mod cobweb;
 mod debris;
 mod flutterbird;
 mod hanginglamp;
-mod introcar;
 mod lamp;
 mod lightbeam;
 mod resort_lantern;
@@ -44,7 +43,6 @@ ruleste_plugin_api::ruleste_entity_types!(
     "foregroundDebris",
     "flutterbird",
     "hanginglamp",
-    "introCar",
     "lamp",
     "lightbeam",
     "resortLantern",
@@ -67,7 +65,6 @@ enum Kind {
     Debris,
     FlutterBird,
     HangingLamp,
-    IntroCar,
     Lamp,
     LightBeam,
     ResortLantern,
@@ -95,7 +92,6 @@ fn kind_for_type(t: &str) -> Option<Kind> {
         "floatingDebris" | "foregroundDebris" => Kind::Debris,
         "flutterbird" => Kind::FlutterBird,
         "hanginglamp" => Kind::HangingLamp,
-        "introCar" => Kind::IntroCar,
         "lamp" => Kind::Lamp,
         "lightbeam" => Kind::LightBeam,
         "resortLantern" => Kind::ResortLantern,
@@ -128,7 +124,6 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
         Kind::Debris => debris::init(id, data, len),
         Kind::FlutterBird => flutterbird::init(id, data, len),
         Kind::HangingLamp => hanginglamp::init(id, data, len),
-        Kind::IntroCar => introcar::init(id, data, len),
         Kind::Lamp => lamp::init(id, data, len),
         Kind::LightBeam => lightbeam::init(id, data, len),
         Kind::ResortLantern => resort_lantern::init(id, data, len),
@@ -153,7 +148,6 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         Kind::Debris => debris::update(id, dt),
         Kind::FlutterBird => flutterbird::update(id, dt),
         Kind::HangingLamp => hanginglamp::update(id, dt),
-        Kind::IntroCar => introcar::update(id, dt),
         Kind::Lamp => lamp::update(id, dt),
         Kind::LightBeam => lightbeam::update(id, dt),
         Kind::ResortLantern => resort_lantern::update(id, dt),
@@ -178,7 +172,6 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         Kind::Debris => debris::draw(id),
         Kind::FlutterBird => flutterbird::draw(id),
         Kind::HangingLamp => hanginglamp::draw(id),
-        Kind::IntroCar => introcar::draw(id),
         Kind::Lamp => lamp::draw(id),
         Kind::LightBeam => lightbeam::draw(id),
         Kind::ResortLantern => resort_lantern::draw(id),
