@@ -19,24 +19,28 @@ pub struct EntitySpawn {
     pub data: MapData,
 }
 
+#[derive(Debug, Clone)]
+pub struct Room {
+    pub name: String,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub camera_offset: Vec2,
+    pub solids: SolidGrid,
+    pub bg: SolidGrid,
+    pub entities: Vec<EntitySpawn>,
+    pub decorations: Vec<EntitySpawn>,
+}
+
 #[derive(Debug)]
 pub struct Level {
     /// Map name, e.g. "0-ForsakenCity".
     pub name: String,
-    /// Solid collision grid, in tiles.
-    pub solids: SolidGrid,
-    /// Background grid (rendered, not solid).
-    pub bg: SolidGrid,
-    /// Width and height in world units.
-    pub width: f32,
-    pub height: f32,
-    /// Camera offset (in world units) applied to the follow target.
-    /// Mirrors `Level.CameraOffset = (48, 32) * levelData.CameraOffset`.
-    pub camera_offset: Vec2,
-    /// Entities to spawn into the world, in map order.
-    pub entities: Vec<EntitySpawn>,
-    /// Decorative entities without gameplay collision boxes.
-    pub decorations: Vec<EntitySpawn>,
+    /// Loaded rooms in the map.
+    pub rooms: Vec<Room>,
+    /// Index of the active room.
+    pub current_room: usize,
     /// Parallax background layers drawn behind the world.
     pub backgrounds: Vec<Backdrop>,
     /// Parallax foreground layers drawn in front of the world.
@@ -58,7 +62,6 @@ fn is_decoration(name: &str) -> bool {
             | "foregroundDebris"
             | "flutterbird"
             | "hanginglamp"
-            | "introCar"
             | "lamp"
             | "lightbeam"
             | "resortLantern"
@@ -72,6 +75,14 @@ fn is_decoration(name: &str) -> bool {
 }
 
 impl Level {
+    pub fn room(&self) -> &Room {
+        &self.rooms[self.current_room]
+    }
+
+    pub fn room_mut(&mut self) -> &mut Room {
+        &mut self.rooms[self.current_room]
+    }
+
     pub fn load(path: &Path) -> anyhow::Result<Level> {
         let bin = MapBin::from_file(path)
             .map_err(|e| anyhow::anyhow!("failed to parse map {}: {e}", path.display()))?;
@@ -86,90 +97,89 @@ impl Level {
             .child("levels")
             .ok_or_else(|| anyhow::anyhow!("map {:?} has no levels", name))?;
 
-        // First try to pick the level that contains the origin (0,0).
-        // This matches Celeste's MapData.StartLevel logic. If none contain the origin,
-        // fall back to the old heuristic: the first level containing a player entity,
-        // then the first level in the file.
-        let level = levels_el
-            .children
-            .iter()
-            .find(|l| {
-                let x = l.attr_f32("x", 0.0);
-                let y = l.attr_f32("y", 0.0);
-                let w = l.attr_f32("width", 0.0);
-                let h = l.attr_f32("height", 0.0);
-                x <= 0.0 && y <= 0.0 && x + w > 0.0 && y + h > 0.0
-            })
-            .or_else(|| {
-                levels_el.children.iter().find(|l| {
-                    l.child("entities")
-                        .is_some_and(|ents| ents.children.iter().any(|e| e.name == "player"))
-                })
-            })
-            .or_else(|| levels_el.children.first())
-            .ok_or_else(|| anyhow::anyhow!("map {:?} has no levels", name))?;
+        let mut rooms = Vec::new();
+        for level in &levels_el.children {
+            let room_name = level.attr_str("name", "room");
+            let rx = level.attr_f32("x", 0.0);
+            let ry = level.attr_f32("y", 0.0);
+            let width = level.attr_f32("width", 320.0);
+            let height = level.attr_f32("height", 180.0);
 
-        let width = level.attr_f32("width", 320.0);
-        let height = level.attr_f32("height", 180.0);
+            let camera_offset = Vec2::new(
+                48.0 * level.attr_f32("cameraOffsetX", 0.0),
+                32.0 * level.attr_f32("cameraOffsetY", 0.0),
+            );
 
-        let camera_offset = Vec2::new(
-            48.0 * level.attr_f32("cameraOffsetX", 0.0),
-            32.0 * level.attr_f32("cameraOffsetY", 0.0),
-        );
+            let mut solids = parse_grid(level.child("solids"));
+            let bg = parse_grid(level.child("bg"));
 
-        let mut solids = parse_grid(level.child("solids"));
-        let bg = parse_grid(level.child("bg"));
-
-        let mut entities = Vec::new();
-        let mut decorations = Vec::new();
-        if let Some(ents) = level.child("entities") {
-            for child in &ents.children {
-                if child.name == "jumpThru" {
-                    // One-way platforms are baked into the collision grid, not
-                    // spawned as plugin entities (mirrors `JumpThru`'s Hitbox).
-                    solids.add_jumpthru(JumpThru {
-                        x: child.attr_f32("x", 0.0),
-                        y: child.attr_f32("y", 0.0),
-                        w: child.attr_f32("width", 8.0),
-                        h: JUMPTHRU_HEIGHT,
-                    });
-                    continue;
-                }
-                let mut data = attrs_to_map(child);
-                // The entity type name is always available to plugins, so a
-                // plugin handling several entity types can tell them apart.
-                data.attrs
-                    .push(("_entity_type".to_string(), MapAttr::Str(child.name.clone())));
-                // Entity nodes are the entity element's children, mirroring
-                // `LevelData.CreateEntityData` (each child's x/y form a node).
-                data.nodes = child
-                    .children
-                    .iter()
-                    .map(|n| Vec2::new(n.attr_f32("x", 0.0), n.attr_f32("y", 0.0)))
-                    .collect();
-                let spawn = EntitySpawn {
-                    name: child.name.clone(),
-                    data,
-                };
-                if is_decoration(&child.name) {
-                    decorations.push(spawn);
-                } else {
-                    entities.push(spawn);
+            let mut entities = Vec::new();
+            let mut decorations = Vec::new();
+            if let Some(ents) = level.child("entities") {
+                for child in &ents.children {
+                    if child.name == "jumpThru" {
+                        solids.add_jumpthru(JumpThru {
+                            x: child.attr_f32("x", 0.0),
+                            y: child.attr_f32("y", 0.0),
+                            w: child.attr_f32("width", 8.0),
+                            h: JUMPTHRU_HEIGHT,
+                        });
+                        continue;
+                    }
+                    let mut data = attrs_to_map(child);
+                    data.attrs
+                        .push(("_entity_type".to_string(), MapAttr::Str(child.name.clone())));
+                    data.nodes = child
+                        .children
+                        .iter()
+                        .map(|n| Vec2::new(n.attr_f32("x", 0.0), n.attr_f32("y", 0.0)))
+                        .collect();
+                    let spawn = EntitySpawn {
+                        name: child.name.clone(),
+                        data,
+                    };
+                    if is_decoration(&child.name) {
+                        decorations.push(spawn);
+                    } else {
+                        entities.push(spawn);
+                    }
                 }
             }
+
+            rooms.push(Room {
+                name: room_name,
+                x: rx,
+                y: ry,
+                width,
+                height,
+                camera_offset,
+                solids,
+                bg,
+                entities,
+                decorations,
+            });
         }
+
+        if rooms.is_empty() {
+            return Err(anyhow::anyhow!("map {:?} has no valid rooms", name));
+        }
+
+        let current_room = rooms
+            .iter()
+            .position(|r| r.x <= 0.0 && r.y <= 0.0 && r.x + r.width > 0.0 && r.y + r.height > 0.0)
+            .or_else(|| {
+                rooms
+                    .iter()
+                    .position(|r| r.entities.iter().any(|e| e.name == "player"))
+            })
+            .unwrap_or(0);
 
         let (backgrounds, foregrounds) = backdrops::parse(root.child("Style"));
 
         Ok(Level {
             name,
-            solids,
-            bg,
-            width,
-            height,
-            camera_offset,
-            entities,
-            decorations,
+            rooms,
+            current_room,
             backgrounds,
             foregrounds,
         })
@@ -201,7 +211,6 @@ fn attrs_to_map(el: &Element) -> MapData {
         };
         attrs.push((key.clone(), map));
     }
-    // Ensure x/y exist so plugins always have a spawn position.
     let has_xy = attrs.iter().any(|(k, _)| k == "x");
     if !has_xy {
         attrs.push(("x".to_string(), MapAttr::Float(0.0)));
@@ -213,9 +222,6 @@ fn attrs_to_map(el: &Element) -> MapData {
     }
 }
 
-/// Associates entity types with a plugin by scanning a list of loaded plugin
-/// files. For now the mapping is: a plugin whose `ruleste_plugin_entity_types`
-/// reports a given type owns that type.
 pub fn index_entities_by_type(spawns: &[EntitySpawn]) -> HashMap<String, Vec<usize>> {
     let mut map: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, spawn) in spawns.iter().enumerate() {

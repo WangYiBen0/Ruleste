@@ -61,38 +61,22 @@ fn dump_map(path: &Path) -> anyhow::Result<()> {
     }
 
     let level = Level::from_bin(bin)?;
-    let (w, h) = level.solids.size();
-    println!(
-        "  bounds: {}x{}  solids: {}x{} tiles  bg: {}x{} tiles",
-        level.width,
-        level.height,
-        w,
-        h,
-        level.bg.size().0,
-        level.bg.size().1
-    );
-    println!(
-        "  camera_offset: ({}, {})",
-        level.camera_offset.x, level.camera_offset.y
-    );
-
-    println!("  solids grid (rows of # = solid):");
-    for row in 0..level.solids.size().1 {
-        let mut line = String::new();
-        for col in 0..level.solids.size().0 {
-            let solid = level.solids.solid_at(col as i32, row as i32);
-            line.push(if solid { '#' } else { '.' });
-        }
-        println!("    {row:>3} {line}");
+    println!("  rooms: {} total", level.rooms.len());
+    for (idx, room) in level.rooms.iter().enumerate() {
+        let (w, h) = room.solids.size();
+        println!(
+            "    room #{idx} ({}): bounds {}x{} at ({},{}), solids {}x{} tiles",
+            room.name, room.width, room.height, room.x, room.y, w, h
+        );
     }
-
+    let room = level.room();
     let mut histogram: HashMap<&str, usize> = HashMap::new();
-    for e in &level.entities {
+    for e in &room.entities {
         *histogram.entry(e.name.as_str()).or_default() += 1;
     }
     println!(
-        "  entities: {} total, {} distinct types",
-        level.entities.len(),
+        "  current room entities: {} total, {} distinct types",
+        room.entities.len(),
         histogram.len()
     );
     let mut types: Vec<_> = histogram.into_iter().collect();
@@ -101,31 +85,15 @@ fn dump_map(path: &Path) -> anyhow::Result<()> {
         println!("    {count:>4}  {name}");
     }
 
-    let mut dec_hist: HashMap<&str, usize> = HashMap::new();
-    for d in &level.decorations {
-        *dec_hist.entry(d.name.as_str()).or_default() += 1;
-    }
-    if !level.decorations.is_empty() {
-        println!(
-            "  decorations: {} total, {} distinct types",
-            level.decorations.len(),
-            dec_hist.len()
-        );
-        let mut dtypes: Vec<_> = dec_hist.into_iter().collect();
-        dtypes.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
-        for (name, count) in &dtypes {
-            println!("    {count:>4}  {name}");
-        }
-    }
-
-    let sample = level
+    let room = level.room();
+    let sample = room
         .entities
         .iter()
         .take(3)
         .map(|e| e.name.as_str())
         .collect::<Vec<_>>();
     println!("  first entity types: {sample:?}");
-    for e in &level.entities {
+    for e in &room.entities {
         let x = e.data.get_float("x", 0.0);
         let y = e.data.get_float("y", 0.0);
         println!("    entity {:<12} at ({x:>6.1}, {y:>6.1})", e.name);
@@ -138,7 +106,7 @@ fn dump_map(path: &Path) -> anyhow::Result<()> {
             println!("        node[{i}] = ({}, {})", n.x, n.y);
         }
     }
-    for d in &level.decorations {
+    for d in &room.decorations {
         let x = d.data.get_float("x", 0.0);
         let y = d.data.get_float("y", 0.0);
         println!("    decoration {:<12} at ({x:>6.1}, {y:>6.1})", d.name);

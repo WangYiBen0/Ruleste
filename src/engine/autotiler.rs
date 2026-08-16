@@ -33,6 +33,7 @@ struct TilesetDef {
 }
 
 /// Parsed autotiler definition loaded from ForegroundTiles.xml.
+#[derive(Clone)]
 pub struct Autotiler {
     tilesets: HashMap<char, TilesetDef>,
 }

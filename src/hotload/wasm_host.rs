@@ -189,6 +189,24 @@ impl WasmHost {
         self.respawn_entities = entities.to_vec();
     }
 
+    /// Switches to a new room: updates solid grid, respawn entities, respawns
+    /// all entities, and teleports the player to the new position.
+    pub fn switch_room(
+        &mut self,
+        solids: SolidGrid,
+        spawns: &[(String, Vec<u8>)],
+        player_pos: ruleste_plugin_api::types::Vec2,
+    ) {
+        self.store.data_mut().solids = solids;
+        self.set_respawn_entities(spawns);
+        self.respawn();
+        for e in self.store.data_mut().world.iter_mut() {
+            if e.entity_type == "player" {
+                e.position = player_pos;
+            }
+        }
+    }
+
     /// Provides the foreground autotiler plugins use for `generate_box` tile
     /// slabs (e.g. introCrusher). Call before spawning entities.
     pub fn set_autotiler(&mut self, autotiler: Autotiler) {

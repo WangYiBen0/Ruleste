@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use ruleste::data::atlas::Atlas;
+use ruleste::data::atlas::{Atlas, load_atlas_dir};
 use ruleste::data::spritebank::SpriteBank;
 use ruleste::engine::autotiler::Autotiler;
 use ruleste::engine::camera::Camera;
@@ -45,18 +45,35 @@ fn main() -> anyhow::Result<()> {
     let map_path = args
         .next()
         .unwrap_or_else(|| "maps/Celeste/0-Intro.bin".to_string());
-    let atlas_path = args
-        .next()
-        .unwrap_or_else(|| "resources/Celeste/Celeste/textures/Atlases/Gameplay.meta".to_string());
-    let sprite_path = args
-        .next()
-        .unwrap_or_else(|| "resources/Celeste/Celeste/textures/Sprites.xml".to_string());
-    let autotiler_path = args
-        .next()
-        .unwrap_or_else(|| "resources/Celeste/Celeste/textures/ForegroundTiles.xml".to_string());
+
+    // Maps live at `maps/<pack>/<file>.bin`, converted resources at
+    // `resources/<pack>/<namespace>/`. Both default to the pack id (the
+    // Celeste converter emits `resources/Celeste/Celeste/...`).
+    let pack = Path::new(&map_path)
+        .parent()
+        .and_then(Path::file_name)
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Celeste".to_string());
+    let namespace = args.next().unwrap_or_else(|| pack.clone());
+    let resources_root = Path::new("resources").join(&pack).join(&namespace);
+    let atlas_dir = resources_root.join("textures").join("Atlases");
+    let sprite_path = args.next().unwrap_or_else(|| {
+        resources_root
+            .join("textures")
+            .join("Sprites.xml")
+            .display()
+            .to_string()
+    });
+    let autotiler_path = args.next().unwrap_or_else(|| {
+        resources_root
+            .join("textures")
+            .join("ForegroundTiles.xml")
+            .display()
+            .to_string()
+    });
     let audio_dir = args
         .next()
-        .unwrap_or_else(|| "resources/Celeste/Celeste/audio".to_string());
+        .unwrap_or_else(|| resources_root.join("audio").display().to_string());
     let dump_frame = std::env::var("RULESTE_DUMP_FRAME").ok();
     let dump_frame_at: u32 = std::env::var("RULESTE_DUMP_FRAME_AT")
         .ok()
@@ -65,22 +82,22 @@ fn main() -> anyhow::Result<()> {
     let mut frame_count: u32 = 0;
 
     println!("Loading assets...");
-    let mut atlas = Atlas::load(Path::new(&atlas_path))?;
-    // The `Misc` no-pack atlas holds standalone backdrop textures (e.g.
-    // "purplesunset") referenced by `Style > Backgrounds`/`Foregrounds`.
-    let misc_path = Path::new(&atlas_path)
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join("Misc.meta");
-    if misc_path.exists() {
-        match Atlas::load_no_pack(&misc_path) {
-            Ok(misc) => atlas.merge(misc),
-            Err(e) => eprintln!(
-                "ruleste: failed to load Misc atlas ({}): {e}",
-                misc_path.display()
-            ),
-        }
-    }
+    // Merge every atlas in the pack's `Atlases/` directory. Earlier versions
+    // hardcoded `Gameplay.meta`; the pack loader also brings in `Misc` and the
+    // per-chapter `CompleteScreens` atlases so any frame id referenced by the
+    // map, sprites, backdrops or plugins resolves.
+    let atlas = load_atlas_dir(&atlas_dir).unwrap_or_else(|e| {
+        eprintln!(
+            "ruleste: failed to load atlas dir {}: {e}",
+            atlas_dir.display()
+        );
+        Atlas::default()
+    });
+    println!(
+        "atlas: {} pages, {} frames",
+        atlas.pages.len(),
+        atlas.frame_index.len()
+    );
     let sprite_bank = SpriteBank::load(Path::new(&sprite_path))?;
     let mut level = Level::load(Path::new(&map_path))?;
     let autotiler = Autotiler::load(Path::new(&autotiler_path))?;
@@ -89,20 +106,21 @@ fn main() -> anyhow::Result<()> {
         .unwrap_or(Path::new("."))
         .join("BackgroundTiles.xml");
     let bg_autotiler = Autotiler::load(&bg_autotiler_path)?;
-    let tile_grid = autotiler.generate(&level.solids);
-    let bg_tile_grid = bg_autotiler.generate(&level.bg);
+    let mut tile_grid = autotiler.generate(&level.room().solids);
+    let mut bg_tile_grid = bg_autotiler.generate(&level.room().bg);
     {
         let solid_tiles = level
+            .room()
             .solids
             .size()
             .0
-            .checked_mul(level.solids.size().1)
+            .checked_mul(level.room().solids.size().1)
             .unwrap_or(0);
         let mapped = tile_grid.tileset.iter().filter(|t| !t.is_empty()).count();
         println!(
             "autotiler: {}x{} grid, {} solid tiles, {} tiles mapped to textures",
-            level.solids.size().0,
-            level.solids.size().1,
+            level.room().solids.size().0,
+            level.room().solids.size().1,
             solid_tiles,
             mapped
         );
@@ -151,17 +169,18 @@ fn main() -> anyhow::Result<()> {
 
     let world = ruleste::engine::ecs::World::new();
     let input = Input::default();
-    let solids = level.solids.clone();
+    let solids = level.room().solids.clone();
 
     println!("Initializing WasmHost from plugin dir: {plugin_dir}");
     let mut wasm_host = WasmHost::new(world, input, solids, Path::new(&plugin_dir))?;
-    wasm_host.set_autotiler(autotiler);
+    wasm_host.set_autotiler(autotiler.clone());
     // Instantiate only the plugins whose entity types this level actually
     // contains; unrelated plugins stay unloaded (and uninstantiated).
     let needed_types: std::collections::HashSet<String> = level
+        .room()
         .entities
         .iter()
-        .chain(&level.decorations)
+        .chain(&level.room().decorations)
         .map(|e| e.name.clone())
         .collect();
     wasm_host.load_plugins_for(&needed_types)?;
@@ -173,13 +192,13 @@ fn main() -> anyhow::Result<()> {
     // first marker in file order (which may be a room-transition respawn).
     let mut all_spawns = Vec::new();
     let mut best_player: Option<&ruleste::engine::level::EntitySpawn> = None;
-    for e in &level.entities {
+    for e in &level.room().entities {
         if e.name == "player" {
             let x = e.data.get_float("x", 0.0);
             let y = e.data.get_float("y", 0.0);
             // Distance squared to (0, height): the level's bottom-left corner.
             let dx = x;
-            let dy = y - level.height;
+            let dy = y - level.room().height;
             let dist = dx * dx + dy * dy;
             let is_better = match &best_player {
                 None => true,
@@ -187,7 +206,7 @@ fn main() -> anyhow::Result<()> {
                     let bx = best.data.get_float("x", 0.0);
                     let by = best.data.get_float("y", 0.0);
                     let bdx = bx;
-                    let bdy = by - level.height;
+                    let bdy = by - level.room().height;
                     let bdist = bdx * bdx + bdy * bdy;
                     dist < bdist
                 }
@@ -202,7 +221,7 @@ fn main() -> anyhow::Result<()> {
     if let Some(best) = best_player {
         all_spawns.push((best.name.clone(), best.data.to_bytes()));
     }
-    for e in &level.decorations {
+    for e in &level.room().decorations {
         all_spawns.push((e.name.clone(), e.data.to_bytes()));
     }
 
@@ -210,8 +229,8 @@ fn main() -> anyhow::Result<()> {
 
     println!(
         "Spawning {} entities and {} decorations...",
-        level.entities.len(),
-        level.decorations.len()
+        level.room().entities.len(),
+        level.room().decorations.len()
     );
     let mut unhandled: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for (name, spawn) in &all_spawns {
@@ -264,6 +283,74 @@ fn main() -> anyhow::Result<()> {
         // Update Wasm plugins (physics, player movement, entity logic)
         wasm_host.update(dt);
 
+        // Room transition logic
+        let player_pos_opt = wasm_host
+            .game_state()
+            .world
+            .iter()
+            .find(|e| e.entity_type == "player")
+            .map(|e| e.position);
+
+        if let Some(pp) = player_pos_opt {
+            let room = level.room();
+            let mut target_room = None;
+            let mut new_player_pos = pp;
+
+            if pp.x < room.x {
+                if let Some(idx) = level.rooms.iter().position(|r| {
+                    (r.x + r.width - room.x).abs() < 2.0 && pp.y >= r.y && pp.y < r.y + r.height
+                }) {
+                    target_room = Some(idx);
+                    new_player_pos.x = level.rooms[idx].x + level.rooms[idx].width - 12.0;
+                }
+            } else if pp.x >= room.x + room.width {
+                if let Some(idx) = level.rooms.iter().position(|r| {
+                    (r.x - (room.x + room.width)).abs() < 2.0
+                        && pp.y >= r.y
+                        && pp.y < r.y + r.height
+                }) {
+                    target_room = Some(idx);
+                    new_player_pos.x = level.rooms[idx].x + 12.0;
+                }
+            } else if pp.y < room.y {
+                if let Some(idx) = level.rooms.iter().position(|r| {
+                    (r.y + r.height - room.y).abs() < 2.0 && pp.x >= r.x && pp.x < r.x + r.width
+                }) {
+                    target_room = Some(idx);
+                    new_player_pos.y = level.rooms[idx].y + level.rooms[idx].height - 12.0;
+                }
+            } else if pp.y >= room.y + room.height {
+                if let Some(idx) = level.rooms.iter().position(|r| {
+                    (r.y - (room.y + room.height)).abs() < 2.0
+                        && pp.x >= r.x
+                        && pp.x < r.x + r.width
+                }) {
+                    target_room = Some(idx);
+                    new_player_pos.y = level.rooms[idx].y + 12.0;
+                }
+            }
+
+            if let Some(idx) = target_room {
+                level.current_room = idx;
+                let new_room = level.room();
+                tile_grid = autotiler.generate(&new_room.solids);
+                bg_tile_grid = bg_autotiler.generate(&new_room.bg);
+
+                let mut spawns = Vec::new();
+                let mut needed = std::collections::HashSet::new();
+                for e in &new_room.entities {
+                    needed.insert(e.name.clone());
+                    spawns.push((e.name.clone(), e.data.to_bytes()));
+                }
+                for e in &new_room.decorations {
+                    needed.insert(e.name.clone());
+                    spawns.push((e.name.clone(), e.data.to_bytes()));
+                }
+                let _ = wasm_host.load_plugins_for(&needed);
+                wasm_host.switch_room(new_room.solids.clone(), &spawns, new_player_pos);
+            }
+        }
+
         // Feed the audio bus (mix + device).
         audio.update(dt);
 
@@ -283,12 +370,13 @@ fn main() -> anyhow::Result<()> {
             .find(|e| e.entity_type == "player")
             .map(|e| e.position)
             .unwrap_or(Vec2::ZERO);
+        let room = level.room();
         camera.update(
             dt,
             camera.target_at(
                 player_pos,
-                level.camera_offset,
-                Vec2::new(level.width, level.height),
+                room.camera_offset,
+                Vec2::new(room.width, room.height),
             ),
         );
         renderer.set_camera(camera.position);
