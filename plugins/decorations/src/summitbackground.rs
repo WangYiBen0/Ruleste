@@ -6,9 +6,9 @@
 //! the entity slot and its `index`/`intro_launch` attributes; there is
 //! nothing to update or draw until a sky system lands.
 
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
 pub fn init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };

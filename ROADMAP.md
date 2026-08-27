@@ -9,7 +9,7 @@
 
 ## Phase 0 — 项目脚手架 ✅
 - [x] `flake.nix`：fenix 固定工具链 + wasm32-unknown-unknown rust-std，`nix develop` 可复现环境（x86_64-linux、aarch64-linux、x86_64-darwin、aarch64-darwin）
-- [x] Cargo workspace：`crates/ruleste-plugin-api`、`plugins/player`、`plugins/spring`、根 crate `ruleste`
+- [x] Cargo workspace：`crates/ruleste-plugins-api`、`plugins/player`、`plugins/spring`、根 crate `ruleste`
 - [x] 依赖选型：sdl3 0.18（Unix 用 pkg-config、Windows 用 vcpkg、unsafe_textures）、wasmtime 47、roxmltree、bytemuck、anyhow
 - [x] `.envrc`（use flake）、.gitignore、Git 仓库初始化
 - 验证：`nix develop -c cargo build` 全 workspace 零警告
@@ -36,7 +36,7 @@
 - [x] Wasm 宿主：`load_plugins`、实体 `spawn/update/draw/despawn`、完整 FFI（position/speed/hitbox/sprite/input/collision/sound/emit）`src/hotload/wasm_host.rs`
 - [x] 缓冲协议：插件自导出 `ruleste_alloc/dealloc`，宿主不再猜堆布局
 - [x] 热重载：mtime 监听 + `serialize/deserialize` 状态迁移 `src/hotload/watcher.rs`
-- [x] 插件 ABI：`ruleste_plugin_meta/entity_types/entity_*`、宏 `ruleste_meta!`/`ruleste_entity_types!`/`ruleste_noop_*` `crates/ruleste-plugin-api`
+- [x] 插件 ABI：`ruleste_plugin_meta/entity_types/entity_*`、宏 `ruleste_meta!`/`ruleste_entity_types!`/`ruleste_noop_*` `crates/ruleste-plugins-api`
 - [x] 内建 `player` 插件：走动/跑、跳跃（落地缓冲 + 可变跳 + 贴墙跳）、蹲伏、贴墙滑、冲刺；动画名按 `PlayerSprite.cs`；状态可序列化 `plugins/player`
 - [x] 实体-实体交互：`host_entities_by_type`/`host_drain_events`/`host_entity_alive` FFI + Spring 插件验证跨插件交互
 - [x] 内建 `lamp` 插件：直接引用图集帧 `scenery/lamp`（非 Sprites.xml），宿主渲染回落 direct-frame（锚点经 hitbox offset 对齐吊灯底端中心）`plugins/lamp`
@@ -66,7 +66,7 @@
 - [x] 内建 `refill` 插件：绿/粉 dash 恢复宝石（twoDash/oneUse 属性、idle 帧动画 + 周期闪光、接触→`EV_REFILL` 事件充满 dash、非 oneUse 2.5s 重生）`plugins/refill`
 - [x] 内建 `booster` 插件：绿/红助推垫（接触→`EV_BOOST` 事件沿瞄准方向弹射、spin→pop→1s 重生、SpriteBank 帧索引直接映射）`plugins/booster`
 - [x] 内建 `crushBlock` 插件：可站立 riding Solid，玩家 dash 撞入→`EV_CRUSH` 反方向 240 u/s 加速碾压至撞墙→回退原位；axes/chillout/giant 属性 `plugins/crushblock`
-- [x] 事件常量：插件共享 `EV_REFILL/EV_BOOST/EV_CRUSH`（`ruleste-plugin-api`）+ player 插件事件处理（充满 dash、弹射）
+- [x] 事件常量：插件共享 `EV_REFILL/EV_BOOST/EV_CRUSH`（`ruleste-plugins-api`）+ player 插件事件处理（充满 dash、弹射）
 - [x] player 插件 dash 撞 crushBlock 检测：dash 中与 crushBlock hitbox 重叠→发 `EV_CRUSH` 并结束 dash
 - [x] 集成测试：refill oneUse 消耗/两 dash 重生、booster/crushBlock 实例化、crushBlock 平台注册 `tests/interactions.rs`
 - [x] 宿主重生点 API：`host_respawn_set/get` FFI + `respawn()` 后按 checkpoint 位置重摆 player `src/hotload/wasm_host.rs`
@@ -74,7 +74,7 @@
 - [x] 内建 `cliffflag` 插件：节点间二次贝塞尔垂坠彩旗线（4 色旗+高亮边缘+灰销钉、波荡、确定性随机）`plugins/cliffflag`
 - [x] 内建 `torch` 插件：镜之寺壁灯，触摸点燃（turnOn 1-3→on 3-8 循环）、startLit 用 litTorch 帧 `plugins/torch`
 - [x] 内建 `cloud` 插件：32 宽 riding 单向平台，踩上后压扁下沉→上弹将骑手 `Speed.Y=-200` 抛起，fragile 消散 2.5s 重生 `plugins/cloud`
-- [x] `draw_image_color`：宿主 draw_image 支持 ARGB 着色（checkpoint 高亮呼吸渐隐）`crates/ruleste-plugin-api`
+- [x] `draw_image_color`：宿主 draw_image 支持 ARGB 着色（checkpoint 高亮呼吸渐隐）`crates/ruleste-plugins-api`
 - [x] 2-OldSite 全实体类型有插件处理（dreamBlock/lightbeam/foregroundDebris/hanginglamp/floatingDebris）
 - [x] 碰撞网格换算修复：`SolidGrid::collide_rect` 像素坐标未除 tile 尺寸导致的越界误判（全实体碰撞大 bug）`src/engine/physics.rs`
 - [x] 地图实体 → 插件的自动实例化：按 `ruleste_plugin_entity_types` 派发，未覆盖类型告警

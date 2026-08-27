@@ -11,7 +11,7 @@ use ruleste::engine::ecs::World;
 use ruleste::engine::input::Input;
 use ruleste::engine::physics::SolidGrid;
 use ruleste::hotload::wasm_host::WasmHost;
-use ruleste_plugin_api::map::{MapAttr, MapData};
+use ruleste_plugins_api::map::{MapAttr, MapData};
 use sdl3::event::Event;
 use sdl3::keyboard::{Keycode, Mod};
 

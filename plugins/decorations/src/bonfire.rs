@@ -5,10 +5,10 @@
 //! - Lit: logs + flickering flame.
 //! - Smoking: logs + smoke particles/whisps.
 
-use ruleste_plugin_api::host::draw_rect;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugins_api::host::draw_rect;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId};
 
 const LOG_COLOR: Color = Color {
     r: 0x5a,

@@ -6,10 +6,10 @@
 //! start (using the `litTorch` frames). The flame visually sits centered on
 //! the entity position (the sprite bank justifies it `0.5, 0.5`).
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
 const TURN_ON_TIME: f32 = 0.08 * 3.0;
 

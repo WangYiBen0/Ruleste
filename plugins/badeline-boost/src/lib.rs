@@ -9,15 +9,15 @@
 //! next node at 320 px/s and becomes usable again — walking the chain. A node
 //! list with a single entry keeps the boost in place.
 
-use ruleste_plugin_api::host::{self, entities_by_type};
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::host::{self, entities_by_type};
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId, Vec2};
 
-ruleste_plugin_api::ruleste_meta!("badeline-boost");
-ruleste_plugin_api::ruleste_entity_types!("badelineBoost");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("badeline-boost");
+ruleste_plugins_api::ruleste_entity_types!("badelineBoost");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// `BadelineBoost.cs`: `MoveSpeed = 320f`.
 const MOVE_SPEED: f32 = 320.0;

@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 
-use ruleste_plugin_api::types::input as act;
+use ruleste_plugins_api::types::input as act;
 use sdl3::event::Event;
 use sdl3::keyboard::Keycode;
 

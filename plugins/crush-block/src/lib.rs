@@ -8,15 +8,15 @@
 //! `chillout` blocks are the huge ones that may only be pushed from the right,
 //! slow down before walls, and never return.
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId, Vec2};
 
-ruleste_plugin_api::ruleste_meta!("crush-block");
-ruleste_plugin_api::ruleste_entity_types!("crushBlock");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("crush-block");
+ruleste_plugins_api::ruleste_entity_types!("crushBlock");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 const CRUSH_SPEED: f32 = 240.0;
 const CRUSH_ACCEL: f32 = 500.0;

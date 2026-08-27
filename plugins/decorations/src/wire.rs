@@ -10,10 +10,10 @@
 
 use std::cell::RefCell;
 
-use ruleste_plugin_api::host::draw_line;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::host::draw_line;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId, Vec2};
 
 /// Wire line color: `Calc.HexToColor("595866")`.
 const WIRE_COLOR: Color = Color {

@@ -5,10 +5,10 @@
 //! The curve midpoint sways vertically with a wave timer, and the edge
 //! strands use a slightly darkened color.
 
-use ruleste_plugin_api::host::{self, draw_line};
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::host::{self, draw_line};
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId, Vec2};
 
 /// `AreaData.CobwebColor` default `#696a6a`.
 const COLOR: Color = Color {

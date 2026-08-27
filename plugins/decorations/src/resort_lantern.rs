@@ -10,10 +10,10 @@
 //! The lantern is flipped horizontally when there is solid ground directly to
 //! its right (mirroring `Awake`'s `CollideCheck<Solid>`).
 
-use ruleste_plugin_api::host::{self, draw_image_flipped, entities_by_type};
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::host::{self, draw_image_flipped, entities_by_type};
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
 /// Player-sensing hitbox: 8x8 centered on the entity position.
 const SENSE_W: f32 = 8.0;

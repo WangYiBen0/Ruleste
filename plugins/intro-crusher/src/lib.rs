@@ -14,15 +14,15 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{EntityId, Vec2};
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{EntityId, Vec2};
 
-ruleste_plugin_api::ruleste_meta!("intro-crusher");
-ruleste_plugin_api::ruleste_entity_types!("introCrusher");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("intro-crusher");
+ruleste_plugins_api::ruleste_entity_types!("introCrusher");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// How long the slab shakes before it drops, matching the original's 1.2 s.
 const SHAKE_TIME: f32 = 1.2;

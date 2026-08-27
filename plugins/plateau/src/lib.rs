@@ -6,15 +6,15 @@
 //! is 96 wide), with `SurfaceSoundIndex = 23`. Level styling
 //! (`Plateau.Level`) only picks the palette; the base stone stays.
 
-use ruleste_plugin_api::host::draw_rect;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugins_api::host::draw_rect;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId};
 
-ruleste_plugin_api::ruleste_meta!("plateau");
-ruleste_plugin_api::ruleste_entity_types!("plateau");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("plateau");
+ruleste_plugins_api::ruleste_entity_types!("plateau");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 const STONE: Color = Color {
     r: 0x50,

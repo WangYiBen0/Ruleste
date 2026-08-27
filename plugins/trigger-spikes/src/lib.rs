@@ -8,20 +8,20 @@
 //! and contact with a fully-extended cell is lethal. Directional contact only
 //! counts when the player moves *into* the spikes (`GetPlayerCollideIndex`).
 
-use ruleste_plugin_api::host::{self, die, draw_image, draw_rect, entities_by_type};
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugins_api::host::{self, die, draw_image, draw_rect, entities_by_type};
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId};
 
-ruleste_plugin_api::ruleste_meta!("trigger-spikes");
-ruleste_plugin_api::ruleste_entity_types!(
+ruleste_plugins_api::ruleste_meta!("trigger-spikes");
+ruleste_plugins_api::ruleste_entity_types!(
     "triggerSpikesUp",
     "triggerSpikesDown",
     "triggerSpikesLeft",
     "triggerSpikesRight",
 );
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// `DelayTime = 0.4f`.
 const DELAY_TIME: f32 = 0.4;

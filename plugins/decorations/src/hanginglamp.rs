@@ -4,10 +4,10 @@
 //! length `height`. The `objects/hanginglamp` sheet (top cap, one chain link,
 //! lamp) is blitted at the bottom; the rest of the chain is drawn as a line.
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId};
 
 /// The lamp sheet is 8x24: top cap (0-8), chain link (8-16), lamp (16-24).
 const SHEET_H: f32 = 24.0;

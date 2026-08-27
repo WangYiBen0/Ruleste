@@ -29,12 +29,12 @@ mod wire;
 
 use std::cell::RefCell;
 
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{EntityState, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{EntityState, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
-ruleste_plugin_api::ruleste_meta!("decorations");
-ruleste_plugin_api::ruleste_entity_types!(
+ruleste_plugins_api::ruleste_meta!("decorations");
+ruleste_plugins_api::ruleste_entity_types!(
     "bird",
     "bonfire",
     "cliffflag",
@@ -52,8 +52,8 @@ ruleste_plugin_api::ruleste_entity_types!(
     "towerviewer",
     "wire",
 );
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// Which decoration module owns an entity.
 #[derive(Clone, Copy, Debug, PartialEq)]

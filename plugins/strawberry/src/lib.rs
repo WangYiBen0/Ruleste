@@ -6,15 +6,15 @@
 //! - Moon: uses `moonberry` sprite bank.
 //! - Winged: flies upward when player dashes before touching.
 
-use ruleste_plugin_api::host::{self, entities_by_type};
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::host::{self, entities_by_type};
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
-ruleste_plugin_api::ruleste_meta!("strawberry");
-ruleste_plugin_api::ruleste_entity_types!("strawberry", "goldenBerry");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("strawberry");
+ruleste_plugins_api::ruleste_entity_types!("strawberry", "goldenBerry");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 const BERRY_W: f32 = 14.0;
 const BERRY_H: f32 = 14.0;

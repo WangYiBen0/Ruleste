@@ -6,10 +6,10 @@
 //! `floatingDebris` bobs and spins slowly; `foregroundDebris` is a far
 //! background parallax stone.
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId};
 
 #[derive(Clone, Copy, Debug)]
 struct DebrisState {

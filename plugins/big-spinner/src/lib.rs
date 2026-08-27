@@ -9,15 +9,15 @@
 //! A `node` attribute makes the bumper oscillate between its spawn point and
 //! the node over `MoveCycleTime`.
 
-use ruleste_plugin_api::host::{self, draw_line, entities_by_type};
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::host::{self, draw_line, entities_by_type};
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId, Vec2};
 
-ruleste_plugin_api::ruleste_meta!("big-spinner");
-ruleste_plugin_api::ruleste_entity_types!("bigSpinner");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("big-spinner");
+ruleste_plugins_api::ruleste_entity_types!("bigSpinner");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// `Bumper.cs`: `new Circle(12f)` — a 24px AABB covers it.
 const BUMPER_R: f32 = 12.0;
@@ -137,16 +137,16 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                 continue;
             }
             if st.fire_mode {
-                ruleste_plugin_api::host::die();
+                ruleste_plugins_api::host::die();
             } else if st.respawn_timer <= 0.0 {
                 st.respawn_timer = RESPAWN_TIME;
                 let (nx, ny) = safe_normalize(dx, dy);
                 let mut payload = Vec::with_capacity(8);
                 payload.extend_from_slice(&nx.to_le_bytes());
                 payload.extend_from_slice(&ny.to_le_bytes());
-                ruleste_plugin_api::host::emit(
+                ruleste_plugins_api::host::emit(
                     player_id,
-                    ruleste_plugin_api::host::EV_LAUNCH,
+                    ruleste_plugins_api::host::EV_LAUNCH,
                     &payload,
                 );
             }

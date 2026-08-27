@@ -9,15 +9,15 @@
 //! their resting height. Downward fall speed is capped at 220 (`num = -220`).
 //! The platform is a host solid-platform, so riders are carried during bounce.
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
-ruleste_plugin_api::ruleste_meta!("cloud");
-ruleste_plugin_api::ruleste_entity_types!("cloud");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("cloud");
+ruleste_plugins_api::ruleste_entity_types!("cloud");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 const BOOST_ACCEL: f32 = 1200.0;
 const RETURN_ACCEL: f32 = 600.0;

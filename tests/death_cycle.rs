@@ -10,7 +10,7 @@ use ruleste::engine::ecs::World;
 use ruleste::engine::input::Input;
 use ruleste::engine::physics::SolidGrid;
 use ruleste::hotload::wasm_host::WasmHost;
-use ruleste_plugin_api::map::{MapAttr, MapData};
+use ruleste_plugins_api::map::{MapAttr, MapData};
 
 /// The wasm plugin dir: `$RULESTE_PLUGIN_PATH` wins, otherwise fall back to
 /// the standard cargo output so tests work out of the box after `./build.sh`.
@@ -55,25 +55,23 @@ fn spike_kills_and_room_respawns() {
     .unwrap();
     host.load_plugins().unwrap();
 
-    let recipes = vec![
-        ("player".to_string(), spawn_map(60.0, 168.0)),
-        (
-            "spikesUp".to_string(),
-            MapData {
-                attrs: vec![
-                    ("x".to_string(), MapAttr::Float(40.0)),
-                    ("y".to_string(), MapAttr::Float(168.0)),
-                    ("width".to_string(), MapAttr::Byte(40)),
-                ],
-                nodes: vec![],
-            }
-            .to_bytes(),
-        ),
-    ];
-    host.set_respawn_entities(&recipes);
-    for (ty, spawn) in &recipes {
-        host.spawn_entity(ty, spawn.clone()).unwrap().unwrap();
-    }
+    let player_recipe = ("player".to_string(), spawn_map(60.0, 168.0));
+    let spike_recipe = (
+        "spikesUp".to_string(),
+        MapData {
+            attrs: vec![
+                ("x".to_string(), MapAttr::Float(40.0)),
+                ("y".to_string(), MapAttr::Float(168.0)),
+                ("width".to_string(), MapAttr::Byte(40)),
+            ],
+            nodes: vec![],
+        }
+        .to_bytes(),
+    );
+    // The player is a singleton spawned once; the room's non-player entities
+    // (here, the spike) are activated via `enter_room`.
+    host.spawn_player_once(player_recipe.clone());
+    host.enter_room(&[spike_recipe], player_recipe.clone());
 
     // Player spawns at (60,168); after a few frames the falling player overlaps
     // the spikeUp row at (40,168) and the spikes plugin kills it.
@@ -135,14 +133,10 @@ fn collected_strawberry_does_not_respawn() {
     .unwrap();
     host.load_plugins().unwrap();
 
-    let recipes = vec![
-        ("player".to_string(), spawn_map(60.0, 157.0)),
-        ("strawberry".to_string(), spawn_map(300.0, 100.0)),
-    ];
-    host.set_respawn_entities(&recipes);
-    for (ty, spawn) in &recipes {
-        host.spawn_entity(ty, spawn.clone()).unwrap().unwrap();
-    }
+    let player_recipe = ("player".to_string(), spawn_map(60.0, 157.0));
+    let berry_recipe = ("strawberry".to_string(), spawn_map(300.0, 100.0));
+    host.spawn_player_once(player_recipe.clone());
+    host.enter_room(&[berry_recipe], player_recipe.clone());
 
     // Collect: simulate the strawberry plugin consuming its own entity.
     let berry = host

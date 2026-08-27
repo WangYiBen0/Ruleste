@@ -12,15 +12,15 @@
 //! refilled (guarded on the player side). Bounces use the event bus so the
 //! player plugin stays the single owner of player state.
 
-use ruleste_plugin_api::host::{self, entities_by_type};
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::host::{self, entities_by_type};
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
-ruleste_plugin_api::ruleste_meta!("spring");
-ruleste_plugin_api::ruleste_entity_types!("spring", "wallSpringLeft", "wallSpringRight");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("spring");
+ruleste_plugins_api::ruleste_entity_types!("spring", "wallSpringLeft", "wallSpringRight");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// StDash (state 9) players never bounce.
 const ST_DASH: u32 = 9;

@@ -7,10 +7,10 @@
 //! edge and gray pins at the ends. The flag colors and sizes are randomized
 //! per line (deterministically, seeded from the entity id) like the original.
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId, Vec2};
 
 const FLAG_COLORS: [Color; 4] = [
     Color::new(0xd8, 0x5f, 0x2f, 255),

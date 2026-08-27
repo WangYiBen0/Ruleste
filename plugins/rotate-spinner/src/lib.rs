@@ -8,15 +8,15 @@
 
 use std::f32::consts::{FRAC_PI_2, TAU};
 
-use ruleste_plugin_api::host::{self, die, entities_by_type};
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{EntityId, Vec2};
+use ruleste_plugins_api::host::{self, die, entities_by_type};
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{EntityId, Vec2};
 
-ruleste_plugin_api::ruleste_meta!("rotate-spinner");
-ruleste_plugin_api::ruleste_entity_types!("rotateSpinner");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("rotate-spinner");
+ruleste_plugins_api::ruleste_entity_types!("rotateSpinner");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// `Collider = new Circle(6f)` as a covering AABB (centered on position).
 const KILL_W: f32 = 12.0;
@@ -92,8 +92,8 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
-    use ruleste_plugin_api::host::draw_line;
-    use ruleste_plugin_api::types::Color;
+    use ruleste_plugins_api::host::draw_line;
+    use ruleste_plugins_api::types::Color;
     with_state(id, |st| {
         let entity = Entity::new(id);
         let p = entity.position.get();

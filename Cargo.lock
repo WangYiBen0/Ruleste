@@ -902,7 +902,7 @@ dependencies = [
  "bytemuck",
  "lewton",
  "roxmltree",
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
  "sdl3",
  "serde",
  "serde_json",
@@ -910,241 +910,528 @@ dependencies = [
 ]
 
 [[package]]
-name = "ruleste-plugin-api"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
-]
-
-[[package]]
 name = "ruleste-plugin-badeline-boost"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-big-spinner"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-black-gem"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-booster"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-bounce-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-bridge"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-bridge-fixed"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-cassette"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-cassette-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-celestial-resort"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-checkpoint"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-cliffside-flag"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-cloud"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-clutter"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-color-switch"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-core"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-coverup-wall"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-crumble-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-crush-block"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-dark-chaser"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-dash-block"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-decorations"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-door"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-dream-block"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-dream-mirror"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-exit-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-fake-wall"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-falling-block"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-fire-ball"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-fire-barrier"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-forsaken"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-gondola"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-hahaha"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-heart-gem-door"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-ice-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-infinite-star"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-intro-car"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-intro-crusher"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-invisible-barrier"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-key"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-killbox"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-lock-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-lostlevels"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-memorial"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-mirror-temple"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-move-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-moving-platform"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-npc"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-old-site"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-plateau"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-player"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-refill"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-reflection"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-ridge-gate"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-rotate-spinner"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-seeker"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-sinking-platform"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-spikes"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-spinner"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-spring"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-star-jump-block"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-strawberry"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-summit"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-swap-block"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-switch-gate"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-theo-crystal"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-touch-switch"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-track-spinner"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-trigger-spikes"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-wall-booster"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-water"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-waterfall"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-whiteblock"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
 ]
 
 [[package]]
 name = "ruleste-plugin-zip-mover"
 version = "0.1.0"
 dependencies = [
- "ruleste-plugin-api",
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugins-api"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
 ]
 
 [[package]]

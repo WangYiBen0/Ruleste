@@ -7,15 +7,15 @@
 //! end 0.5 s, glides back over ~2 s, and rests at home 0.5 s. Movement goes
 //! through `actor_move` so riders are carried along.
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{EntityId, Vec2};
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{EntityId, Vec2};
 
-ruleste_plugin_api::ruleste_meta!("zip-mover");
-ruleste_plugin_api::ruleste_entity_types!("zipMover");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("zip-mover");
+ruleste_plugins_api::ruleste_entity_types!("zipMover");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// The approach rate out: `Calc.Approach(at2, 1, 2 * dt)` → ~0.5 s leg.
 const MOVE_OUT_RATE: f32 = 2.0;
@@ -204,9 +204,9 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let p = entity.position.get();
     let (w, h, ox, oy) = entity.hitbox.get();
     // Solid timber slab.
-    ruleste_plugin_api::host::draw_rect(p.x + ox, p.y + oy, w, h, crate_color());
+    ruleste_plugins_api::host::draw_rect(p.x + ox, p.y + oy, w, h, crate_color());
 }
 
-fn crate_color() -> ruleste_plugin_api::types::Color {
-    ruleste_plugin_api::types::Color::new(0x58, 0x3c, 0x20, 0xff)
+fn crate_color() -> ruleste_plugins_api::types::Color {
+    ruleste_plugins_api::types::Color::new(0x58, 0x3c, 0x20, 0xff)
 }

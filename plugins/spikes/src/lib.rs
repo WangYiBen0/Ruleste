@@ -8,15 +8,15 @@
 //! `Spikes.cs`. Contact kills the player, respecting the directional check in
 //! the original `OnCollide` (e.g. upward spikes only kill when falling).
 
-use ruleste_plugin_api::host::{self, die, draw_image, entities_by_type};
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::host::{self, die, draw_image, entities_by_type};
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
-ruleste_plugin_api::ruleste_meta!("spikes");
-ruleste_plugin_api::ruleste_entity_types!("spikesUp", "spikesDown", "spikesLeft", "spikesRight");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("spikes");
+ruleste_plugins_api::ruleste_entity_types!("spikesUp", "spikesDown", "spikesLeft", "spikesRight");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// Spike depth in pixels (the collision sliver in front of the row).
 const THICKNESS: f32 = 3.0;

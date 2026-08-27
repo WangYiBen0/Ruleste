@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use ruleste_plugin_api::types::{Color, Vec2};
+use ruleste_plugins_api::types::{Color, Vec2};
 
 #[derive(Debug, Clone)]
 pub struct SpriteState {

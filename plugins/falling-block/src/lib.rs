@@ -9,15 +9,15 @@
 //! on a one-way/dynamic platform keeps it there and it falls again once the
 //! support moves away. Only a fall past the level bottom despawns it.
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId};
 
-ruleste_plugin_api::ruleste_meta!("falling-block");
-ruleste_plugin_api::ruleste_entity_types!("fallingBlock");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("falling-block");
+ruleste_plugins_api::ruleste_entity_types!("fallingBlock");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// Terminal fall speed (`maxSpeed`, 160 for non-finalBoss blocks).
 const MAX_SPEED: f32 = 160.0;

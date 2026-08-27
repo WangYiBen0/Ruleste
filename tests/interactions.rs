@@ -12,7 +12,7 @@ use ruleste::engine::ecs::World;
 use ruleste::engine::input::Input;
 use ruleste::engine::physics::SolidGrid;
 use ruleste::hotload::wasm_host::WasmHost;
-use ruleste_plugin_api::map::{MapAttr, MapData};
+use ruleste_plugins_api::map::{MapAttr, MapData};
 
 /// The wasm plugin dir: `$RULESTE_PLUGIN_PATH` wins, otherwise fall back to
 /// the standard cargo output so tests work out of the box after `./build.sh`.

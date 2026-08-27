@@ -7,14 +7,14 @@
 //! player yet: the plugin claims the entity slot so the room builds, and the
 //! collision is a host-physics TODO. No visuals, as the name promises.
 
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
-ruleste_plugin_api::ruleste_meta!("invisible-barrier");
-ruleste_plugin_api::ruleste_entity_types!("invisibleBarrier");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("invisible-barrier");
+ruleste_plugins_api::ruleste_entity_types!("invisibleBarrier");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {

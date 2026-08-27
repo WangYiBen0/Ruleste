@@ -8,15 +8,15 @@
 //! (`Player.PointBounce`) unless they are dash-attacking. Drawing is procedural
 //! (four-point star + shield ring) so it reads clearly without the atlas art.
 
-use ruleste_plugin_api::host::{self, draw_line, draw_rect, entities_by_type};
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::host::{self, draw_line, draw_rect, entities_by_type};
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId, Vec2};
 
-ruleste_plugin_api::ruleste_meta!("infinite-star");
-ruleste_plugin_api::ruleste_entity_types!("infiniteStar");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("infinite-star");
+ruleste_plugins_api::ruleste_entity_types!("infiniteStar");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// `FlyFeather.cs`: `new Hitbox(20f, 20f, -10f, -10f)`.
 const HIT: f32 = 20.0;

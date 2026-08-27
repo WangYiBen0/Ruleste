@@ -55,7 +55,7 @@ impl UiStateMachine {
 
     /// Update the state machine, handling transitions based on input.
     pub fn update(&mut self, dt: f32, input: &crate::engine::input::Input) {
-        use ruleste_plugin_api::types::input as act;
+        use ruleste_plugins_api::types::input as act;
 
         self.timer += dt;
 

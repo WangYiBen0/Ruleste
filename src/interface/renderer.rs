@@ -1,8 +1,9 @@
 //! SDL3 window and rendering.
 
 use std::collections::HashMap;
+use std::env;
 
-use ruleste_plugin_api::types::Vec2;
+use ruleste_plugins_api::types::Vec2;
 use sdl3::pixels::{Color as SdlColor, PixelFormat};
 use sdl3::render::{BlendMode, FRect, Texture, TextureAccess, WindowCanvas};
 use sdl3::video::{Window, WindowBuilder};
@@ -249,13 +250,28 @@ impl Renderer {
     /// Falls back to debug-colored rectangles if the tileset frame is not found.
     pub fn draw_solids(&mut self, tile_grid: &TileGrid, atlas: &Atlas) {
         let fallback_color = SdlColor::RGB(64, 64, 80);
-        for ty in 0..tile_grid.height {
-            for tx in 0..tile_grid.width {
-                let Some((tileset_path, col, row)) = tile_grid.tile_at(tx, ty) else {
+        // Only draw tiles inside the visible 320x180 window (world space),
+        // translated into the grid's local tile range via its world origin.
+        let min_tx = (((self.camera.x - tile_grid.origin_x) / 8.0).floor() as i32) - 1;
+        let max_tx =
+            (((self.camera.x + WINDOW_WIDTH as f32 - tile_grid.origin_x) / 8.0).ceil() as i32) + 1;
+        let min_ty = (((self.camera.y - tile_grid.origin_y) / 8.0).floor() as i32) - 1;
+        let max_ty =
+            (((self.camera.y + WINDOW_HEIGHT as f32 - tile_grid.origin_y) / 8.0).ceil() as i32) + 1;
+        let min_tx = min_tx.max(0).min(tile_grid.width as i32);
+        let max_tx = max_tx.max(0).min(tile_grid.width as i32);
+        let min_ty = min_ty.max(0).min(tile_grid.height as i32);
+        let max_ty = max_ty.max(0).min(tile_grid.height as i32);
+        let mut drawn = 0usize;
+        let mut missing = 0usize;
+        for ty in min_ty..max_ty {
+            for tx in min_tx..max_tx {
+                let Some((tileset_path, col, row)) = tile_grid.tile_at(tx as usize, ty as usize)
+                else {
                     continue;
                 };
-                let x = (tx as f32 * 8.0 - self.camera.x).round();
-                let y = (ty as f32 * 8.0 - self.camera.y).round();
+                let x = (tx as f32 * 8.0 + tile_grid.origin_x - self.camera.x).round();
+                let y = (ty as f32 * 8.0 + tile_grid.origin_y - self.camera.y).round();
 
                 // The XML `path` is relative to "tilesets/", matching the
                 // atlas frame id (e.g. "tilesets/dirt").
@@ -279,12 +295,26 @@ impl Renderer {
                     let _ = self
                         .canvas
                         .copy_ex(texture, src, dst, 0.0, None, false, false);
+                    drawn += 1;
                 } else {
                     // Fallback: debug color for missing tilesets.
                     self.canvas.set_draw_color(fallback_color);
                     let _ = self.canvas.fill_rect(FRect::new(x, y, 8.0, 8.0));
+                    drawn += 1;
+                    missing += 1;
                 }
             }
+        }
+        if env::var_os("RULESTE_TRACE").is_some() {
+            eprintln!(
+                "RULESTE_TRACE draw_solids: origin=({},{}) camera=({:.1},{:.1}) visible=[{min_tx}..{max_tx},{min_ty}..{max_ty}] grid={}x{} drawn={drawn} missing_atlas={missing}",
+                tile_grid.origin_x,
+                tile_grid.origin_y,
+                self.camera.x,
+                self.camera.y,
+                tile_grid.width,
+                tile_grid.height
+            );
         }
     }
 

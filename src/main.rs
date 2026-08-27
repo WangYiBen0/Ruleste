@@ -10,12 +10,46 @@ use ruleste::engine::level::Level;
 use ruleste::engine::sprites::SpriteAnimator;
 use ruleste::hotload::wasm_host::WasmHost;
 use ruleste::interface::renderer::Renderer;
-use ruleste_plugin_api::types::Vec2;
+use ruleste_plugins_api::map::{MapAttr, MapData};
+use ruleste_plugins_api::types::Vec2;
+
+// Celeste stores each entity's spawn `x`/`y` (and nodes) relative to its room's
+// top-left corner. The engine keeps every room in its own *local* coordinate
+// space: the active room's solid/background grids, the camera bounds and all
+// entity positions are local to that room. Room switches simply swap which
+// room is active, so no world-origin shifting of entity spawns is needed.
+// `pp` (the player position used for room transitions) is converted to world
+// space only for the rectangle-containment test against room world rects.
 
 /// Parses a `--plugin-path=<dir>` style option out of the raw argument list,
 /// returning the remaining positional args and the plugin dir (defaulting to
 /// the `plugins/` folder next to the executable). Keeps the game independent
 /// of the cargo `target/` layout.
+/// Celeste rooms are laid out in world space, each anchored at its own origin
+/// `(x, y)`. Entity spawn data stores *local* coordinates (relative to the
+/// room's top-left), so before handing a spawn to a plugin we must translate
+/// both the `x`/`y` position and every `node` by the room origin. The plugin
+/// then operates entirely in world space, which matches the composite collision
+/// grid (`Level.solids`) and the camera. Nodes round-trip through
+/// `MapData::to_bytes`/`from_bytes`, so offsetting them here is lossless.
+fn offset_spawn(d: &MapData, ox: f32, oy: f32) -> Vec<u8> {
+    let mut d = d.clone();
+    let x = d.get_float("x", 0.0) + ox;
+    let y = d.get_float("y", 0.0) + oy;
+    for (k, v) in d.attrs.iter_mut() {
+        if k == "x" {
+            *v = MapAttr::Float(x);
+        } else if k == "y" {
+            *v = MapAttr::Float(y);
+        }
+    }
+    for n in d.nodes.iter_mut() {
+        n.x += ox;
+        n.y += oy;
+    }
+    d.to_bytes()
+}
+
 fn split_plugin_path(raw: Vec<String>) -> (Vec<String>, String) {
     let mut plugin_dir = None;
     let mut positional: Vec<String> = Vec::with_capacity(raw.len());
@@ -37,6 +71,27 @@ fn default_plugin_dir() -> String {
         .and_then(|exe| exe.parent().map(|p| p.join("plugins")))
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "plugins".to_string())
+}
+
+/// Squared distance from a world point to a room rectangle (0 when inside).
+/// Used to pick the nearest room when the player exits the current one into a
+/// gap between room rectangles.
+fn room_rect_dist2(r: &ruleste::engine::level::Room, p: Vec2) -> f32 {
+    let dx = if p.x < r.x {
+        r.x - p.x
+    } else if p.x > r.x + r.width {
+        p.x - (r.x + r.width)
+    } else {
+        0.0
+    };
+    let dy = if p.y < r.y {
+        r.y - p.y
+    } else if p.y > r.y + r.height {
+        p.y - (r.y + r.height)
+    } else {
+        0.0
+    };
+    dx * dx + dy * dy
 }
 
 fn main() -> anyhow::Result<()> {
@@ -106,21 +161,20 @@ fn main() -> anyhow::Result<()> {
         .unwrap_or(Path::new("."))
         .join("BackgroundTiles.xml");
     let bg_autotiler = Autotiler::load(&bg_autotiler_path)?;
-    let mut tile_grid = autotiler.generate(&level.room().solids);
-    let mut bg_tile_grid = bg_autotiler.generate(&level.room().bg);
+    let tile_grid = autotiler.generate(&level.solids);
+    let bg_tile_grid = bg_autotiler.generate(&level.bg);
     {
         let solid_tiles = level
-            .room()
             .solids
             .size()
             .0
-            .checked_mul(level.room().solids.size().1)
+            .checked_mul(level.solids.size().1)
             .unwrap_or(0);
         let mapped = tile_grid.tileset.iter().filter(|t| !t.is_empty()).count();
         println!(
             "autotiler: {}x{} grid, {} solid tiles, {} tiles mapped to textures",
-            level.room().solids.size().0,
-            level.room().solids.size().1,
+            level.solids.size().0,
+            level.solids.size().1,
             solid_tiles,
             mapped
         );
@@ -169,85 +223,110 @@ fn main() -> anyhow::Result<()> {
 
     let world = ruleste::engine::ecs::World::new();
     let input = Input::default();
-    let solids = level.room().solids.clone();
+    let solids = level.solids.clone();
 
     println!("Initializing WasmHost from plugin dir: {plugin_dir}");
     let mut wasm_host = WasmHost::new(world, input, solids, Path::new(&plugin_dir))?;
     wasm_host.set_autotiler(autotiler.clone());
     // Instantiate only the plugins whose entity types this level actually
-    // contains; unrelated plugins stay unloaded (and uninstantiated).
+    // contains; unrelated plugins stay unloaded (and uninstantiated). We load the
+    // whole map's entity types up front (lazy at map entry), not per room, so a
+    // room switch never reloads plugins or re-spawns entities.
     let needed_types: std::collections::HashSet<String> = level
-        .room()
-        .entities
+        .rooms
         .iter()
-        .chain(&level.room().decorations)
+        .flat_map(|r| r.entities.iter().chain(&r.decorations))
         .map(|e| e.name.clone())
         .collect();
     wasm_host.load_plugins_for(&needed_types)?;
 
-    // Celeste stores every `player` entity as a spawn marker (not a real
-    // entity) and creates the single Player at the spawn point closest to the
-    // level's bottom-left corner (`Level.DefaultSpawnPoint`). Pick that spawn
-    // point here so the initial player position is the intended start, not the
-    // first marker in file order (which may be a room-transition respawn).
-    let mut all_spawns = Vec::new();
-    let mut best_player: Option<&ruleste::engine::level::EntitySpawn> = None;
-    for e in &level.room().entities {
+    // The map is the unit of lazy loading: when a map is entered we instantiate
+    // only the plugins its entities need (once). But within a map, only the
+    // *current room's* entities are alive — not the whole map — matching
+    // Celeste. The `player` is the single Madeline, created exactly once and
+    // persisted across room switches; every room's `player` markers are just her
+    // respawn points, not separate entities (spawning one per room would create
+    // duplicate Madelines on every switch).
+    let start_room = level.room();
+    let start_x = start_room.x;
+    let start_y = start_room.y + start_room.height;
+    let mut best_player: Option<(f32, f32, Vec<u8>)> = None;
+    for e in start_room.entities.iter().chain(&start_room.decorations) {
         if e.name == "player" {
-            let x = e.data.get_float("x", 0.0);
-            let y = e.data.get_float("y", 0.0);
-            // Distance squared to (0, height): the level's bottom-left corner.
-            let dx = x;
-            let dy = y - level.room().height;
+            let wx = e.data.get_float("x", 0.0) + start_room.x;
+            let wy = e.data.get_float("y", 0.0) + start_room.y;
+            let dx = wx - start_x;
+            let dy = wy - start_y;
             let dist = dx * dx + dy * dy;
-            let is_better = match &best_player {
+            let better = match &best_player {
                 None => true,
-                Some(best) => {
-                    let bx = best.data.get_float("x", 0.0);
-                    let by = best.data.get_float("y", 0.0);
-                    let bdx = bx;
-                    let bdy = by - level.room().height;
-                    let bdist = bdx * bdx + bdy * bdy;
-                    dist < bdist
+                Some((bwx, bwy, _)) => {
+                    let bdx = *bwx - start_x;
+                    let bdy = *bwy - start_y;
+                    dist < bdx * bdx + bdy * bdy
                 }
             };
-            if is_better {
-                best_player = Some(e);
+            if better {
+                best_player = Some((wx, wy, offset_spawn(&e.data, start_room.x, start_room.y)));
             }
-            continue;
         }
-        all_spawns.push((e.name.clone(), e.data.to_bytes()));
     }
-    if let Some(best) = best_player {
-        all_spawns.push((best.name.clone(), best.data.to_bytes()));
-    }
-    for e in &level.room().decorations {
-        all_spawns.push((e.name.clone(), e.data.to_bytes()));
-    }
+    let player_spawn = match best_player {
+        Some((_, _, bytes)) => ("player".to_string(), bytes),
+        None => ("player".to_string(), Vec::new()),
+    };
+    let start_room_spawns: Vec<(String, Vec<u8>)> = start_room
+        .entities
+        .iter()
+        .chain(&start_room.decorations)
+        .filter(|e| e.name != "player")
+        .map(|e| (e.name.clone(), offset_spawn(&e.data, start_room.x, start_room.y)))
+        .collect();
 
-    wasm_host.set_respawn_entities(&all_spawns);
+    // Create the single Madeline once, then activate the start room's entities.
+    wasm_host.spawn_player_once(player_spawn.clone());
+    wasm_host.enter_room(&start_room_spawns, player_spawn.clone());
+
+    // Warn (once per type) about any entity type across the map with no plugin.
+    let all_types: std::collections::HashSet<String> = level
+        .rooms
+        .iter()
+        .flat_map(|r| r.entities.iter().chain(&r.decorations))
+        .map(|e| e.name.clone())
+        .collect();
+    for ty in &all_types {
+        if wasm_host.plugin_for_type(ty).is_none() {
+            eprintln!("ruleste: warning: no plugin handles entity type {ty:?}");
+        }
+    }
 
     println!(
-        "Spawning {} entities and {} decorations...",
-        level.room().entities.len(),
-        level.room().decorations.len()
+        "Spawning start room: {} entities and {} decorations (+ 1 player)...",
+        start_room.entities.len(),
+        start_room.decorations.len()
     );
-    let mut unhandled: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-    for (name, spawn) in &all_spawns {
-        match wasm_host.spawn_entity(name, spawn.clone()) {
-            Ok(Some(_)) => {}
-            Ok(None) => {
-                *unhandled.entry(name.as_str()).or_default() += 1;
-            }
-            Err(e) => eprintln!("Failed to spawn entity {name:?}: {e}"),
-        }
-    }
-    for (name, count) in &unhandled {
-        eprintln!("ruleste: warning: no plugin handles entity type {name:?} ({count} skipped)");
-    }
 
     let mut sprite_animator = SpriteAnimator::new(&atlas, &sprite_bank);
     let mut camera = Camera::new();
+    // Position the camera on the start room. Entities live in world space (spawn
+    // data is offset by the room origin), so the camera clamps to the room's world
+    // bounds [x, x+width] / [y, y+height].
+    {
+        let start_room = level.room();
+        let player_world = wasm_host
+            .game_state()
+            .world
+            .iter()
+            .find(|e| e.entity_type == "player")
+            .map(|e| e.position)
+            .unwrap_or(Vec2::ZERO);
+        camera.position = camera.target_at(
+            player_world,
+            start_room.camera_offset,
+            Vec2::new(start_room.x, start_room.y),
+            Vec2::new(start_room.width, start_room.height),
+        );
+    }
 
     println!("Entering main game loop (ESC to quit)...");
     let target_fps = 60.0;
@@ -283,7 +362,12 @@ fn main() -> anyhow::Result<()> {
         // Update Wasm plugins (physics, player movement, entity logic)
         wasm_host.update(dt);
 
-        // Room transition logic
+        // Room transition: Celeste rooms overlap and are not edge-tiled, so the
+        // active room is simply whichever room rectangle contains the player.
+        // When the player leaves the current room and enters another, we switch
+        // to that room (reloading its entities) and snap the camera; the player
+        // keeps its current world position rather than being warped to a spawn
+        // marker.
         let player_pos_opt = wasm_host
             .game_state()
             .world
@@ -292,62 +376,79 @@ fn main() -> anyhow::Result<()> {
             .map(|e| e.position);
 
         if let Some(pp) = player_pos_opt {
-            let room = level.room();
-            let mut target_room = None;
-            let mut new_player_pos = pp;
-
-            if pp.x < room.x {
-                if let Some(idx) = level.rooms.iter().position(|r| {
-                    (r.x + r.width - room.x).abs() < 2.0 && pp.y >= r.y && pp.y < r.y + r.height
-                }) {
-                    target_room = Some(idx);
-                    new_player_pos.x = level.rooms[idx].x + level.rooms[idx].width - 12.0;
-                }
-            } else if pp.x >= room.x + room.width {
-                if let Some(idx) = level.rooms.iter().position(|r| {
-                    (r.x - (room.x + room.width)).abs() < 2.0
+            // `pp` is the player position in world space (entities are offset by
+            // the room origin at spawn, matching the composite collision grid).
+            let cur = level.current_room;
+            let cur_room = &level.rooms[cur];
+            let in_cur = pp.x >= cur_room.x
+                && pp.x < cur_room.x + cur_room.width
+                && pp.y >= cur_room.y
+                && pp.y < cur_room.y + cur_room.height;
+            if !in_cur {
+                // Prefer the room whose rectangle actually contains the player's
+                // world point (an exact doorway). Celeste rooms tile contiguously
+                // in the source data, but a few converted levels leave small gaps
+                // between room rects, so fall back to the *nearest* room when the
+                // exit point lands in a gap — otherwise the player would walk out
+                // of a room and never switch.
+                let exact = level.rooms.iter().position(|r| {
+                    pp.x >= r.x
+                        && pp.x < r.x + r.width
                         && pp.y >= r.y
                         && pp.y < r.y + r.height
-                }) {
-                    target_room = Some(idx);
-                    new_player_pos.x = level.rooms[idx].x + 12.0;
+                });
+                // Fallback only for *near* rooms (a real doorway leaves at most a
+                // pixel-sized gap between contiguous room rects). This keeps pit
+                // falls — where the player is far below every room — switching to
+                // a distant room instead of respawning.
+                const FALLBACK_MAX_DIST2: f32 = 16.0 * 16.0;
+                let target = exact.or_else(|| {
+                    level
+                        .rooms
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| *i != cur)
+                        .map(|(i, r)| (i, room_rect_dist2(r, pp)))
+                        .filter(|(_, d)| *d < FALLBACK_MAX_DIST2)
+                        .min_by(|(_, a), (_, b)| a.total_cmp(b))
+                        .map(|(i, _)| i)
+                });
+                if let Some(idx) = target {
+                    level.current_room = idx;
+                    let new_room = level.room();
+                    // Only the new room's entities become active (the map is the lazy
+                    // unit, but within it Celeste keeps just the current room alive —
+                    // not the whole map). `enter_room` despawns the previous room's
+                    // entities and spawns the new room's, leaving the single Madeline
+                    // untouched, so no duplicate player is created. Her respawn point
+                    // is updated to this room's player marker.
+                    let new_room_spawns: Vec<(String, Vec<u8>)> = new_room
+                        .entities
+                        .iter()
+                        .chain(&new_room.decorations)
+                        .filter(|e| e.name != "player")
+                        .map(|e| {
+                            (e.name.clone(), offset_spawn(&e.data, new_room.x, new_room.y))
+                        })
+                        .collect();
+                    let new_player = new_room
+                        .entities
+                        .iter()
+                        .chain(&new_room.decorations)
+                        .filter(|e| e.name == "player")
+                        .map(|e| offset_spawn(&e.data, new_room.x, new_room.y))
+                        .next()
+                        .unwrap_or_default();
+                    wasm_host.enter_room(&new_room_spawns, ("player".to_string(), new_player));
+                    // The player keeps its continuous world position as it walks
+                    // through the doorway; we only snap the camera to the new room.
+                    camera.position = camera.target_at(
+                        pp,
+                        new_room.camera_offset,
+                        Vec2::new(new_room.x, new_room.y),
+                        Vec2::new(new_room.width, new_room.height),
+                    );
                 }
-            } else if pp.y < room.y {
-                if let Some(idx) = level.rooms.iter().position(|r| {
-                    (r.y + r.height - room.y).abs() < 2.0 && pp.x >= r.x && pp.x < r.x + r.width
-                }) {
-                    target_room = Some(idx);
-                    new_player_pos.y = level.rooms[idx].y + level.rooms[idx].height - 12.0;
-                }
-            } else if pp.y >= room.y + room.height {
-                if let Some(idx) = level.rooms.iter().position(|r| {
-                    (r.y - (room.y + room.height)).abs() < 2.0
-                        && pp.x >= r.x
-                        && pp.x < r.x + r.width
-                }) {
-                    target_room = Some(idx);
-                    new_player_pos.y = level.rooms[idx].y + 12.0;
-                }
-            }
-
-            if let Some(idx) = target_room {
-                level.current_room = idx;
-                let new_room = level.room();
-                tile_grid = autotiler.generate(&new_room.solids);
-                bg_tile_grid = bg_autotiler.generate(&new_room.bg);
-
-                let mut spawns = Vec::new();
-                let mut needed = std::collections::HashSet::new();
-                for e in &new_room.entities {
-                    needed.insert(e.name.clone());
-                    spawns.push((e.name.clone(), e.data.to_bytes()));
-                }
-                for e in &new_room.decorations {
-                    needed.insert(e.name.clone());
-                    spawns.push((e.name.clone(), e.data.to_bytes()));
-                }
-                let _ = wasm_host.load_plugins_for(&needed);
-                wasm_host.switch_room(new_room.solids.clone(), &spawns, new_player_pos);
             }
         }
 
@@ -376,6 +477,7 @@ fn main() -> anyhow::Result<()> {
             camera.target_at(
                 player_pos,
                 room.camera_offset,
+                Vec2::new(room.x, room.y),
                 Vec2::new(room.width, room.height),
             ),
         );

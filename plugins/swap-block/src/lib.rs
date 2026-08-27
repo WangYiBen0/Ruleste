@@ -8,15 +8,15 @@
 //! `maxForwardSpeed = 360 / distance`, `maxBackwardSpeed = 40%` of that. The
 //! block moves through the actor API so riders come along.
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId, Vec2};
 
-ruleste_plugin_api::ruleste_meta!("swap-block");
-ruleste_plugin_api::ruleste_entity_types!("swapBlock");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("swap-block");
+ruleste_plugins_api::ruleste_entity_types!("swapBlock");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// `ReturnTime`: how long the block rests at the far end before returning.
 const RETURN_TIME: f32 = 0.8;
@@ -95,7 +95,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     with_state(id, |st| {
         // `DashListener.OnDash` fires on every dash: start swapping.
         for (_, kind, _) in host::drain_events() {
-            if kind == ruleste_plugin_api::plugin::event::PLAYER_DASH {
+            if kind == ruleste_plugins_api::plugin::event::PLAYER_DASH {
                 st.target = 1.0;
                 st.return_timer = RETURN_TIME;
                 st.speed = if st.lerp >= 0.2 {

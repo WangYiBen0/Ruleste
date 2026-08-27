@@ -7,15 +7,15 @@
 //! for the session when `oneUse`). Animated with the raw atlas frames since the
 //! original builds its sprite directly from the atlas, not a SpriteBank.
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
-ruleste_plugin_api::ruleste_meta!("refill");
-ruleste_plugin_api::ruleste_entity_types!("refill");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("refill");
+ruleste_plugins_api::ruleste_entity_types!("refill");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 const HIT: f32 = 16.0;
 const HIT_OX: f32 = -8.0;

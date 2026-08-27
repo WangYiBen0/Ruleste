@@ -5,9 +5,9 @@
 //! backend yet, so the plugin only remembers the event name for the future
 //! SDL audio integration and does nothing else.
 
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
 #[derive(Debug, Default)]
 struct SoundState {

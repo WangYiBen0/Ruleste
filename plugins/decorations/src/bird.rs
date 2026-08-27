@@ -6,10 +6,10 @@
 //! procedural body keeps a slow side-to-side idle so the chapter-opening
 //! moments feel alive. Dialogue is a later host feature.
 
-use ruleste_plugin_api::host::draw_rect;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugins_api::host::draw_rect;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId};
 
 const BODY: Color = Color {
     r: 0x2a,

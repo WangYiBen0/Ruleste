@@ -7,15 +7,15 @@
 //! respawns after ~1s. Launching happens on the player side (via an `EV_BOOST`
 //! event) so it can use the player's own dash physics.
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
-ruleste_plugin_api::ruleste_meta!("booster");
-ruleste_plugin_api::ruleste_entity_types!("booster");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("booster");
+ruleste_plugins_api::ruleste_entity_types!("booster");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 const HIT: f32 = 20.0;
 const HIT_OX: f32 = -10.0;

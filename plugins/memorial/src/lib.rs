@@ -8,15 +8,15 @@
 //! procedural stone. The sprite frames are looked up when available and fall
 //! back to the drawn stone when the atlas lacks them.
 
-use ruleste_plugin_api::host::{self, draw_image, draw_rect, entities_by_type};
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugins_api::host::{self, draw_image, draw_rect, entities_by_type};
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId};
 
-ruleste_plugin_api::ruleste_meta!("memorial");
-ruleste_plugin_api::ruleste_entity_types!("memorial");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("memorial");
+ruleste_plugins_api::ruleste_entity_types!("memorial");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 const STONE: Color = Color {
     r: 0x9c,

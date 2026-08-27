@@ -7,15 +7,15 @@
 //! character as a simple silhouette — palette picked by the `npc` id — with a
 //! tiny idle bob.
 
-use ruleste_plugin_api::host::draw_rect;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugins_api::host::draw_rect;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId};
 
-ruleste_plugin_api::ruleste_meta!("npc");
-ruleste_plugin_api::ruleste_entity_types!("npc");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("npc");
+ruleste_plugins_api::ruleste_entity_types!("npc");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 const SKIN: Color = Color {
     r: 0x9a,

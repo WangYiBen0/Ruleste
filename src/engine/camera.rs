@@ -5,7 +5,7 @@
 //! 320×180 viewport plus the level's camera offset, clamped to the level
 //! bounds, and the camera glides toward it with exponential smoothing.
 
-use ruleste_plugin_api::types::Vec2;
+use ruleste_plugins_api::types::Vec2;
 
 /// Internal rendering resolution in world units.
 pub const VIEW_WIDTH: f32 = 320.0;
@@ -31,15 +31,23 @@ impl Camera {
     }
 
     /// The position the camera wants to be at for `player` to stay centered,
-    /// clamped so the view never leaves the level bounds.
+    /// clamped so the view never leaves the room's world bounds.
     ///
     /// Matches `Player.CameraTarget`: `player - (160, 90) + camera_offset`,
-    /// clamped to `[0, bounds - 320×180]`.
-    pub fn target_at(&self, player: Vec2, camera_offset: Vec2, level: Vec2) -> Vec2 {
+    /// clamped to `[room_origin, room_origin + room_size - 320×180]`.
+    pub fn target_at(
+        &self,
+        player: Vec2,
+        camera_offset: Vec2,
+        room_origin: Vec2,
+        room_size: Vec2,
+    ) -> Vec2 {
         let mut tx = player.x - VIEW_WIDTH * 0.5 + camera_offset.x;
         let mut ty = player.y - VIEW_HEIGHT * 0.5 + camera_offset.y;
-        tx = tx.clamp(0.0, (level.x - VIEW_WIDTH).max(0.0));
-        ty = ty.clamp(0.0, (level.y - VIEW_HEIGHT).max(0.0));
+        let max_x = (room_origin.x + room_size.x - VIEW_WIDTH).max(room_origin.x);
+        let max_y = (room_origin.y + room_size.y - VIEW_HEIGHT).max(room_origin.y);
+        tx = tx.clamp(room_origin.x, max_x);
+        ty = ty.clamp(room_origin.y, max_y);
         Vec2::new(tx, ty)
     }
 
@@ -58,9 +66,14 @@ mod tests {
 
     #[test]
     fn target_centers_player_in_small_level() {
-        // 320x184 room: camera is pinned to the clamp range [0,0]x[0,4].
+        // 320x184 room at the origin: camera is pinned to [0,0]x[0,4].
         let cam = Camera::new();
-        let t = cam.target_at(Vec2::new(200.0, 100.0), Vec2::ZERO, Vec2::new(320.0, 184.0));
+        let t = cam.target_at(
+            Vec2::new(200.0, 100.0),
+            Vec2::ZERO,
+            Vec2::ZERO,
+            Vec2::new(320.0, 184.0),
+        );
         assert_eq!(t.x, 0.0);
         assert_eq!(t.y, 4.0);
     }
@@ -72,6 +85,7 @@ mod tests {
         let t = cam.target_at(
             Vec2::new(400.0, 92.0),
             Vec2::new(48.0, 0.0),
+            Vec2::ZERO,
             Vec2::new(640.0, 184.0),
         );
         assert!((t.x - 288.0).abs() < 1e-4);
@@ -84,10 +98,26 @@ mod tests {
         let t = cam.target_at(
             Vec2::new(600.0, 170.0),
             Vec2::new(48.0, 0.0),
+            Vec2::ZERO,
             Vec2::new(640.0, 184.0),
         );
         assert_eq!(t.x, 320.0);
         assert_eq!(t.y, 4.0);
+    }
+
+    #[test]
+    fn target_follows_into_offset_room() {
+        // Room at world (320, 0): the camera must clamp to the room's world
+        // bounds, not to [0, ...], so it actually moves with the player.
+        let cam = Camera::new();
+        let t = cam.target_at(
+            Vec2::new(480.0, 92.0),
+            Vec2::ZERO,
+            Vec2::new(320.0, 0.0),
+            Vec2::new(320.0, 184.0),
+        );
+        assert_eq!(t.x, 320.0);
+        assert_eq!(t.y, 2.0);
     }
 
     #[test]

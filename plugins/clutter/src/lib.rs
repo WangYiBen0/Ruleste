@@ -7,15 +7,15 @@
 //! debris on top is not generated yet; the block simply appears as its base
 //! silhouette.
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId};
 
-ruleste_plugin_api::ruleste_meta!("clutter");
-ruleste_plugin_api::ruleste_entity_types!("redBlocks", "yellowBlocks", "greenBlocks");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("clutter");
+ruleste_plugins_api::ruleste_entity_types!("redBlocks", "yellowBlocks", "greenBlocks");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// `enabledColor` from the original: black at 70% alpha.
 const ENABLED: Color = Color::new(0, 0, 0, 178);

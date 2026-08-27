@@ -30,9 +30,28 @@ pub struct SolidGrid {
     tile_ids: Vec<Option<char>>,
     /// One-way platforms: solid from above, passable from below/through.
     jumpthru: Vec<JumpThru>,
+    /// World-space position of tile `(0, 0)`, in pixels. Collision queries use
+    /// world coordinates, so tile indices are translated by this origin before
+    /// indexing the local grid. A composited level-wide grid carries the
+    /// level's minimum corner; a per-room grid uses `(0, 0)`.
+    pub origin_x: f32,
+    pub origin_y: f32,
 }
 
 impl SolidGrid {
+    /// An empty `width`×`height` grid anchored at world `(0, 0)`.
+    pub fn empty(width: usize, height: usize) -> SolidGrid {
+        SolidGrid {
+            width,
+            height,
+            solid: vec![false; width * height],
+            tile_ids: vec![None; width * height],
+            jumpthru: Vec::new(),
+            origin_x: 0.0,
+            origin_y: 0.0,
+        }
+    }
+
     pub fn from_rows(rows: &[&str]) -> SolidGrid {
         let height = rows.len();
         let width = rows.iter().map(|r| r.len()).max().unwrap_or(0);
@@ -53,6 +72,30 @@ impl SolidGrid {
             solid,
             tile_ids,
             jumpthru: Vec::new(),
+            origin_x: 0.0,
+            origin_y: 0.0,
+        }
+    }
+
+    /// Copies `src`'s solid tiles and tile ids into this grid at local offset
+    /// `(dx, dy)`, and appends `src`'s jump-thrus (which are already stored in
+    /// world coordinates). Used to composite per-room grids into one level-wide
+    /// grid.
+    pub fn blit(&mut self, src: &SolidGrid, dx: i32, dy: i32) {
+        for ty in 0..src.height as i32 {
+            for tx in 0..src.width as i32 {
+                let (ex, ey) = (dx + tx, dy + ty);
+                if ex < 0 || ey < 0 || ex >= self.width as i32 || ey >= self.height as i32 {
+                    continue;
+                }
+                let sidx = ty as usize * src.width + tx as usize;
+                let didx = ey as usize * self.width + ex as usize;
+                self.solid[didx] = src.solid[sidx];
+                self.tile_ids[didx] = src.tile_ids[sidx];
+            }
+        }
+        for jt in &src.jumpthru {
+            self.jumpthru.push(jt.clone());
         }
     }
 
@@ -207,14 +250,28 @@ impl SolidGrid {
     }
 
     pub fn solid_at(&self, tx: i32, ty: i32) -> bool {
-        if tx < 0 || ty < 0 || tx >= self.width as i32 || ty >= self.height as i32 {
+        let ltx = tx - (self.origin_x / TILE).round() as i32;
+        let lty = ty - (self.origin_y / TILE).round() as i32;
+        if ltx < 0 || lty < 0 || ltx >= self.width as i32 || lty >= self.height as i32 {
             return true;
         }
-        self.solid[ty as usize * self.width + tx as usize]
+        self.solid[lty as usize * self.width + ltx as usize]
     }
 
     /// Returns the tile character at `(tx, ty)`, or `None` if empty / out of bounds.
     pub fn tile_id_at(&self, tx: i32, ty: i32) -> Option<char> {
+        let ltx = tx - (self.origin_x / TILE).round() as i32;
+        let lty = ty - (self.origin_y / TILE).round() as i32;
+        if ltx < 0 || lty < 0 || ltx >= self.width as i32 || lty >= self.height as i32 {
+            return None;
+        }
+        self.tile_ids[lty as usize * self.width + ltx as usize]
+    }
+
+    /// Like [`SolidGrid::tile_id_at`] but `tx`/`ty` are already local grid
+    /// indices (no world-origin translation). Used by the autotiler, which
+    /// operates purely on a grid's own tiles.
+    pub fn tile_id_at_local(&self, tx: i32, ty: i32) -> Option<char> {
         if tx < 0 || ty < 0 || tx >= self.width as i32 || ty >= self.height as i32 {
             return None;
         }
@@ -435,7 +492,7 @@ impl SolidGrid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ruleste_plugin_api::types::Vec2;
+    use ruleste_plugins_api::types::Vec2;
 
     fn grid_with_jumpthru() -> SolidGrid {
         // 16x20 empty tile grid (128x160 px), platform top at y=120.

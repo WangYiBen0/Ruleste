@@ -7,15 +7,15 @@
 //! The star-boost itself is powered by the separate `StarJumpController`; the
 //! block only sinks. It is never consumed.
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId};
 
-ruleste_plugin_api::ruleste_meta!("star-jump-block");
-ruleste_plugin_api::ruleste_entity_types!("starJumpBlock");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("star-jump-block");
+ruleste_plugins_api::ruleste_entity_types!("starJumpBlock");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// How far a `sinks` block dips when ridden.
 const SINK_DISTANCE: f32 = 12.0;

@@ -10,4 +10,4 @@ license = "MIT"
 crate-type = ["cdylib"]
 
 [dependencies]
-ruleste-plugin-api = { path = "../../crates/ruleste-plugin-api", features = ["plugin"] }
+ruleste-plugins-api = { path = "../../crates/ruleste-plugins-api", features = ["plugin"] }

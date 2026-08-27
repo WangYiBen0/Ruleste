@@ -12,15 +12,15 @@
 //! out of respawns); the rest disappear until the next death respawn
 //! (`host_remove`).
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId};
 
-ruleste_plugin_api::ruleste_meta!("dash-block");
-ruleste_plugin_api::ruleste_entity_types!("dashBlock");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("dash-block");
+ruleste_plugins_api::ruleste_entity_types!("dashBlock");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// `Player.StateMachine.State` values a `canDash=false` block still breaks for
 /// (`OnDashed`: `!canDash && state != 5 && state != 10 → NormalCollision`).
@@ -87,7 +87,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         // `OnDashed`: the player plugin reports a dash against this face; the
         // block breaks when the `canDash` gate passes.
         for (_, kind, data) in host::drain_events() {
-            if kind == ruleste_plugin_api::plugin::event::DASH_BLOCK {
+            if kind == ruleste_plugins_api::plugin::event::DASH_BLOCK {
                 let state_at_dash = data.get(8).copied().unwrap_or(0) as u32;
                 if dash_can_break(st, state_at_dash) {
                     st.broken = true;

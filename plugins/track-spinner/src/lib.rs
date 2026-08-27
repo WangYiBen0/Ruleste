@@ -7,15 +7,15 @@
 //! `PauseTimes[speed]` at each end. `startCenter` begins the trip at 50%. Speed
 //! key: Slow/Normal/Fast (default Normal). Contact kills the player.
 
-use ruleste_plugin_api::host::{self, die, draw_image, entities_by_type};
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{EntityId, Vec2};
+use ruleste_plugins_api::host::{self, die, draw_image, entities_by_type};
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{EntityId, Vec2};
 
-ruleste_plugin_api::ruleste_meta!("track-spinner");
-ruleste_plugin_api::ruleste_entity_types!("trackSpinner");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("track-spinner");
+ruleste_plugins_api::ruleste_entity_types!("trackSpinner");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// `TrackSpinner.PauseTimes` — seconds paused at each end per speed tier.
 const PAUSE_TIMES: [f32; 3] = [0.3, 0.2, 0.6];

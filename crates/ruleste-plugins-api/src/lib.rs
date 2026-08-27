@@ -58,4 +58,13 @@ pub mod event {
     pub const DASH_BLOCK: u32 = 12;
     // Player permanently gains Dream Dash ability. No payload.
     pub const DREAM_DASH_GRANTED: u32 = 13;
+    // `CASSETTE` toggles cassette-block solidity: emitted by a collected
+    // `cassette` and consumed by `cassetteBlock` plugins. No payload.
+    pub const CASSETTE: u32 = 14;
+    // `SWITCH` opens linked `switchGate` blocks: emitted by a triggered
+    // `touchSwitch` and consumed by `switchGate` plugins. No payload.
+    pub const SWITCH: u32 = 15;
+    // `KEY` opens linked `lockBlock` solids: emitted by a collected `key` and
+    // consumed by `lockBlock` plugins. No payload.
+    pub const KEY: u32 = 16;
 }

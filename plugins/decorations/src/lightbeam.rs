@@ -5,10 +5,10 @@
 //! data's `rotation`. The beam length gently shimmers; player-occlusion alpha
 //! fading is left for a later pass (the draw API has no tint yet).
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId, Vec2};
 
 #[derive(Clone, Copy, Debug)]
 struct Beam {

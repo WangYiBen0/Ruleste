@@ -6,7 +6,7 @@
 //! factor relative to the camera, optional speed drift and color/alpha, and
 //! loops either horizontally and/or vertically.
 
-use ruleste_plugin_api::types::Vec2;
+use ruleste_plugins_api::types::Vec2;
 
 use crate::data::binary_packer::Element;
 

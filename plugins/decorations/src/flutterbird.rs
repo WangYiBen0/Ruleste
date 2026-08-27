@@ -7,10 +7,10 @@
 //! (`objects/birds/flutBirdXX`) are used when present, falling back to a
 //! drawn wing pair.
 
-use ruleste_plugin_api::host::draw_rect;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::host::draw_rect;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId, Vec2};
 
 /// Horizontal weave amplitude / period; vertical bob felt like the original's.
 const SWAY_AMP: f32 = 24.0;

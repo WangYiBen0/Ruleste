@@ -7,15 +7,15 @@
 //! deactivates again once their head passes 32px below its bottom. The hitbox
 //! is `width × 32`, sized by the map width. Overlap while active is lethal.
 
-use ruleste_plugin_api::host::{self, die, entities_by_type};
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::host::{self, die, entities_by_type};
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
-ruleste_plugin_api::ruleste_meta!("killbox");
-ruleste_plugin_api::ruleste_entity_types!("killbox");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("killbox");
+ruleste_plugins_api::ruleste_entity_types!("killbox");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// Killbox height is always 32 (`new Hitbox(data.Width, 32f)`).
 const BOX_HEIGHT: f32 = 32.0;

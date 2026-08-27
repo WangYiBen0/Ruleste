@@ -7,9 +7,9 @@
 //! anchor up-left by half the frame size via the hitbox offset; the host's
 //! renderer falls back to direct atlas frames when the SpriteBank has no entry.
 
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
 /// The lamp frame is 16x80 and hangs from its bottom-center.
 const FRAME_W: f32 = 16.0;

@@ -15,8 +15,8 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use anyhow::{Context, Result, anyhow};
-use ruleste_plugin_api::export;
-use ruleste_plugin_api::types::Color;
+use ruleste_plugins_api::export;
+use ruleste_plugins_api::types::Color;
 use wasmtime::{Caller, Engine, Extern, Instance, Linker, Memory, Module, Store, TypedFunc};
 
 use crate::engine::autotiler::{Autotiler, TileGrid};
@@ -159,6 +159,14 @@ pub struct WasmHost {
     pub plugin_dir: PathBuf,
     /// The level's spawn recipes, used to rebuild the room after a death.
     respawn_entities: Vec<(String, Vec<u8>)>,
+    /// The single Madeline's spawn recipe. The player is a persistent singleton:
+    /// it is created once and never re-spawned on room switches — only its
+    /// respawn point (the current room's player marker) is updated.
+    player_spawn: Option<(String, Vec<u8>)>,
+    /// Ids of the non-player entities belonging to the currently active room, so
+    /// they can be despawned when the player leaves (Celeste keeps only the
+    /// current room's entities alive, not the whole map).
+    room_entity_ids: Vec<u32>,
 }
 
 impl WasmHost {
@@ -181,30 +189,51 @@ impl WasmHost {
             plugins: Vec::new(),
             plugin_dir: plugin_dir.into(),
             respawn_entities: Vec::new(),
+            player_spawn: None,
+            room_entity_ids: Vec::new(),
         })
     }
 
-    /// Records the level's entities so the room can be rebuilt on death.
-    pub fn set_respawn_entities(&mut self, entities: &[(String, Vec<u8>)]) {
-        self.respawn_entities = entities.to_vec();
+    /// Creates the single Madeline exactly once (called at map entry) and
+    /// remembers her spawn recipe. Do not call this on room switches — the
+    /// player must persist across rooms.
+    pub fn spawn_player_once(&mut self, spawn: (String, Vec<u8>)) {
+        self.player_spawn = Some(spawn.clone());
+        if let Err(e) = self.spawn_entity(&spawn.0, spawn.1) {
+            eprintln!("ruleste: spawn player failed: {e}");
+        }
+        self.rebuild_respawn();
     }
 
-    /// Switches to a new room: updates solid grid, respawn entities, respawns
-    /// all entities, and teleports the player to the new position.
-    pub fn switch_room(
-        &mut self,
-        solids: SolidGrid,
-        spawns: &[(String, Vec<u8>)],
-        player_pos: ruleste_plugin_api::types::Vec2,
-    ) {
-        self.store.data_mut().solids = solids;
-        self.set_respawn_entities(spawns);
-        self.respawn();
-        for e in self.store.data_mut().world.iter_mut() {
-            if e.entity_type == "player" {
-                e.position = player_pos;
+    /// Activates a room's non-player entities: the previous room's entities are
+    /// despawned and the new room's are spawned (lazy, current-room-only — not
+    /// the whole map). The persistent player is left untouched; only its respawn
+    /// point is updated to `player_respawn` (the new room's player marker).
+    pub fn enter_room(&mut self, spawns: &[(String, Vec<u8>)], player_respawn: (String, Vec<u8>)) {
+        let ids = std::mem::take(&mut self.room_entity_ids);
+        for id in ids {
+            self.despawn(id);
+        }
+        self.player_spawn = Some(player_respawn);
+        for (ty, s) in spawns {
+            if let Ok(Some(id)) = self.spawn_entity(ty, s.clone()) {
+                self.room_entity_ids.push(id);
             }
         }
+        self.rebuild_respawn();
+    }
+
+    /// Rebuilds `respawn_entities` from the (single) player recipe plus the
+    /// active room's entities, so a death reconstructs the current room only.
+    fn rebuild_respawn(&mut self) {
+        let mut v = Vec::new();
+        if let Some(p) = &self.player_spawn {
+            v.push(p.clone());
+        }
+        v.extend(self.room_entity_ids.iter().filter_map(|id| {
+            self.store.data().world.get(*id).map(|e| (e.entity_type.clone(), e.spawn.clone()))
+        }));
+        self.respawn_entities = v;
     }
 
     /// Provides the foreground autotiler plugins use for `generate_box` tile
@@ -467,10 +496,20 @@ impl WasmHost {
                 .collect();
             for id in ids {
                 if let Some(e) = self.store.data_mut().world.get_mut(id) {
-                    e.position = ruleste_plugin_api::types::Vec2::new(x, y);
+                    e.position = ruleste_plugins_api::types::Vec2::new(x, y);
                 }
             }
         }
+        // Keep `room_entity_ids` in sync with the rebuilt world (everything that
+        // isn't the persistent player belongs to the active room).
+        self.room_entity_ids = self
+            .store
+            .data()
+            .world
+            .iter()
+            .filter(|e| e.entity_type != "player")
+            .map(|e| e.id)
+            .collect();
     }
 
     pub fn draw(&mut self) {
@@ -624,7 +663,7 @@ impl WasmHost {
             "host_position_set",
             |mut caller: Caller<'_, GameState>, id: u32, x: f32, y: f32| {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
-                    e.position = ruleste_plugin_api::types::Vec2::new(x, y);
+                    e.position = ruleste_plugins_api::types::Vec2::new(x, y);
                 }
             },
         )?;
@@ -642,7 +681,7 @@ impl WasmHost {
             "host_speed_set",
             |mut caller: Caller<'_, GameState>, id: u32, x: f32, y: f32| {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
-                    e.speed = ruleste_plugin_api::types::Vec2::new(x, y);
+                    e.speed = ruleste_plugins_api::types::Vec2::new(x, y);
                 }
             },
         )?;
@@ -651,8 +690,8 @@ impl WasmHost {
             "host_hitbox_set",
             |mut caller: Caller<'_, GameState>, id: u32, w: f32, h: f32, ox: f32, oy: f32| {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
-                    e.hitbox = ruleste_plugin_api::types::Vec2::new(w, h);
-                    e.hitbox_offset = ruleste_plugin_api::types::Vec2::new(ox, oy);
+                    e.hitbox = ruleste_plugins_api::types::Vec2::new(w, h);
+                    e.hitbox_offset = ruleste_plugins_api::types::Vec2::new(ox, oy);
                 }
             },
         )?;
@@ -1116,6 +1155,8 @@ impl WasmHost {
                                 tileset: vec![String::new(); tx * ty],
                                 col: vec![0; tx * ty],
                                 row: vec![0; tx * ty],
+                                origin_x: 0.0,
+                                origin_y: 0.0,
                             })
                     });
                 if grid.tileset[0].is_empty() {

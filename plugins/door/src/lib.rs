@@ -7,15 +7,15 @@
 //! driven by the host animator's `goto`, so the plugin only triggers `open`
 //! and mirrors the sprite based on the player's approach side.
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::EntityId;
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::EntityId;
 
-ruleste_plugin_api::ruleste_meta!("door");
-ruleste_plugin_api::ruleste_entity_types!("door");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("door");
+ruleste_plugins_api::ruleste_entity_types!("door");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 /// `Hitbox(12f, 22f, -6f, -23f)`.
 const HIT_W: f32 = 12.0;

@@ -12,16 +12,16 @@
 //! - `oneUse`: destroys itself after player exits (OnPlayerExit).
 //! - `BlockedCheck`: pushes TheoCrystal/Player up up to 4px if trapped.
 
-use ruleste_plugin_api::event;
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::event;
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId, Vec2};
 
-ruleste_plugin_api::ruleste_meta!("dream-block");
-ruleste_plugin_api::ruleste_entity_types!("dreamBlock");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("dream-block");
+ruleste_plugins_api::ruleste_entity_types!("dreamBlock");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 // --- Colors (match original hex) ---
 const DISABLED_BACK: Color = Color::new(0x1f, 0x2e, 0x2d, 255);

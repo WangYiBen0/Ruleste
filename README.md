@@ -60,7 +60,7 @@ src/
   interface/  SDL3 渲染器：320×180 逻辑分辨率、纹理上传、按 depth 排序、letterbox 缩放
 plugins/      Wasm 实体插件（每个一种/一组实体，wasm32 cdylib）
 crates/
-  ruleste-plugin-api/  FFI 头、宏、宿主函数声明（host_input_*、host_draw_*、host_play_sound、host_emit…）
+  ruleste-plugins-api/  FFI 头、宏、宿主函数声明（host_input_*、host_draw_*、host_play_sound、host_emit…）
 maps/         关卡包（按 pack_name 分目录）
 resources/    资源包（按 pack_name/namespace 分目录；不参与分发）
 ```

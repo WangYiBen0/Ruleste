@@ -2,7 +2,7 @@
 //! hook. The host collects them per frame and renders them with the entity
 //! sprites; scenery like the `wire` entity draws procedural geometry this way.
 
-use ruleste_plugin_api::types::Color;
+use ruleste_plugins_api::types::Color;
 
 /// A straight line segment in world coordinates.
 #[derive(Debug, Clone, Copy)]

@@ -23,14 +23,14 @@
 
 use std::cell::RefCell;
 
-use ruleste_plugin_api::host::Input;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::ruleste_entity_types;
-use ruleste_plugin_api::ruleste_meta;
-use ruleste_plugin_api::ruleste_noop_destroy;
-use ruleste_plugin_api::types::input;
-use ruleste_plugin_api::types::{EntityId, Vec2};
+use ruleste_plugins_api::host::Input;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::ruleste_entity_types;
+use ruleste_plugins_api::ruleste_meta;
+use ruleste_plugins_api::ruleste_noop_destroy;
+use ruleste_plugins_api::types::input;
+use ruleste_plugins_api::types::{EntityId, Vec2};
 
 // Movement / physics (`Player.cs`).
 const GRAVITY: f32 = 900.0;
@@ -385,9 +385,9 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
 /// Publishes the player's dash count and stamina to the host so refills,
 /// springs and other plugins can read them back via the FFI.
 fn publish_resources(id: EntityId, st: &PlayerState) {
-    ruleste_plugin_api::host::set_player_dashes(id, st.dashes);
-    ruleste_plugin_api::host::set_player_stamina(id, st.stamina);
-    ruleste_plugin_api::host::set_player_state(id, st.state);
+    ruleste_plugins_api::host::set_player_dashes(id, st.dashes);
+    ruleste_plugins_api::host::set_player_stamina(id, st.stamina);
+    ruleste_plugins_api::host::set_player_state(id, st.state);
 }
 
 #[unsafe(no_mangle)]
@@ -838,7 +838,7 @@ fn emit_crush_dir(id: EntityId, dir: Vec2) {
     let mut buf = [0u8; 8];
     buf[0..4].copy_from_slice(&dir.x.to_le_bytes());
     buf[4..8].copy_from_slice(&dir.y.to_le_bytes());
-    ruleste_plugin_api::host::emit(id, ruleste_plugin_api::host::EV_CRUSH, &buf);
+    ruleste_plugins_api::host::emit(id, ruleste_plugins_api::host::EV_CRUSH, &buf);
 }
 
 /// Emits `EV_DASH_BLOCK` toward a dashe block: the hit face direction (`±1` on
@@ -849,7 +849,7 @@ fn emit_dash_block(id: EntityId, dir: Vec2, state: u32) {
     buf.extend_from_slice(&dir.x.to_le_bytes());
     buf.extend_from_slice(&dir.y.to_le_bytes());
     buf.push(state as u8);
-    ruleste_plugin_api::host::emit(id, ruleste_plugin_api::host::EV_DASH_BLOCK, &buf);
+    ruleste_plugins_api::host::emit(id, ruleste_plugins_api::host::EV_DASH_BLOCK, &buf);
 }
 
 // ---------------------------------------------------------------------------
@@ -1277,9 +1277,9 @@ fn jump(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, move_x: f32) {
     speed.y = JUMP_SPEED;
     st.var_jump_speed = speed.y;
     let _ = entity;
-    ruleste_plugin_api::host::emit(
+    ruleste_plugins_api::host::emit(
         entity.id,
-        ruleste_plugin_api::plugin::event::PLAYER_JUMP,
+        ruleste_plugins_api::plugin::event::PLAYER_JUMP,
         &[],
     );
 }
@@ -1297,9 +1297,9 @@ fn wall_jump(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dir: i32) 
     speed.x = WALL_JUMP_HSPEED * dir as f32;
     speed.y = WALL_JUMP_SPEED;
     st.var_jump_speed = speed.y;
-    ruleste_plugin_api::host::emit(
+    ruleste_plugins_api::host::emit(
         entity.id,
-        ruleste_plugin_api::plugin::event::PLAYER_JUMP,
+        ruleste_plugins_api::plugin::event::PLAYER_JUMP,
         &[],
     );
 }
@@ -1316,9 +1316,9 @@ fn super_wall_jump(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dir:
     speed.x = SUPER_WALL_JUMP_HSPEED * dir as f32;
     speed.y = SUPER_WALL_JUMP_SPEED;
     st.var_jump_speed = speed.y;
-    ruleste_plugin_api::host::emit(
+    ruleste_plugins_api::host::emit(
         entity.id,
-        ruleste_plugin_api::plugin::event::PLAYER_JUMP,
+        ruleste_plugins_api::plugin::event::PLAYER_JUMP,
         &[],
     );
 }
@@ -1340,9 +1340,9 @@ fn super_jump(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2) {
         speed.y *= DUCK_SUPER_Y_MULT;
     }
     st.var_jump_speed = speed.y;
-    ruleste_plugin_api::host::emit(
+    ruleste_plugins_api::host::emit(
         entity.id,
-        ruleste_plugin_api::plugin::event::PLAYER_JUMP,
+        ruleste_plugins_api::plugin::event::PLAYER_JUMP,
         &[],
     );
 }
@@ -1381,9 +1381,9 @@ fn start_dash(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, move_x: f
         dash_axis(dir.y, st.before_dash_speed.y),
     );
     Input::consume(input::DASH);
-    ruleste_plugin_api::host::emit(
+    ruleste_plugins_api::host::emit(
         entity.id,
-        ruleste_plugin_api::plugin::event::PLAYER_DASH,
+        ruleste_plugins_api::plugin::event::PLAYER_DASH,
         &[],
     );
 }
@@ -1484,12 +1484,12 @@ fn dash_hits_entity_type(entity: &Entity, type_name: &str, face: Vec2) -> bool {
     let (w, h, ox, oy) = entity.hitbox.get();
     let px = p.x + ox + face.x * PROBE;
     let py = p.y + oy + face.y * PROBE;
-    for eid in ruleste_plugin_api::host::entities_by_type(type_name) {
-        if !ruleste_plugin_api::host::entity_alive(eid) {
+    for eid in ruleste_plugins_api::host::entities_by_type(type_name) {
+        if !ruleste_plugins_api::host::entity_alive(eid) {
             continue;
         }
-        let bp = ruleste_plugin_api::host::Position::new(eid).get();
-        let (bw, bh, box_, boy) = ruleste_plugin_api::host::Hitbox::new(eid).get();
+        let bp = ruleste_plugins_api::host::Position::new(eid).get();
+        let (bw, bh, box_, boy) = ruleste_plugins_api::host::Hitbox::new(eid).get();
         let bx = bp.x + box_;
         let by = bp.y + boy;
         if px < bx + bw && px + w > bx && py < by + bh && py + h > by {
@@ -1505,9 +1505,9 @@ fn dash_hits_entity_type(entity: &Entity, type_name: &str, face: Vec2) -> bool {
 fn handle_events(id: EntityId) {
     let mut new_state: Option<u32> = None;
     let mut speed_override: Option<Vec2> = None;
-    for (_, kind, data) in ruleste_plugin_api::host::drain_events() {
+    for (_, kind, data) in ruleste_plugins_api::host::drain_events() {
         match kind {
-            ruleste_plugin_api::host::EV_REFILL => {
+            ruleste_plugins_api::host::EV_REFILL => {
                 with_state(id, |st| {
                     let two = data.first().copied().unwrap_or(0) != 0;
                     let want = if two { 2 } else { MAX_DASHES };
@@ -1520,7 +1520,7 @@ fn handle_events(id: EntityId) {
                     }
                 });
             }
-            ruleste_plugin_api::host::EV_BOOST => {
+            ruleste_plugins_api::host::EV_BOOST => {
                 // Payload: booster center (Vec2, world units) then a red flag.
                 // `Boost`/`RedBoost` keep dashes refilled (`BoostBegin`).
                 let target = read_vec2(&data);
@@ -1535,7 +1535,7 @@ fn handle_events(id: EntityId) {
                     new_state = Some(ST_BOOST);
                 });
             }
-            ruleste_plugin_api::host::EV_LAUNCH => {
+            ruleste_plugins_api::host::EV_LAUNCH => {
                 let from_dir = safe_normalize(&read_vec2(&data));
                 with_state(id, |st| {
                     st.launched = true;
@@ -1550,7 +1550,7 @@ fn handle_events(id: EntityId) {
                     new_state = Some(ST_LAUNCH);
                 });
             }
-            ruleste_plugin_api::host::EV_SIDE_BOUNCE => {
+            ruleste_plugins_api::host::EV_SIDE_BOUNCE => {
                 // Payload: `[dir u8][from_x f32][from_y f32]`; the spring face
                 // (`base.Right`/`base.Left`) and `base.CenterY` of `Spring.cs`.
                 let dir = match data.first() {
@@ -1588,7 +1588,7 @@ fn handle_events(id: EntityId) {
                     new_state = Some(ST_NORMAL);
                 });
             }
-            ruleste_plugin_api::host::EV_SUPER_BOUNCE => {
+            ruleste_plugins_api::host::EV_SUPER_BOUNCE => {
                 let from_y = read_f32(&data).unwrap_or(0.0);
                 with_state(id, |st| {
                     // `Player.SuperBounce(fromY)`: snap to the spring top, refill
@@ -1608,7 +1608,7 @@ fn handle_events(id: EntityId) {
                     new_state = Some(ST_NORMAL);
                 });
             }
-            ruleste_plugin_api::host::EV_STARFLY => {
+            ruleste_plugins_api::host::EV_STARFLY => {
                 let strength = read_f32(&data).unwrap_or(STARFLY_TIME);
                 with_state(id, |st| {
                     if st.state == ST_STARFLY {
@@ -1623,7 +1623,7 @@ fn handle_events(id: EntityId) {
                     }
                 });
             }
-            ruleste_plugin_api::host::EV_BADELINE_BOOST => {
+            ruleste_plugins_api::host::EV_BADELINE_BOOST => {
                 let at_x = read_f32(&data).unwrap_or(0.0);
                 let final_boost = data.get(4).copied().unwrap_or(0) != 0;
                 with_state(id, |st| {
@@ -1642,7 +1642,7 @@ fn handle_events(id: EntityId) {
                     speed_override = Some(Vec2::new(0.0, BADELINE_LAUNCH_SPEED));
                 });
             }
-            ruleste_plugin_api::host::EV_CARRIED => {
+            ruleste_plugins_api::host::EV_CARRIED => {
                 let on = data.get(8).copied().unwrap_or(0) != 0;
                 let pos = read_vec2(&data);
                 with_state(id, |st| {
@@ -1660,13 +1660,13 @@ fn handle_events(id: EntityId) {
         with_state(id, |st| st.state = s);
     }
     if let Some(v) = speed_override {
-        ruleste_plugin_api::host::Speed::new(id).set(v);
+        ruleste_plugins_api::host::Speed::new(id).set(v);
     }
 }
 
 /// Reads the current speed of an entity (used for event guards).
 fn speed_of(id: EntityId) -> Vec2 {
-    ruleste_plugin_api::host::Speed::new(id).get()
+    ruleste_plugins_api::host::Speed::new(id).get()
 }
 
 fn read_f32(data: &[u8]) -> Option<f32> {
@@ -1690,7 +1690,7 @@ fn debug_state_log(id: EntityId, st: &PlayerState) {
     if st.debug_state == st.state {
         return;
     }
-    if !ruleste_plugin_api::host::debug_enabled() {
+    if !ruleste_plugins_api::host::debug_enabled() {
         return;
     }
     let name = match st.state {
@@ -1703,7 +1703,7 @@ fn debug_state_log(id: EntityId, st: &PlayerState) {
         ST_STARFLY => "StarFly",
         _ => "Normal",
     };
-    ruleste_plugin_api::host::log(&format!("player {id} state -> {name} ({})", st.state));
+    ruleste_plugins_api::host::log(&format!("player {id} state -> {name} ({})", st.state));
 }
 
 // ---------------------------------------------------------------------------

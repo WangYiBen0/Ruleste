@@ -9,15 +9,15 @@
 //! spawn recipes, so on init the plugin checks whether it already is the active
 //! respawn point and starts in the "on" state without re-flashing.
 
-use ruleste_plugin_api::host;
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugins_api::host;
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId};
 
-ruleste_plugin_api::ruleste_meta!("checkpoint");
-ruleste_plugin_api::ruleste_entity_types!("checkpoint");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("checkpoint");
+ruleste_plugins_api::ruleste_entity_types!("checkpoint");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 const FLASH_FRAMES: usize = 8;
 const FLASH_TIME: f32 = 0.05;

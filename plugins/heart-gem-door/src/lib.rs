@@ -7,15 +7,15 @@
 //! - When counter reaches `requires`, the door unlocks with a flash and sound,
 //!   parting the top half upward by 32px and bottom half downward by 32px.
 
-use ruleste_plugin_api::host::{self, draw_rect};
-use ruleste_plugin_api::map::MapData;
-use ruleste_plugin_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugin_api::types::{Color, EntityId};
+use ruleste_plugins_api::host::{self, draw_rect};
+use ruleste_plugins_api::map::MapData;
+use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
+use ruleste_plugins_api::types::{Color, EntityId};
 
-ruleste_plugin_api::ruleste_meta!("heart-gem-door");
-ruleste_plugin_api::ruleste_entity_types!("heartGemDoor");
-ruleste_plugin_api::ruleste_noop_destroy!();
-ruleste_plugin_api::ruleste_noop_serialize!();
+ruleste_plugins_api::ruleste_meta!("heart-gem-door");
+ruleste_plugins_api::ruleste_entity_types!("heartGemDoor");
+ruleste_plugins_api::ruleste_noop_destroy!();
+ruleste_plugins_api::ruleste_noop_serialize!();
 
 const DOOR_BG: Color = Color {
     r: 0x22,

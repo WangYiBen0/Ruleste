@@ -49,6 +49,10 @@ pub struct TileGrid {
     pub col: Vec<u32>,
     /// Row index in the tileset texture.
     pub row: Vec<u32>,
+    /// World-space position of tile `(0, 0)`, in pixels. Mirrors the source
+    /// `SolidGrid` origin so the renderer can place tiles in world space.
+    pub origin_x: f32,
+    pub origin_y: f32,
 }
 
 impl Autotiler {
@@ -236,12 +240,12 @@ impl Autotiler {
         if tx < 0 || ty < 0 || tx >= w || ty >= h {
             // EdgesExtend: clamp to the edge tile.
             let (cx, cy) = (tx.clamp(0, w - 1), ty.clamp(0, h - 1));
-            return match grid.tile_id_at(cx, cy) {
+            return match grid.tile_id_at_local(cx, cy) {
                 Some(c) if c != '0' => Self::connects_id(def, c),
                 _ => false,
             };
         }
-        match grid.tile_id_at(tx, ty) {
+        match grid.tile_id_at_local(tx, ty) {
             Some(c) if c != '0' => Self::connects_id(def, c),
             _ => false,
         }
@@ -301,7 +305,7 @@ impl Autotiler {
         for ty in 0..h {
             for tx in 0..w {
                 let idx = ty * w + tx;
-                let tile_ch = match grid.tile_id_at(tx as i32, ty as i32) {
+                let tile_ch = match grid.tile_id_at_local(tx as i32, ty as i32) {
                     Some(ch) => ch,
                     None => continue,
                 };
@@ -366,6 +370,8 @@ impl Autotiler {
             tileset,
             col,
             row,
+            origin_x: grid.origin_x,
+            origin_y: grid.origin_y,
         }
     }
 }

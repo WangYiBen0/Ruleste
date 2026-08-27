@@ -3,12 +3,12 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use ruleste_plugin_api::map::{MapAttr, MapData};
-use ruleste_plugin_api::types::Vec2;
+use ruleste_plugins_api::map::{MapAttr, MapData};
+use ruleste_plugins_api::types::Vec2;
 
 use crate::data::binary_packer::{Attr, Element, MapBin};
 use crate::engine::backdrops::{self, Backdrop};
-use crate::engine::physics::{JumpThru, SolidGrid};
+use crate::engine::physics::{JumpThru, SolidGrid, TILE};
 
 /// `JumpThru`'s `Hitbox(width, 5f)` height.
 const JUMPTHRU_HEIGHT: f32 = 5.0;
@@ -37,10 +37,21 @@ pub struct Room {
 pub struct Level {
     /// Map name, e.g. "0-ForsakenCity".
     pub name: String,
-    /// Loaded rooms in the map.
+    /// Loaded rooms in the map. Each room carries its own local solid/background
+    /// grids and entity spawns; the active room (see `current_room`) drives the
+    /// camera bounds, backdrop parallax and which entities are spawned.
     pub rooms: Vec<Room>,
     /// Index of the active room.
     pub current_room: usize,
+    /// Level-wide solid grid in world coordinates: every room's local grid is
+    /// composited (anchored at `min_tx`/`min_ty`) into one continuous field, exactly
+    /// like the original game. The player collides against this single grid and so
+    /// can walk across room boundaries (a room edge is only a wall where the level
+    /// actually places one). Room origins are all 8px-aligned, so there is no
+    /// sub-tile rounding drift between tiles and entity spawns.
+    pub solids: SolidGrid,
+    /// Level-wide background-tile grid in world coordinates.
+    pub bg: SolidGrid,
     /// Parallax background layers drawn behind the world.
     pub backgrounds: Vec<Backdrop>,
     /// Parallax foreground layers drawn in front of the world.
@@ -176,10 +187,55 @@ impl Level {
 
         let (backgrounds, foregrounds) = backdrops::parse(root.child("Style"));
 
+        // Composite every room's local grid into one level-wide grid anchored at
+        // the level's minimum corner, so collision and rendering operate in a
+        // single world coordinate space (matching the original game, where the
+        // whole level is one continuous solid field and rooms are only logical
+        // subdivisions for entity spawning and camera bounds). Room origins are
+        // 8px-aligned, so `floor(r.x / TILE)` is exact and there is no sub-tile
+        // drift between tiles and entity spawns.
+        let min_tx = rooms
+            .iter()
+            .map(|r| (r.x / TILE).floor() as i32)
+            .min()
+            .unwrap_or(0);
+        let min_ty = rooms
+            .iter()
+            .map(|r| (r.y / TILE).floor() as i32)
+            .min()
+            .unwrap_or(0);
+        let max_tx = rooms
+            .iter()
+            .map(|r| ((r.x + r.width) / TILE).ceil() as i32)
+            .max()
+            .unwrap_or(0);
+        let max_ty = rooms
+            .iter()
+            .map(|r| ((r.y + r.height) / TILE).ceil() as i32)
+            .max()
+            .unwrap_or(0);
+        let full_w = (max_tx - min_tx).max(0) as usize;
+        let full_h = (max_ty - min_ty).max(0) as usize;
+
+        let mut solids = SolidGrid::empty(full_w, full_h);
+        solids.origin_x = min_tx as f32 * TILE;
+        solids.origin_y = min_ty as f32 * TILE;
+        let mut bg = SolidGrid::empty(full_w, full_h);
+        bg.origin_x = min_tx as f32 * TILE;
+        bg.origin_y = min_ty as f32 * TILE;
+        for r in &rooms {
+            let dx = (r.x / TILE).floor() as i32 - min_tx;
+            let dy = (r.y / TILE).floor() as i32 - min_ty;
+            solids.blit(&r.solids, dx, dy);
+            bg.blit(&r.bg, dx, dy);
+        }
+
         Ok(Level {
             name,
             rooms,
             current_room,
+            solids,
+            bg,
             backgrounds,
             foregrounds,
         })
