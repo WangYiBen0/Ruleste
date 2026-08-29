@@ -63,5 +63,17 @@ pub mod input {
     pub const COUNT: i32 = 13;
 }
 
+/// Horizontal justification for a `host_draw_text` command. Mirrors
+/// `Draw.TextJustified`. Lives in the shared types crate so both host and
+/// plugins agree on the enum.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u32)]
+pub enum Justify {
+    #[default]
+    Left = 0,
+    Center = 1,
+    Right = 2,
+}
+
 /// A handle to a live game entity, shared between host and plugins.
 pub type EntityId = u32;

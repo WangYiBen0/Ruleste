@@ -4,6 +4,12 @@
 //! `Level.Camera` smoothing): the view target is the player centered on a
 //! 320×180 viewport plus the level's camera offset, clamped to the level
 //! bounds, and the camera glides toward it with exponential smoothing.
+//!
+//! Also supports Celeste's `Camera.Shake(intensity, duration)` pattern: any
+//! number of shakes can be queued (e.g. on player damage, on death, on a
+//! collapsing bridge); each one adds a decaying random offset for its lifetime
+//! and is dropped when it expires. `position` is the smoothed base plus the
+//! current shake offset, so the renderer can consume it directly.
 
 use ruleste_plugins_api::types::Vec2;
 
@@ -11,10 +17,25 @@ use ruleste_plugins_api::types::Vec2;
 pub const VIEW_WIDTH: f32 = 320.0;
 pub const VIEW_HEIGHT: f32 = 180.0;
 
+/// One queued screen shake. `intensity` is the maximum offset in pixels (the
+/// actual offset is `rand_unit() * intensity * (timer / duration)`); `timer`
+/// counts down to 0, then the shake is dropped.
 #[derive(Debug, Clone, Copy)]
+struct Shake {
+    timer: f32,
+    duration: f32,
+    intensity: f32,
+}
+
+#[derive(Debug, Clone)]
 pub struct Camera {
-    /// Top-left corner of the visible area, in world units.
+    /// Smoothed base position (without shake). Updated by `update` toward the
+    /// target; used by `target_at` consumers via `base_position`.
+    base_position: Vec2,
+    /// Top-left corner of the visible area in world units — `base_position` plus
+    /// the current shake offset. The renderer reads this.
     pub position: Vec2,
+    shakes: Vec<Shake>,
 }
 
 impl Default for Camera {
@@ -26,7 +47,9 @@ impl Default for Camera {
 impl Camera {
     pub fn new() -> Camera {
         Camera {
+            base_position: Vec2::ZERO,
             position: Vec2::ZERO,
+            shakes: Vec::new(),
         }
     }
 
@@ -51,13 +74,93 @@ impl Camera {
         Vec2::new(tx, ty)
     }
 
-    /// Glide toward the target with Celeste's exponential smoothing:
-    /// `camera += (target - camera) * (1 - 0.01^dt)`.
+    /// Returns the smoothed base position without the per-frame shake offset.
+    #[must_use]
+    pub fn base_position(&self) -> Vec2 {
+        self.base_position
+    }
+
+    /// Teleports the camera (no smoothing), dropping any queued shakes. Use
+    /// after a room switch so the next `update` glides from the new base.
+    pub fn snap_to(&mut self, pos: Vec2) {
+        self.base_position = pos;
+        self.position = pos;
+        self.shakes.clear();
+    }
+
+    /// Returns true while at least one shake is still active.
+    #[must_use]
+    pub fn shaking(&self) -> bool {
+        !self.shakes.is_empty()
+    }
+
+    /// Queues a screen shake with the given peak `intensity` (pixels) and
+    /// `duration` (seconds). Mirrors `Camera.Shake(intensity, duration)`.
+    pub fn shake(&mut self, intensity: f32, duration: f32) {
+        if duration <= 0.0 || intensity <= 0.0 {
+            return;
+        }
+        self.shakes.push(Shake {
+            timer: duration,
+            duration,
+            intensity,
+        });
+    }
+
+    /// Glides toward the target with Celeste's exponential smoothing, advances
+    /// any queued shakes, and sets `position = base + shake_offset` for the
+    /// renderer to consume.
     pub fn update(&mut self, dt: f32, target: Vec2) {
         let t = 1.0 - 0.01f32.powf(dt.max(0.0));
-        self.position.x += (target.x - self.position.x) * t;
-        self.position.y += (target.y - self.position.y) * t;
+        self.base_position.x += (target.x - self.base_position.x) * t;
+        self.base_position.y += (target.y - self.base_position.y) * t;
+
+        let mut offset_x = 0.0;
+        let mut offset_y = 0.0;
+        for s in &mut self.shakes {
+            s.timer -= dt;
+            if s.timer <= 0.0 || s.duration <= 0.0 {
+                continue;
+            }
+            // Linear fade from peak at t=0 to 0 at t=duration, plus a random
+            // unit step per axis (matches Celeste's shake feel).
+            let strength = (s.timer / s.duration).clamp(0.0, 1.0) * s.intensity;
+            offset_x += (rand_unit() - 0.5) * 2.0 * strength;
+            offset_y += (rand_unit() - 0.5) * 2.0 * strength;
+        }
+        self.shakes.retain(|s| s.timer > 0.0);
+
+        self.position = Vec2::new(
+            self.base_position.x + offset_x,
+            self.base_position.y + offset_y,
+        );
     }
+}
+
+/// A cheap uniform random in `[0, 1)`. Uses a global xorshift so the camera
+/// doesn't need RNG state. Celeste seeds its shake from `Calc.Random`, so this
+/// is a stand-in — visually similar wobble without determinism guarantees.
+fn rand_unit() -> f32 {
+    use std::cell::Cell;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    thread_local! {
+        static STATE: Cell<u64> = Cell::new({
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0xdead_beef_cafe_babe)
+                | 1
+        });
+    }
+    STATE.with(|s| {
+        let mut x = s.get();
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        s.set(x);
+        // Top 24 bits -> [0, 1).
+        ((x >> 40) as f32) / ((1u32 << 24) as f32)
+    })
 }
 
 #[cfg(test)]
@@ -126,5 +229,36 @@ mod tests {
         cam.update(1.0 / 60.0, Vec2::new(300.0, 80.0));
         assert!(cam.position.x > 0.0 && cam.position.x < 300.0);
         assert!(cam.position.y > 0.0 && cam.position.y < 80.0);
+    }
+
+    #[test]
+    fn shake_offsets_position_and_decays() {
+        let mut cam = Camera::new();
+        cam.snap_to(Vec2::new(100.0, 50.0));
+        cam.shake(5.0, 0.2);
+        assert!(cam.shaking());
+
+        // During shake, position should have a non-zero offset around base_position
+        cam.update(0.05, Vec2::new(100.0, 50.0));
+        assert!(cam.shaking());
+        assert!((cam.position.x - 100.0).abs() <= 5.0 + 1e-4);
+        assert!((cam.position.y - 50.0).abs() <= 5.0 + 1e-4);
+
+        // After duration expires, shake clears and position matches base_position
+        cam.update(0.2, Vec2::new(100.0, 50.0));
+        assert!(!cam.shaking());
+        assert!((cam.position.x - 100.0).abs() < 1e-4);
+        assert!((cam.position.y - 50.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn snap_to_clears_shakes_and_resets_base() {
+        let mut cam = Camera::new();
+        cam.shake(10.0, 1.0);
+        assert!(cam.shaking());
+        cam.snap_to(Vec2::new(40.0, 80.0));
+        assert!(!cam.shaking());
+        assert_eq!(cam.base_position(), Vec2::new(40.0, 80.0));
+        assert_eq!(cam.position, Vec2::new(40.0, 80.0));
     }
 }

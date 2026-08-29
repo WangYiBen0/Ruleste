@@ -13,9 +13,10 @@ use crate::data::atlas::{Atlas, FrameRect};
 use crate::data::spritebank::SpriteBank;
 use crate::engine::autotiler::TileGrid;
 use crate::engine::backdrops::Backdrop;
-use crate::engine::draw::{Image, Line, Rect, TileBox};
+use crate::engine::draw::{Circle, HollowRect, Image, Line, Rect, Text, TileBox};
 use crate::engine::ecs::World;
 use crate::engine::sprites::SpriteAnimator;
+use ruleste_plugins_api::types::Justify;
 
 pub const WINDOW_WIDTH: u32 = 320;
 pub const WINDOW_HEIGHT: u32 = 180;
@@ -27,12 +28,23 @@ pub struct Renderer {
     _window: Window,
     pub pump: EventPump,
     atlas_textures: HashMap<usize, Texture>,
+    /// Per-PixelFont-size texture page cache. Keyed by the size's `size`
+    /// field (e.g. 64.0 for renogare64). Stored in a separate map so it
+    /// doesn't collide with atlas page indices.
+    pub font_pages: HashMap<String, Texture>,
     /// Dedicated per-frame textures for backdrop layers. Backdrops are
     /// alpha/color modulated, so they must not share the atlas page textures
     /// used by tiles and sprites. Stores the frame's offset/untrimmed box so
     /// the tiling loop matches `Parallax.Render`.
     backdrop_textures: HashMap<String, BackdropFrame>,
     camera: Vec2,
+    /// The active PixelFont used for plugin-submitted text commands.
+    /// Populated via `upload_pixel_font`; when present, `SpriteFont` is
+    /// ignored (the legacy `set_font` path).
+    pub pixel_font: Option<crate::data::font::PixelFont>,
+    /// The active SpriteFont used for plugin-submitted text commands.
+    /// Used as a fallback when `pixel_font` is `None`.
+    pub font: Option<crate::data::font::SpriteFont>,
 }
 
 /// A backdrop texture plus the atlas frame's offset rect (untrimmed box).
@@ -95,11 +107,42 @@ impl Renderer {
             atlas_textures: HashMap::new(),
             backdrop_textures: HashMap::new(),
             camera: Vec2::ZERO,
+            font: None,
+            font_pages: HashMap::new(),
+            pixel_font: None,
         })
     }
 
     pub fn set_camera(&mut self, camera: Vec2) {
         self.camera = camera;
+    }
+
+    /// Resize the logical render target to `(w, h)` with `STRETCH` (no
+    /// letterbox padding). The window is also resized to match so that
+    /// `read_pixels` returns exactly the logical pixels (no black padding).
+    pub fn set_logical_size_raw(&mut self, w: u32, h: u32) -> anyhow::Result<()> {
+        self.canvas.set_logical_size(
+            w,
+            h,
+            sdl3::sys::render::SDL_RendererLogicalPresentation::STRETCH,
+        )?;
+        // Resize window to match logical size so `read_pixels` returns exactly
+        // the rendered logical pixels (no extra black padding / scaling mismatch).
+        self._window.set_size(w, h)?;
+        Ok(())
+    }
+
+    /// Returns the current window-to-logical pixel scale. The renderer is set
+    /// to a logical 320x180 view (letterbox), so this is the actual window
+    /// width divided by `WINDOW_WIDTH`. Mouse coordinates reported in events
+    /// are in window pixels and must be divided by this to land in logical
+    /// (world) units.
+    pub fn pixel_scale(&self) -> f32 {
+        let (w, _) = self
+            .canvas
+            .output_size()
+            .unwrap_or((WINDOW_WIDTH, WINDOW_HEIGHT));
+        w as f32 / WINDOW_WIDTH as f32
     }
 
     /// Uploads every page of an atlas into a GPU texture.
@@ -252,12 +295,20 @@ impl Renderer {
         let fallback_color = SdlColor::RGB(64, 64, 80);
         // Only draw tiles inside the visible 320x180 window (world space),
         // translated into the grid's local tile range via its world origin.
+        let view_w = self
+            .canvas
+            .output_size()
+            .unwrap_or((WINDOW_WIDTH, WINDOW_HEIGHT))
+            .0 as f32;
+        let view_h = self
+            .canvas
+            .output_size()
+            .unwrap_or((WINDOW_WIDTH, WINDOW_HEIGHT))
+            .1 as f32;
         let min_tx = (((self.camera.x - tile_grid.origin_x) / 8.0).floor() as i32) - 1;
-        let max_tx =
-            (((self.camera.x + WINDOW_WIDTH as f32 - tile_grid.origin_x) / 8.0).ceil() as i32) + 1;
+        let max_tx = (((self.camera.x + view_w - tile_grid.origin_x) / 8.0).ceil() as i32) + 1;
         let min_ty = (((self.camera.y - tile_grid.origin_y) / 8.0).floor() as i32) - 1;
-        let max_ty =
-            (((self.camera.y + WINDOW_HEIGHT as f32 - tile_grid.origin_y) / 8.0).ceil() as i32) + 1;
+        let max_ty = (((self.camera.y + view_h - tile_grid.origin_y) / 8.0).ceil() as i32) + 1;
         let min_tx = min_tx.max(0).min(tile_grid.width as i32);
         let max_tx = max_tx.max(0).min(tile_grid.width as i32);
         let min_ty = min_ty.max(0).min(tile_grid.height as i32);
@@ -396,6 +447,50 @@ impl Renderer {
         }
     }
 
+    /// Draws wireframe outlines of every alive entity's hitbox in world space,
+    /// transformed by the camera. Red = normal, yellow = solid-platform, green =
+    /// solid-entity. Only drawn when `show_hitboxes` is `true` (env var
+    /// `RULESTE_SHOW_HITBOXES=1`).
+    pub fn draw_hitboxes(&mut self, world: &World, show_hitboxes: bool) {
+        if !show_hitboxes {
+            return;
+        }
+        for entity in world.iter() {
+            if !world.is_alive(entity.id) {
+                continue;
+            }
+            let hx = entity.position.x + entity.hitbox_offset.x;
+            let hy = entity.position.y + entity.hitbox_offset.y;
+            let hw = entity.hitbox.x;
+            let hh = entity.hitbox.y;
+            let (r, g, b) = if world.solid_entities.contains(&entity.id) {
+                (0, 255, 0)
+            } else if world.solid_platforms.contains(&entity.id) {
+                (255, 255, 0)
+            } else {
+                (255, 0, 0)
+            };
+            let (x, y) = (hx - self.camera.x, hy - self.camera.y);
+            self.canvas.set_draw_color(SdlColor::RGBA(r, g, b, 200));
+            let _ = self.canvas.draw_line(
+                sdl3::render::FPoint::new(x, y),
+                sdl3::render::FPoint::new(x + hw, y),
+            );
+            let _ = self.canvas.draw_line(
+                sdl3::render::FPoint::new(x + hw, y),
+                sdl3::render::FPoint::new(x + hw, y + hh),
+            );
+            let _ = self.canvas.draw_line(
+                sdl3::render::FPoint::new(x + hw, y + hh),
+                sdl3::render::FPoint::new(x, y + hh),
+            );
+            let _ = self.canvas.draw_line(
+                sdl3::render::FPoint::new(x, y + hh),
+                sdl3::render::FPoint::new(x, y),
+            );
+        }
+    }
+
     /// Draws plugin-submitted line geometry (world coordinates), transformed by
     /// the camera. Used for procedural scenery like hanging wires.
     pub fn draw_lines(&mut self, lines: &[Line]) {
@@ -434,9 +529,313 @@ impl Renderer {
         }
     }
 
+    /// Draws plugin-submitted hollow rectangles (four line segments at the
+    /// edges), transformed by the camera.
+    pub fn draw_hollow_rects(&mut self, rects: &[HollowRect]) {
+        for rect in rects {
+            let (x, y) = (rect.x - self.camera.x, rect.y - self.camera.y);
+            let (w, h) = (rect.w, rect.h);
+            self.set_draw_color(rect.color);
+            let _ = self.canvas.draw_line(
+                sdl3::render::FPoint::new(x, y),
+                sdl3::render::FPoint::new(x + w, y),
+            );
+            let _ = self.canvas.draw_line(
+                sdl3::render::FPoint::new(x + w, y),
+                sdl3::render::FPoint::new(x + w, y + h),
+            );
+            let _ = self.canvas.draw_line(
+                sdl3::render::FPoint::new(x + w, y + h),
+                sdl3::render::FPoint::new(x, y + h),
+            );
+            let _ = self.canvas.draw_line(
+                sdl3::render::FPoint::new(x, y + h),
+                sdl3::render::FPoint::new(x, y),
+            );
+        }
+    }
+
+    /// Draws plugin-submitted circles (pixel-perfect outline, Bresenham's
+    /// midpoint algorithm), transformed by the camera.
+    pub fn draw_circles(&mut self, circles: &[Circle]) {
+        for c in circles {
+            let r = c.r;
+            if r <= 0.0 {
+                continue;
+            }
+            self.set_draw_color(c.color);
+            let cx = c.cx - self.camera.x;
+            let cy = c.cy - self.camera.y;
+            let mut x = r as i32;
+            let mut y = 0i32;
+            let mut err = 1 - x;
+            while x >= y {
+                self.draw_circle_point(cx + x as f32, cy + y as f32);
+                self.draw_circle_point(cx - x as f32, cy + y as f32);
+                self.draw_circle_point(cx + x as f32, cy - y as f32);
+                self.draw_circle_point(cx - x as f32, cy - y as f32);
+                self.draw_circle_point(cx + y as f32, cy + x as f32);
+                self.draw_circle_point(cx - y as f32, cy + x as f32);
+                self.draw_circle_point(cx + y as f32, cy - x as f32);
+                self.draw_circle_point(cx - y as f32, cy - x as f32);
+                y += 1;
+                if err < 0 {
+                    err += 2 * y + 1;
+                } else {
+                    x -= 1;
+                    err += 2 * (y - x) + 1;
+                }
+            }
+        }
+    }
+
+    fn draw_circle_point(&mut self, x: f32, y: f32) {
+        let x0 = (x - 0.5).floor();
+        let x1 = x0 + 1.0;
+        let y0 = (y - 0.5).floor();
+        let y1 = y0 + 1.0;
+        let _ = self.canvas.draw_line(
+            sdl3::render::FPoint::new(x0, y0),
+            sdl3::render::FPoint::new(x1, y1),
+        );
+    }
+
+    fn set_draw_color(&mut self, color: ruleste_plugins_api::types::Color) {
+        self.canvas
+            .set_draw_color(SdlColor::RGBA(color.r, color.g, color.b, color.a));
+    }
+
+    /// Sets the SpriteFont used to render plugin-submitted [`Text`] commands.
+    /// Plugins draw text relative to the camera, so the renderer needs the
+    /// active font; it's set once at startup from the resources root.
+    pub fn set_font(&mut self, font: crate::data::font::SpriteFont) {
+        self.font = Some(font);
+    }
+
+    /// Uploads every texture page referenced by a `PixelFont` into the
+    /// renderer's per-page cache. Page basenames are resolved relative to
+    /// `font_dir` (typically the directory containing the `.fnt` descriptor).
+    /// Pages whose PNG is missing are skipped silently — characters on those
+    /// pages will simply not render.
+    pub fn upload_pixel_font(
+        &mut self,
+        font: crate::data::font::PixelFont,
+        font_dir: &std::path::Path,
+    ) -> anyhow::Result<()> {
+        for size in &font.sizes {
+            for page_name in &size.page_textures {
+                if self.font_pages.contains_key(page_name) {
+                    continue;
+                }
+                let Some(page) = crate::data::font::load_page_png(font_dir, page_name)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?
+                else {
+                    continue;
+                };
+                let creator = self.canvas.texture_creator();
+                let mut tex = creator.create_texture(
+                    Some(PixelFormat::ABGR8888),
+                    TextureAccess::Static,
+                    page.width,
+                    page.height,
+                )?;
+                tex.set_blend_mode(sdl3::render::BlendMode::Blend);
+                tex.update(None, &page.rgba, (page.width as usize) * 4)?;
+                self.font_pages.insert(page_name.clone(), tex);
+            }
+        }
+        self.pixel_font = Some(font);
+        Ok(())
+    }
+
+    /// Draws plugin-submitted text using the active `PixelFont` (BMFont
+    /// pipeline). Falls back to no-op if no font was uploaded. Multi-line
+    /// text uses the per-size `line_height`; justify offsets per-line width.
+    pub fn draw_pixel_texts(&mut self, font: &crate::data::font::PixelFont, texts: &[Text]) {
+        if font.sizes.is_empty() {
+            return;
+        }
+        for t in texts {
+            if t.text.is_empty() {
+                continue;
+            }
+            let size = match font.get(t.text.len() as f32) {
+                Some(s) => s,
+                None => continue,
+            };
+            let line_spacing = size.line_height as f32;
+            let x0 = t.x - self.camera.x;
+            let y0 = t.y - self.camera.y;
+            let mut cursor_y = y0;
+            let mut line_start = 0usize;
+            let chars: Vec<char> = t.text.chars().collect();
+            for (i, &c) in chars.iter().enumerate() {
+                if c == '\n' {
+                    let line: String = chars[line_start..i].iter().collect();
+                    let (line_w, _) = size.measure(&line);
+                    let sx = match t.justify {
+                        Justify::Left => x0,
+                        Justify::Center => x0 - line_w as f32 * 0.5,
+                        Justify::Right => x0 - line_w as f32,
+                    };
+                    self.draw_pixel_line(font, size, &line, sx, cursor_y, t.color, t.outline);
+                    cursor_y += line_spacing;
+                    line_start = i + 1;
+                }
+            }
+            let line: String = chars[line_start..].iter().collect();
+            let (line_w, _) = size.measure(&line);
+            let sx = match t.justify {
+                Justify::Left => x0,
+                Justify::Center => x0 - line_w as f32 * 0.5,
+                Justify::Right => x0 - line_w as f32,
+            };
+            self.draw_pixel_line(font, size, &line, sx, cursor_y, t.color, t.outline);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_pixel_line(
+        &mut self,
+        _font: &crate::data::font::PixelFont,
+        size: &crate::data::font::PixelFontSize,
+        text: &str,
+        x: f32,
+        y: f32,
+        color: ruleste_plugins_api::types::Color,
+        outline: Option<ruleste_plugins_api::types::Color>,
+    ) {
+        let page_key = match size.page_textures.first() {
+            Some(k) => k,
+            None => return,
+        };
+        let Some(texture) = self.font_pages.get(page_key) else {
+            return;
+        };
+        let mut cursor_x = x;
+        let chars: Vec<char> = text.chars().collect();
+        for (i, &c) in chars.iter().enumerate() {
+            if c == '\n' {
+                break;
+            }
+            let Some(glyph) = size.characters.get(&c) else {
+                continue;
+            };
+            let dst_x = cursor_x + glyph.x_offset as f32;
+            let dst_y = y + glyph.y_offset as f32;
+            let w = glyph.region.width as f32;
+            let h = glyph.region.height as f32;
+            if let Some(oc) = outline {
+                self.canvas
+                    .set_draw_color(SdlColor::RGBA(oc.r, oc.g, oc.b, oc.a));
+                let _ =
+                    self.canvas
+                        .fill_rect(FRect::new(dst_x - 1.0, dst_y - 1.0, w + 2.0, h + 2.0));
+            }
+            let src = FRect::new(glyph.region.x as f32, glyph.region.y as f32, w, h);
+            let dst = FRect::new(dst_x, dst_y, w, h);
+            self.canvas
+                .set_draw_color(SdlColor::RGBA(color.r, color.g, color.b, color.a));
+            let _ = self.canvas.copy(texture, src, dst);
+            cursor_x += glyph.x_advance as f32;
+            if i + 1 < chars.len() {
+                if let Some(&k) = glyph.kerning.get(&chars[i + 1]) {
+                    cursor_x += k as f32;
+                }
+            }
+        }
+    }
+
+    /// Draws plugin-submitted text (`Draw.Text` / `TextJustified` /
+    /// `TextCentered` / `OutlineText`). Position is in world coordinates,
+    /// transformed by the camera; multi-line text is rendered line-by-line.
+    /// Prefers the active `PixelFont`; falls back to the legacy `SpriteFont`
+    /// when no BMFont is loaded.
+    pub fn draw_texts(&mut self, texts: &[Text]) {
+        if let Some(pf) = self.pixel_font.clone() {
+            self.draw_pixel_texts(&pf, texts);
+            return;
+        }
+        let Some(font) = self.font.clone() else {
+            return;
+        };
+        let line_spacing = font.line_spacing as f32;
+        for t in texts {
+            if t.text.is_empty() {
+                continue;
+            }
+            let x0 = t.x - self.camera.x;
+            let y0 = t.y - self.camera.y;
+            let mut cursor_y = y0;
+            let mut line_start = 0usize;
+            for (i, c) in t.text.char_indices() {
+                if c == '\n' {
+                    let line = &t.text[line_start..i];
+                    let line_w = font.measure_string(line) as f32;
+                    let sx = match t.justify {
+                        Justify::Left => x0,
+                        Justify::Center => x0 - line_w * 0.5,
+                        Justify::Right => x0 - line_w,
+                    };
+                    self.draw_text_line(&font, line, sx, cursor_y, t.color, t.outline);
+                    cursor_y += line_spacing;
+                    line_start = i + c.len_utf8();
+                }
+            }
+            let line = &t.text[line_start..];
+            let line_w = font.measure_string(line) as f32;
+            let sx = match t.justify {
+                Justify::Left => x0,
+                Justify::Center => x0 - line_w * 0.5,
+                Justify::Right => x0 - line_w,
+            };
+            self.draw_text_line(&font, line, sx, cursor_y, t.color, t.outline);
+        }
+    }
+
+    fn draw_text_line(
+        &mut self,
+        font: &crate::data::font::SpriteFont,
+        text: &str,
+        x: f32,
+        y: f32,
+        color: ruleste_plugins_api::types::Color,
+        outline: Option<ruleste_plugins_api::types::Color>,
+    ) {
+        let mut cursor_x = x;
+        let mut prev_char: Option<char> = None;
+        for c in text.chars() {
+            if let Some(glyph) = font.glyph(c) {
+                let ox = if font.use_kerning && prev_char.is_some() {
+                    font.spacing as f32
+                } else {
+                    0.0
+                };
+                cursor_x += ox;
+                let bounds = glyph.bounds;
+                let dst = FRect::new(
+                    cursor_x + bounds.x as f32,
+                    y + bounds.y as f32,
+                    bounds.width as f32,
+                    bounds.height as f32,
+                );
+                if let Some(oc) = outline {
+                    // Draw the outline as a filled rect offset by ±1px.
+                    let orect = FRect::new(dst.x - 1.0, dst.y - 1.0, dst.w + 2.0, dst.h + 2.0);
+                    self.canvas
+                        .set_draw_color(SdlColor::RGBA(oc.r, oc.g, oc.b, oc.a));
+                    let _ = self.canvas.fill_rect(orect);
+                }
+                self.canvas
+                    .set_draw_color(SdlColor::RGBA(color.r, color.g, color.b, color.a));
+                let _ = self.canvas.fill_rect(dst);
+                cursor_x += glyph.advance as f32;
+            }
+            prev_char = Some(c);
+        }
+    }
+
     /// Draws plugin-submitted autotiled boxes (`TileBox`), e.g. introCrusher
-    /// slabs. Blits each 8x8 cell from the tileset frame, honoring the box's
-    /// world position.
     pub fn draw_tile_boxes(&mut self, boxes: &[TileBox], atlas: &Atlas) {
         for tile_box in boxes {
             let Some(&(page_idx, frame_idx)) = atlas.frame_index.get(&tile_box.frame_id) else {

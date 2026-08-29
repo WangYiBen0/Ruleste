@@ -58,31 +58,40 @@ pub struct Level {
     pub foregrounds: Vec<Backdrop>,
 }
 
-/// Decorative entities without gameplay collision boxes. This mirrors the
-/// entity types consolidated in the `ruleste-plugin-decorations` plugin; they
-/// are separated from `entities` so spawn-room selection only considers
-/// gameplay markers (e.g. the `player` spawn).
+/// Decoration marker file: every entity type name listed here is treated
+/// as a pure visual prop and routed to `room.decorations` instead of
+/// `room.entities`. The actual rendering is owned by
+/// `ruleste-plugin-decorations`; this engine code only consumes the marker
+/// so gameplay logic stays out of the engine.
+const DECORATION_MARKER: &str = include_str!("../../plugins/decorations/marker.toml");
+
+fn decoration_set() -> &'static std::collections::HashSet<&'static str> {
+    use std::sync::OnceLock;
+    static SET: OnceLock<std::collections::HashSet<&'static str>> = OnceLock::new();
+    SET.get_or_init(|| {
+        let mut out = std::collections::HashSet::new();
+        // Tiny ad-hoc parser: each `"foo",` token inside the
+        // `decoration_types = [ ... ]` array becomes one entry. Avoids
+        // pulling in a full TOML crate at host compile time.
+        let body = DECORATION_MARKER
+            .split_once('[')
+            .and_then(|(_, rest)| rest.split_once(']'))
+            .map(|(arr, _)| arr)
+            .unwrap_or("");
+        for raw in body.split(',') {
+            let t = raw.trim();
+            if let Some(stripped) = t.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+                if !stripped.is_empty() {
+                    out.insert(stripped);
+                }
+            }
+        }
+        out
+    })
+}
+
 fn is_decoration(name: &str) -> bool {
-    matches!(
-        name,
-        "bird"
-            | "bonfire"
-            | "cliffflag"
-            | "cobweb"
-            | "floatingDebris"
-            | "foregroundDebris"
-            | "flutterbird"
-            | "hanginglamp"
-            | "lamp"
-            | "lightbeam"
-            | "resortLantern"
-            | "soundSource"
-            | "SummitBackgroundManager"
-            | "torch"
-            | "towerviewer"
-            | "wire"
-    ) || name.starts_with("dec")
-        || name.ends_with("dec")
+    decoration_set().contains(name)
 }
 
 impl Level {

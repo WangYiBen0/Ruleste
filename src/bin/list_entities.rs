@@ -36,7 +36,10 @@ fn main() {
         }
     }
 
-    println!("=== entity types referenced across all Celeste maps ({} total) ===", all.len());
+    println!(
+        "=== entity types referenced across all Celeste maps ({} total) ===",
+        all.len()
+    );
     for ty in &all {
         println!("{ty}\t{}", per_type.get(ty).unwrap_or(&0));
     }

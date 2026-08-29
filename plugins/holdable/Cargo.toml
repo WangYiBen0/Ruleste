@@ -1,0 +1,15 @@
+[package]
+name = "ruleste-plugin-holdable"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Holdable subsystem plugin — defines the carry/pickup contract shared by TheoCrystal, Jellyfish, Key, ZipMover and other Holdable entities."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugins-api = { path = "../../crates/ruleste-plugins-api", features = [
+  "plugin",
+] }

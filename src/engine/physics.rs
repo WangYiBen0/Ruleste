@@ -258,6 +258,28 @@ impl SolidGrid {
         self.solid[lty as usize * self.width + ltx as usize]
     }
 
+    /// Returns true when the straight line from `(x1, y1)` to `(x2, y2)`
+    /// (world units) is unobstructed by solid tiles — a coarse grid-stepped
+    /// sight test used for AI line-of-sight (e.g. `Seeker.CanSeePlayer`).
+    /// Off-grid samples count as blocking.
+    #[must_use]
+    pub fn line_of_sight(&self, x1: f32, y1: f32, x2: f32, y2: f32) -> bool {
+        let dx = x2 - x1;
+        let dy = y2 - y1;
+        let dist = (dx * dx + dy * dy).sqrt();
+        // Step at half a tile so we can't skip a thin wall.
+        let steps = (dist / (TILE * 0.5)).ceil().max(1.0) as i32;
+        for i in 0..=steps {
+            let t = i as f32 / steps as f32;
+            let x = x1 + dx * t;
+            let y = y1 + dy * t;
+            if self.solid_at((x / TILE).round() as i32, (y / TILE).round() as i32) {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Returns the tile character at `(tx, ty)`, or `None` if empty / out of bounds.
     pub fn tile_id_at(&self, tx: i32, ty: i32) -> Option<char> {
         let ltx = tx - (self.origin_x / TILE).round() as i32;
@@ -309,6 +331,66 @@ impl SolidGrid {
             }
         }
         false
+    }
+
+    /// Returns true if the given circle (centre `cx`/`cy`, radius `r`) overlaps
+    /// any solid tile in this grid. Uses a bounding-box prefilter (every tile
+    /// whose bounding box intersects the circle's AABB is checked); the per-tile test
+    /// uses the closest-point-on-AABB-to-centre distance.
+    ///
+    /// Mirrors `CircleCollider.Check(Rect)` / `Grid.Check` for circles.
+    #[must_use]
+    pub fn collide_circle(&self, cx: f32, cy: f32, r: f32) -> bool {
+        if r <= 0.0 {
+            return false;
+        }
+        let x0 = ((cx - r) / TILE).floor() as i32;
+        let y0 = ((cy - r) / TILE).floor() as i32;
+        let x1 = ((cx + r) / TILE).ceil() as i32;
+        let y1 = ((cy + r) / TILE).ceil() as i32;
+        for ty in y0..=y1 {
+            for tx in x0..=x1 {
+                if !self.solid_at(tx, ty) {
+                    continue;
+                }
+                let tx0 = (tx as f32) * TILE;
+                let ty0 = (ty as f32) * TILE;
+                let cx_tile = cx.clamp(tx0, tx0 + TILE);
+                let cy_tile = cy.clamp(ty0, ty0 + TILE);
+                let dx = cx - cx_tile;
+                let dy = cy - cy_tile;
+                if dx * dx + dy * dy <= r * r {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Returns true if a circle overlaps an AABB at `(x, y, w, h)`.
+    /// Mirrors `CircleToRect` in the original `Collide` class.
+    #[must_use]
+    pub fn circle_to_rect(cx: f32, cy: f32, r: f32, x: f32, y: f32, w: f32, h: f32) -> bool {
+        if r <= 0.0 || w <= 0.0 || h <= 0.0 {
+            return false;
+        }
+        let cx_closest = cx.clamp(x, x + w);
+        let cy_closest = cy.clamp(y, y + h);
+        let dx = cx - cx_closest;
+        let dy = cy - cy_closest;
+        dx * dx + dy * dy <= r * r
+    }
+
+    /// Returns true if two circles overlap.
+    #[must_use]
+    pub fn circle_to_circle(cx1: f32, cy1: f32, r1: f32, cx2: f32, cy2: f32, r2: f32) -> bool {
+        if r1 <= 0.0 || r2 <= 0.0 {
+            return false;
+        }
+        let dx = cx1 - cx2;
+        let dy = cy1 - cy2;
+        let min_dist = r1 + r2;
+        dx * dx + dy * dy <= min_dist * min_dist
     }
 
     /// Moves an entity by `(dx, dy)` resolving against solids, in the spirit of
@@ -815,5 +897,95 @@ mod tests {
             !g.entity_collide(&world, rider, -2.0, 0.0),
             "probing away from the block should not collide"
         );
+    }
+
+    /// A 3-tile wide, 1-tile tall solid floor at y=64..72 (tile row 8..9), with
+    /// no walls or platforms around it.
+    fn floor_grid() -> SolidGrid {
+        let mut rows: Vec<String> = (0..20).map(|_| "0".repeat(16)).collect();
+        // Solid at row 8, columns 0..2 only (x in 0..24, y in 64..72).
+        for (i, r) in rows.iter_mut().enumerate() {
+            if i == 8 {
+                let mut chars: Vec<char> = r.chars().collect();
+                for c in chars.iter_mut().take(3) {
+                    *c = '1';
+                }
+                *r = chars.into_iter().collect();
+            }
+        }
+        let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+        SolidGrid::from_rows(&rows)
+    }
+
+    #[test]
+    fn circle_hits_solid_tile() {
+        let g = floor_grid();
+        // Centre at (12, 68) — sits right on top of the solid at (0,8)→(24,16).
+        assert!(g.collide_circle(12.0, 68.0, 4.0));
+    }
+
+    #[test]
+    fn circle_misses_when_far_above() {
+        let g = floor_grid();
+        // Centre at (12, 20), radius 4 — bounding box touches row 2..4, no solids.
+        assert!(!g.collide_circle(12.0, 20.0, 4.0));
+    }
+
+    #[test]
+    fn circle_touches_corner_without_intersection() {
+        let g = floor_grid();
+        // Centre at (28, 76), radius 4 — closest tile corner is (24, 72),
+        // distance is sqrt(16+16)≈5.66 > 4, so no hit.
+        assert!(!g.collide_circle(28.0, 76.0, 4.0));
+    }
+
+    #[test]
+    fn circle_clips_tile_edge() {
+        let g = floor_grid();
+        // Centre at (26, 72), radius 4 — right edge of solid row.
+        // Closest point on tile (24..32, 64..72) to (26, 72) is (26, 72), distance 0.
+        assert!(g.collide_circle(26.0, 72.0, 4.0));
+    }
+
+    #[test]
+    fn circle_zero_radius_does_not_collide() {
+        let g = floor_grid();
+        assert!(!g.collide_circle(12.0, 68.0, 0.0));
+        assert!(!g.collide_circle(12.0, 68.0, -1.0));
+    }
+
+    #[test]
+    fn circle_to_rect_basic() {
+        // Circle (5, 5) r=3 vs rect (8, 8, 4, 4) — distance to (8,8) is sqrt(18)≈4.24 > 3.
+        assert!(!SolidGrid::circle_to_rect(
+            5.0, 5.0, 3.0, 8.0, 8.0, 4.0, 4.0
+        ));
+        // Same circle vs rect (4, 4, 4, 4) — distance to (4,4) is sqrt(2)≈1.41 < 3.
+        assert!(SolidGrid::circle_to_rect(5.0, 5.0, 3.0, 4.0, 4.0, 4.0, 4.0));
+        // Centre inside rect.
+        assert!(SolidGrid::circle_to_rect(5.0, 5.0, 3.0, 4.0, 4.0, 2.0, 2.0));
+    }
+
+    #[test]
+    fn circle_to_circle_basic() {
+        // Two circles separated by 4 with radii 2+2=4: touching counts.
+        assert!(SolidGrid::circle_to_circle(0.0, 0.0, 2.0, 4.0, 0.0, 2.0));
+        // Separated by 5 with radii 2+2=4: not touching.
+        assert!(!SolidGrid::circle_to_circle(0.0, 0.0, 2.0, 5.0, 0.0, 2.0));
+        // Zero radius on either side: no hit.
+        assert!(!SolidGrid::circle_to_circle(0.0, 0.0, 0.0, 0.0, 0.0, 2.0));
+    }
+
+    #[test]
+    fn line_of_sight_blocked_by_solid() {
+        let g = floor_grid();
+        // The solid row (cols 0..2, x 0..24, y 64..72) sits between (12, 50)
+        // and (12, 80) → no clear line of sight.
+        assert!(!g.line_of_sight(12.0, 50.0, 12.0, 80.0));
+        // Both points well above the floor (row 8 = y 64..72), clear of any
+        // solid → clear sight.
+        assert!(g.line_of_sight(12.0, 50.0, 12.0, 58.0));
+        // A horizontal ray clear of the floor column is unobstructed.
+        assert!(g.line_of_sight(40.0, 68.0, 80.0, 68.0));
     }
 }

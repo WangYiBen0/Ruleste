@@ -9,5 +9,6 @@ pub mod draw;
 pub mod ecs;
 pub mod input;
 pub mod level;
+pub mod particles;
 pub mod physics;
 pub mod sprites;

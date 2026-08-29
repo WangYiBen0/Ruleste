@@ -21,10 +21,10 @@ use ruleste_plugins_api::types::Vec2;
 // `pp` (the player position used for room transitions) is converted to world
 // space only for the rectangle-containment test against room world rects.
 
-/// Parses a `--plugin-path=<dir>` style option out of the raw argument list,
-/// returning the remaining positional args and the plugin dir (defaulting to
-/// the `plugins/` folder next to the executable). Keeps the game independent
-/// of the cargo `target/` layout.
+/// Parses `--plugin-path=<dir>` and `--show-hitboxes` from the raw argument list,
+/// returning the remaining positional args, the plugin dir (defaulting to the
+/// `plugins/` folder next to the executable), and the show-hitboxes flag.
+/// Keeps the game independent of the cargo `target/` layout.
 /// Celeste rooms are laid out in world space, each anchored at its own origin
 /// `(x, y)`. Entity spawn data stores *local* coordinates (relative to the
 /// room's top-left), so before handing a spawn to a plugin we must translate
@@ -50,18 +50,34 @@ fn offset_spawn(d: &MapData, ox: f32, oy: f32) -> Vec<u8> {
     d.to_bytes()
 }
 
-fn split_plugin_path(raw: Vec<String>) -> (Vec<String>, String) {
+fn parse_cli_args(raw: Vec<String>) -> (Vec<String>, String, bool) {
     let mut plugin_dir = None;
+    let mut show_hitboxes = false;
     let mut positional: Vec<String> = Vec::with_capacity(raw.len());
     for arg in raw {
-        if let Some(rest) = arg.strip_prefix("--plugin-path=") {
-            plugin_dir = Some(rest.to_string());
+        if arg.starts_with("--plugin-path=") {
+            if let Some(rest) = arg.strip_prefix("--plugin-path=") {
+                plugin_dir = Some(rest.to_string());
+            }
+        } else if arg == "--show-hitboxes" {
+            show_hitboxes = true;
+        } else if arg == "--help" || arg == "-h" {
+            println!(
+                r"Usage: ruleste [options] <map> [atlas-meta] [sprites-xml] [tiles-xml] [audio-dir]
+
+Options:
+  --plugin-path=<dir>     Plugin directory (default: ./plugins/)
+  --show-hitboxes         Show wireframe hitboxes
+  --help, -h              Show this message
+"
+            );
+            std::process::exit(0);
         } else {
             positional.push(arg);
         }
     }
     let dir = plugin_dir.unwrap_or_else(default_plugin_dir);
-    (positional, dir)
+    (positional, dir, show_hitboxes)
 }
 
 /// The `plugins/` folder next to the running executable.
@@ -95,7 +111,8 @@ fn room_rect_dist2(r: &ruleste::engine::level::Room, p: Vec2) -> f32 {
 }
 
 fn main() -> anyhow::Result<()> {
-    let (positional, plugin_dir) = split_plugin_path(std::env::args().skip(1).collect());
+    let (positional, plugin_dir, show_hitboxes) =
+        parse_cli_args(std::env::args().skip(1).collect());
     let mut args = positional.into_iter();
     let map_path = args
         .next()
@@ -112,14 +129,14 @@ fn main() -> anyhow::Result<()> {
     let namespace = args.next().unwrap_or_else(|| pack.clone());
     let resources_root = Path::new("resources").join(&pack).join(&namespace);
     let atlas_dir = resources_root.join("textures").join("Atlases");
-    let sprite_path = args.next().unwrap_or_else(|| {
+    let sprite_path: String = args.next().unwrap_or_else(|| {
         resources_root
             .join("textures")
             .join("Sprites.xml")
             .display()
             .to_string()
     });
-    let autotiler_path = args.next().unwrap_or_else(|| {
+    let autotiler_path: String = args.next().unwrap_or_else(|| {
         resources_root
             .join("textures")
             .join("ForegroundTiles.xml")
@@ -134,6 +151,9 @@ fn main() -> anyhow::Result<()> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
+    if show_hitboxes {
+        eprintln!("ruleste: --show-hitboxes — wireframe hitboxes enabled");
+    }
     let mut frame_count: u32 = 0;
 
     println!("Loading assets...");
@@ -193,8 +213,56 @@ fn main() -> anyhow::Result<()> {
     println!("Initializing SDL3 renderer...");
     // `RULESTE_DUMP_FRAME` needs the software renderer (readback); without it
     // the game runs on a hardware/GPU driver so maximized scaling stays cheap.
+    // Hardware/GPU by default; software only when dumping raw frames.
     let mut renderer = Renderer::new(dump_frame.is_some())?;
     renderer.upload_atlas(&atlas)?;
+    // Load the BMFont for plugin-submitted text commands (Draw.Text / OutlineText).
+    // Try the dialog font (renogare) first, then fall back to the legacy XNB
+    // PressStart2P spritefont. If neither is available, text is a no-op.
+    let dialog_font_dir = resources_root.join("texts").join("Fonts");
+    let dialog_font_path = dialog_font_dir.join("renogare64.fnt");
+    if let Ok(font) = ruleste::data::font::PixelFont::load(&dialog_font_path) {
+        let page_count = font
+            .sizes
+            .iter()
+            .flat_map(|s| s.page_textures.iter())
+            .count();
+        if renderer.upload_pixel_font(font, &dialog_font_dir).is_ok() {
+            println!(
+                "font: loaded PixelFont (renogare64, {} page references) from {}",
+                page_count,
+                dialog_font_path.display()
+            );
+            let uploaded = renderer.font_pages.len();
+            if uploaded == 0 {
+                eprintln!(
+                    "ruleste: no font pages uploaded (PNG siblings of .fnt are missing); \
+                      Draw.Text will be a no-op until assets are converted"
+                );
+            }
+        } else {
+            eprintln!(
+                "ruleste: font XML parsed but no texture pages found; Draw.Text may be blank"
+            );
+        }
+    }
+    // Legacy XNB spritefont — only reached when the BMFont path is absent.
+    let spritefont_path = resources_root.join("font").join("PressStart2P.xnb");
+    if renderer.font_pages.is_empty() {
+        if let Ok(font) = ruleste::data::font::SpriteFont::load(&spritefont_path) {
+            println!(
+                "font: loaded legacy spritefont from {}",
+                spritefont_path.display()
+            );
+            renderer.set_font(font);
+        } else {
+            eprintln!(
+                "ruleste: no dialog font at {} and no spritefont at {}; Draw.Text disabled",
+                dialog_font_path.display(),
+                spritefont_path.display()
+            );
+        }
+    }
     for b in level.backgrounds.iter().chain(&level.foregrounds) {
         if let Err(e) = renderer.upload_backdrop(&atlas, &b.texture) {
             eprintln!("ruleste: upload backdrop {}: {e}", b.texture);
@@ -280,7 +348,12 @@ fn main() -> anyhow::Result<()> {
         .iter()
         .chain(&start_room.decorations)
         .filter(|e| e.name != "player")
-        .map(|e| (e.name.clone(), offset_spawn(&e.data, start_room.x, start_room.y)))
+        .map(|e| {
+            (
+                e.name.clone(),
+                offset_spawn(&e.data, start_room.x, start_room.y),
+            )
+        })
         .collect();
 
     // Create the single Madeline once, then activate the start room's entities.
@@ -320,15 +393,16 @@ fn main() -> anyhow::Result<()> {
             .find(|e| e.entity_type == "player")
             .map(|e| e.position)
             .unwrap_or(Vec2::ZERO);
-        camera.position = camera.target_at(
+        camera.snap_to(camera.target_at(
             player_world,
             start_room.camera_offset,
             Vec2::new(start_room.x, start_room.y),
             Vec2::new(start_room.width, start_room.height),
-        );
+        ));
     }
 
     println!("Entering main game loop (ESC to quit)...");
+
     let target_fps = 60.0;
     let frame_duration = Duration::from_secs_f32(1.0 / target_fps);
     let mut last_time = Instant::now();
@@ -392,10 +466,7 @@ fn main() -> anyhow::Result<()> {
                 // exit point lands in a gap — otherwise the player would walk out
                 // of a room and never switch.
                 let exact = level.rooms.iter().position(|r| {
-                    pp.x >= r.x
-                        && pp.x < r.x + r.width
-                        && pp.y >= r.y
-                        && pp.y < r.y + r.height
+                    pp.x >= r.x && pp.x < r.x + r.width && pp.y >= r.y && pp.y < r.y + r.height
                 });
                 // Fallback only for *near* rooms (a real doorway leaves at most a
                 // pixel-sized gap between contiguous room rects). This keeps pit
@@ -428,7 +499,10 @@ fn main() -> anyhow::Result<()> {
                         .chain(&new_room.decorations)
                         .filter(|e| e.name != "player")
                         .map(|e| {
-                            (e.name.clone(), offset_spawn(&e.data, new_room.x, new_room.y))
+                            (
+                                e.name.clone(),
+                                offset_spawn(&e.data, new_room.x, new_room.y),
+                            )
                         })
                         .collect();
                     let new_player = new_room
@@ -442,12 +516,12 @@ fn main() -> anyhow::Result<()> {
                     wasm_host.enter_room(&new_room_spawns, ("player".to_string(), new_player));
                     // The player keeps its continuous world position as it walks
                     // through the doorway; we only snap the camera to the new room.
-                    camera.position = camera.target_at(
+                    camera.snap_to(camera.target_at(
                         pp,
                         new_room.camera_offset,
                         Vec2::new(new_room.x, new_room.y),
                         Vec2::new(new_room.width, new_room.height),
-                    );
+                    ));
                 }
             }
         }
@@ -481,7 +555,16 @@ fn main() -> anyhow::Result<()> {
                 Vec2::new(room.width, room.height),
             ),
         );
+        // Apply any pending shake requests from plugins.
+        for (intensity, duration) in wasm_host.game_state().shake_requests.drain(..) {
+            camera.shake(intensity, duration);
+        }
         renderer.set_camera(camera.position);
+        // Publish the (shake-adjusted) camera to the host so plugin FFI can
+        // convert mouse coordinates into world units.
+        let state = wasm_host.game_state();
+        state.camera = camera.position;
+        state.pixel_scale = renderer.pixel_scale();
 
         // Update sprite animations
         let state = wasm_host.game_state();
@@ -500,8 +583,12 @@ fn main() -> anyhow::Result<()> {
         wasm_host.draw();
         let state = wasm_host.game_state();
         renderer.draw_entities(&state.world, &atlas, &sprite_bank, &mut sprite_animator);
+        renderer.draw_hitboxes(&state.world, show_hitboxes);
         renderer.draw_lines(&state.draw_commands);
         renderer.draw_rects(&state.draw_rects);
+        renderer.draw_hollow_rects(&state.draw_hollow_rects);
+        renderer.draw_circles(&state.draw_circles);
+        renderer.draw_texts(&state.draw_texts);
         renderer.draw_tile_boxes(&state.draw_tile_boxes, &atlas);
         renderer.draw_images(&state.draw_images, &atlas);
         // Parallax foreground layers draw in front of the world

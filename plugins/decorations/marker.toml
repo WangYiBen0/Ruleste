@@ -1,0 +1,58 @@
+# Canonical list of "decoration" entity type names.
+# The host engine reads this file at compile time (include_str!) to build the
+# is_decoration() routing table.  The ruleste-plugin-decorations plugin
+# registers every name in this list and only draws them (no gameplay side effects).
+#
+# When you add a new purely-visual entity type, add it here AND to the
+# ruleste_entity_types! macro in src/lib.rs — that is the only two places
+# to touch.
+
+decoration_types = [
+    # ---- existing vanilla types ----
+    "bird",
+    "bonfire",
+    "cliffflag",
+    "cobweb",
+    "floatingDebris",
+    "foregroundDebris",
+    "flutterbird",
+    "hanginglamp",
+    "lamp",
+    "lightbeam",
+    "resortLantern",
+    "soundSource",
+    "SummitBackgroundManager",
+    "torch",
+    "towerviewer",
+    "wire",
+
+    # ---- RIIR additions (purely visual, no gameplay impact) ----
+    "birdPath",
+    "blockField",
+    "clothesline",
+    "clutterCabinet",
+    "clutterDoor",
+    "cliffside_flag",
+    "dreamMirror",
+    "flingBird",
+    "flingBirdIntro",
+    "friendlyGhost",
+    "glider",
+    "kevins_pc",
+    "memorialTextController",
+    "moonCreature",
+    "oshirodoor",
+    "picoconsole",
+    "playbackBillboard",
+    "playbackTutorial",
+    "powerSourceNumber",
+    "reflectionHeartStatue",
+    "resortmirror",
+    "resortRoofEnding",
+    "seekerStatue",
+    "summitGemManager",
+    "templeBigEyeball",
+    "templeMirror",
+    "templeMirrorPortal",
+    "wavedashmachine",
+]

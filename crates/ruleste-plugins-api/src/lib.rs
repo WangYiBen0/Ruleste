@@ -1,3 +1,4 @@
+pub mod ease;
 pub mod map;
 pub mod types;
 
@@ -67,4 +68,23 @@ pub mod event {
     // `KEY` opens linked `lockBlock` solids: emitted by a collected `key` and
     // consumed by `lockBlock` plugins. No payload.
     pub const KEY: u32 = 16;
+    // `ATTRACT` pulls the player toward a `darkChaser`: emitted by the chaser
+    // when the player is inside its attract radius. Payload is the chaser's
+    // world position as two `f32` (`x`, `y`) so the player can lerp toward it.
+    pub const ATTRACT: u32 = 17;
+    // `TEMPLE_FALL` starts the scripted Mirror Temple fall: emitted by the
+    // `mirrorTemple` trigger when the player steps onto the collapsing floor.
+    // No payload.
+    pub const TEMPLE_FALL: u32 = 18;
+    // `CASSETTE_RIDE` flags the player as riding a moving `cassetteBlock`:
+    // emitted by the block while the player rests on its top face. Payload is a
+    // single `u8` (`1` = riding, `0` = left). The player switches to
+    // `StCassetteFly` for the ride without changing its normal physics.
+    pub const CASSETTE_RIDE: u32 = 19;
+    // `SPRING_BOUNCE` fires when a non-player actor (Holdable / Puffer / Seeker)
+    // lands on a `spring`, mirroring `Spring.OnHoldable` / `OnPuffer` /
+    // `OnSeeker`. The payload is `[u32 target_id][u8 orientation: 0=floor,
+    // 1=wallLeft, 2=wallRight][f32 from_x][f32 from_y]` so the targeted plugin
+    // can apply its own launch.
+    pub const SPRING_BOUNCE: u32 = 20;
 }

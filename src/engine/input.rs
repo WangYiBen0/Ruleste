@@ -1,12 +1,17 @@
 //! Virtual input layer. Maps physical keys (via the `VirtualButton`/binding
 //! model of the original `Input`) onto the abstract action ids exposed to
 //! plugins. Default bindings mirror `Settings.SetDefaultKeyboardControls`.
+//!
+//! Also handles mouse input (position and left-button), mirroring `MInput.MouseData`.
+//! Mouse coordinates are translated to world units using the camera offset so
+//! plugins can query world-space mouse positions.
 
 use std::collections::HashSet;
 
 use ruleste_plugins_api::types::input as act;
 use sdl3::event::Event;
 use sdl3::keyboard::Keycode;
+use sdl3::mouse::MouseButton;
 
 #[derive(Debug, Clone, Default)]
 pub struct Binding {
@@ -32,6 +37,21 @@ fn buffer_time(action: usize) -> f32 {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct MouseState {
+    pub x: f32,
+    pub y: f32,
+    pub left_down: bool,
+    pub left_pressed: bool,
+    pub left_released: bool,
+}
+
+impl MouseState {
+    fn new() -> MouseState {
+        MouseState::default()
+    }
+}
+
 #[derive(Debug)]
 pub struct Input {
     pub bindings: [Binding; act::COUNT as usize],
@@ -43,6 +63,9 @@ pub struct Input {
     /// VirtualButton `bufferCounter`: counts down while the binding is held
     /// after a fresh press; zeroed immediately if the key is released.
     buffer: [f32; act::COUNT as usize],
+    /// Mouse state, updated from SDL mouse events during `pump`.
+    pub mouse: MouseState,
+    prev_mouse_left: bool,
 }
 
 impl Default for Input {
@@ -75,12 +98,14 @@ impl Default for Input {
             pressed: [false; act::COUNT as usize],
             released: [false; act::COUNT as usize],
             buffer: [0.0; act::COUNT as usize],
+            mouse: MouseState::new(),
+            prev_mouse_left: false,
         }
     }
 }
 
 impl Input {
-    /// Processes SDL key events, refreshes `held`, and computes the
+    /// Processes SDL key and mouse events, refreshes `held`, and computes the
     /// `pressed`/`released` edges for this frame. Call once per frame before
     /// plugins update. Quit/resize events are ignored here so the caller can
     /// handle them separately. `dt` drives the VirtualButton press buffer
@@ -100,6 +125,30 @@ impl Input {
                     keycode: Some(kc), ..
                 } => {
                     self.keys_down.remove(&kc);
+                }
+                Event::MouseMotion { x, y, .. } => {
+                    self.mouse.x = x;
+                    self.mouse.y = y;
+                }
+                Event::MouseButtonDown {
+                    mouse_btn: MouseButton::Left,
+                    x,
+                    y,
+                    ..
+                } => {
+                    self.mouse.left_down = true;
+                    self.mouse.x = x;
+                    self.mouse.y = y;
+                }
+                Event::MouseButtonUp {
+                    mouse_btn: MouseButton::Left,
+                    x,
+                    y,
+                    ..
+                } => {
+                    self.mouse.left_down = false;
+                    self.mouse.x = x;
+                    self.mouse.y = y;
                 }
                 _ => {}
             }
@@ -121,6 +170,12 @@ impl Input {
             }
         }
         self.prev_held = self.held;
+
+        // Mouse edge detection (left button only, mirroring
+        // `MInput.MouseData.Check/Pressed/Released`).
+        self.mouse.left_pressed = self.mouse.left_down && !self.prev_mouse_left;
+        self.mouse.left_released = !self.mouse.left_down && self.prev_mouse_left;
+        self.prev_mouse_left = self.mouse.left_down;
     }
 
     pub fn axis(&self, action: i32) -> f32 {
@@ -164,5 +219,82 @@ impl Input {
         if (0..act::COUNT).contains(&action) {
             self.buffer[action as usize] = 0.0;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sdl3::mouse::MouseButton;
+
+    fn mouse_down(x: f32, y: f32) -> Event {
+        Event::MouseButtonDown {
+            timestamp: 0,
+            window_id: 0,
+            which: 0,
+            mouse_btn: MouseButton::Left,
+            clicks: 1,
+            x,
+            y,
+        }
+    }
+
+    fn mouse_up(x: f32, y: f32) -> Event {
+        Event::MouseButtonUp {
+            timestamp: 0,
+            window_id: 0,
+            which: 0,
+            mouse_btn: MouseButton::Left,
+            clicks: 1,
+            x,
+            y,
+        }
+    }
+
+    fn mouse_motion(x: f32, y: f32) -> Event {
+        Event::MouseMotion {
+            timestamp: 0,
+            window_id: 0,
+            which: 0,
+            mousestate: sdl3::mouse::MouseState::from_sdl_state(0),
+            x,
+            y,
+            xrel: 0.0,
+            yrel: 0.0,
+        }
+    }
+
+    #[test]
+    fn mouse_position_updates_from_motion() {
+        let mut input = Input::default();
+        input.pump([mouse_motion(50.0, 30.0)], 1.0 / 60.0);
+        assert_eq!(input.mouse.x, 50.0);
+        assert_eq!(input.mouse.y, 30.0);
+    }
+
+    #[test]
+    fn mouse_left_pressed_and_released_edges() {
+        let mut input = Input::default();
+        // Down: pressed edge fires.
+        input.pump([mouse_down(10.0, 20.0)], 1.0 / 60.0);
+        assert!(input.mouse.left_pressed, "first down should fire pressed");
+        assert!(
+            !input.mouse.left_released,
+            "first down should not fire released"
+        );
+        assert!(input.mouse.left_down);
+        // Held: no new edges.
+        input.pump([mouse_down(10.0, 20.0)], 1.0 / 60.0);
+        assert!(!input.mouse.left_pressed, "held should not fire pressed");
+        assert!(!input.mouse.left_released, "held should not fire released");
+        // Release: released edge fires.
+        input.pump([mouse_up(10.0, 20.0)], 1.0 / 60.0);
+        assert!(!input.mouse.left_pressed, "release should not fire pressed");
+        assert!(input.mouse.left_released, "release should fire released");
+        assert!(!input.mouse.left_down);
+        // Idle: no edges.
+        input.pump([], 1.0 / 60.0);
+        assert!(!input.mouse.left_pressed);
+        assert!(!input.mouse.left_released);
     }
 }

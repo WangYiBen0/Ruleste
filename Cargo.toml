@@ -51,6 +51,7 @@ members = [
   "plugins/summit",
   "plugins/core",
   "plugins/lostlevels",
+  "plugins/decorations",
   "plugins/cassette",
   "plugins/black-gem",
   "plugins/switch-gate",
@@ -64,6 +65,7 @@ members = [
   "plugins/memorial",
   "plugins/npc",
   "plugins/plateau",
+  "plugins/holdable",
   "plugins/player",
   "plugins/refill",
   "plugins/rotate-spinner",
@@ -96,6 +98,7 @@ roxmltree = "0.20"
 lewton = "0.10.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 # SDL3：基础 features 全平台，平台特定查找方式通过 target cfg 叠加
 [target.'cfg(unix)'.dependencies]

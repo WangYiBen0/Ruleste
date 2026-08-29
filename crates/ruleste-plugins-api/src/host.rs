@@ -2,7 +2,7 @@
 //! exported by the Ruleste host runtime and imported by the plugins. The
 //! signatures here must stay in sync with `src/hotload/wasm_host.rs`.
 
-use crate::types::{Color, EntityId, Vec2};
+use crate::types::{Color, EntityId, Justify, Vec2};
 use std::string::String;
 
 /// Event kinds passed over the host event bus (`host_emit` /
@@ -20,6 +20,11 @@ pub const EV_SIDE_BOUNCE: u32 = crate::event::SIDE_BOUNCE;
 pub const EV_SUPER_BOUNCE: u32 = crate::event::SUPER_BOUNCE;
 pub const EV_DASH_BLOCK: u32 = crate::event::DASH_BLOCK;
 pub const EV_DREAM_DASH_GRANTED: u32 = crate::event::DREAM_DASH_GRANTED;
+pub const EV_KEY: u32 = crate::event::KEY;
+pub const EV_ATTRACT: u32 = crate::event::ATTRACT;
+pub const EV_TEMPLE_FALL: u32 = crate::event::TEMPLE_FALL;
+pub const EV_CASSETTE_RIDE: u32 = crate::event::CASSETTE_RIDE;
+pub const EV_SPRING_BOUNCE: u32 = crate::event::SPRING_BOUNCE;
 
 #[allow(dead_code)]
 #[link(wasm_import_module = "env")]
@@ -53,9 +58,19 @@ unsafe extern "C" {
     fn host_input_pressed(action: i32) -> bool;
     fn host_input_released(action: i32) -> bool;
     fn host_input_consume(action: i32);
+    fn host_mouse_position_get(out: *mut Vec2);
+    fn host_mouse_button_pressed() -> bool;
     fn host_collide_check(id: EntityId, offset_x: f32, offset_y: f32) -> bool;
+    fn host_collide_circle_check(cx: f32, cy: f32, r: f32) -> bool;
+    /// True when the player's hitbox, at offset `(ox, oy)`, overlaps a `water`
+    /// entity. Used by `StSwim` to detect entering/leaving the water surface.
+    /// Returns 0/1; an offset of `(0, 0)` is "the player's current hitbox".
+    fn host_collide_water(ox: f32, oy: f32) -> i32;
     fn host_collide_solid_platform_set(id: EntityId, on: bool);
     fn host_collide_solid_set(id: EntityId, on: bool);
+    /// True (1) when the segment `(x1,y1)→(x2,y2)` is unobstructed by solid
+    /// tiles, false (0) otherwise. Used for AI line-of-sight.
+    fn host_line_of_sight(x1: f32, y1: f32, x2: f32, y2: f32) -> i32;
     fn host_actor_move(id: EntityId, h: f32, v: f32) -> u32;
     fn host_actor_is_grounded(id: EntityId) -> bool;
     fn host_play_sound(name: *const u8, len: u32);
@@ -79,7 +94,42 @@ unsafe extern "C" {
         a: u32,
     );
     fn host_draw_tile_box(tile_id: u32, x: f32, y: f32, tiles_x: u32, tiles_y: u32);
+    fn host_draw_hollow_rect(x: f32, y: f32, w: f32, h: f32, r: u32, g: u32, b: u32, a: u32);
+    fn host_draw_circle(cx: f32, cy: f32, r: f32, red: u32, green: u32, blue: u32, alpha: u32);
+    /// `justify` is 0=Left, 1=Center, 2=Right; `outline` is 0 for none, 255 for outline.
+    fn host_draw_text(
+        x: f32,
+        y: f32,
+        text_ptr: *const u8,
+        text_len: u32,
+        r: u32,
+        g: u32,
+        b: u32,
+        a: u32,
+        justify: u32,
+        outline_r: u32,
+        outline_g: u32,
+        outline_b: u32,
+        outline_a: u32,
+    );
+    fn host_emit_particle(
+        x: f32,
+        y: f32,
+        vx: f32,
+        vy: f32,
+        ax: f32,
+        ay: f32,
+        life: f32,
+        r: u32,
+        g: u32,
+        b: u32,
+        a: u32,
+        size: f32,
+    );
+    fn host_shake(intensity: f32, duration: f32);
     fn host_die();
+    fn host_die_dir(dir_x: f32, dir_y: f32);
+    fn host_death_dir(out: *mut f32);
     fn host_collect(id: EntityId);
     fn host_remove(id: EntityId);
     fn host_respawn_set(x: f32, y: f32);
@@ -102,6 +152,15 @@ unsafe extern "C" {
     fn host_player_stamina_set(id: EntityId, stamina: f32);
     fn host_player_state_get(id: EntityId) -> u32;
     fn host_player_state_set(id: EntityId, state: u32);
+    fn host_player_ducking_get(id: EntityId) -> bool;
+    fn host_player_ducking_set(id: EntityId, ducking: bool);
+    // Session / level state: 0 = Normal (default), 1 = Cold (for core mode).
+    // Plugins that flip behaviour on core mode (ice-block, bounce-block in
+    // iceMode, big-spinner fire mode, ...) read this each frame.
+    fn host_core_mode_get() -> i32;
+    /// Flips the session's core mode: 0 = Normal (Hot), 1 = Cold. Used by
+    /// `CoreModeToggle` when the player touches the toggle.
+    fn host_core_mode_set(cold: i32);
 }
 
 /// Reads the player entity's current dash count (published by the player plugin).
@@ -142,6 +201,39 @@ pub fn set_player_state(id: EntityId, state: u32) {
     unsafe {
         host_player_state_set(id, state);
     }
+}
+
+/// Reads whether the player entity is currently ducking (published by the
+/// player plugin). Used by `whiteBlock` to detect the 3s duck-to-activate.
+#[must_use]
+pub fn player_ducking(id: EntityId) -> bool {
+    unsafe { host_player_ducking_get(id) }
+}
+
+/// Publishes the player entity's ducking flag for other plugins to read.
+pub fn set_player_ducking(id: EntityId, ducking: bool) {
+    unsafe {
+        host_player_ducking_set(id, ducking);
+    }
+}
+
+/// Returns the current session's core mode: `0` = Normal (Hot), `1` = Cold.
+/// Cold mode is active in the upper halves of chapter 3's temple levels.
+#[must_use]
+pub fn core_mode() -> u8 {
+    unsafe { host_core_mode_get() as u8 }
+}
+
+/// Whether the current session is in Cold core mode.
+#[must_use]
+pub fn is_cold_mode() -> bool {
+    core_mode() == 1
+}
+
+/// Sets the current session's core mode: `cold = false` → Normal (Hot),
+/// `cold = true` → Cold. Used by `CoreModeToggle`.
+pub fn set_core_mode(cold: bool) {
+    unsafe { host_core_mode_set(cold as i32) }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -290,12 +382,150 @@ pub fn draw_tile_box(tile_id: char, x: f32, y: f32, tiles_x: u32, tiles_y: u32) 
     }
 }
 
+/// Appends an unfilled axis-aligned rectangle to this frame's draw list.
+/// Only meaningful during the `ruleste_entity_draw` hook.
+pub fn draw_hollow_rect(x: f32, y: f32, w: f32, h: f32, color: Color) {
+    unsafe {
+        host_draw_hollow_rect(
+            x,
+            y,
+            w,
+            h,
+            color.r as u32,
+            color.g as u32,
+            color.b as u32,
+            color.a as u32,
+        );
+    }
+}
+
+/// Appends a circle outline to this frame's draw list.
+/// Only meaningful during the `ruleste_entity_draw` hook.
+pub fn draw_circle(cx: f32, cy: f32, r: f32, color: Color) {
+    unsafe {
+        host_draw_circle(
+            cx,
+            cy,
+            r,
+            color.r as u32,
+            color.g as u32,
+            color.b as u32,
+            color.a as u32,
+        );
+    }
+}
+
+/// Appends a text command to this frame's draw list. Only meaningful
+/// during the `ruleste_entity_draw` hook. `justify` is 0=Left, 1=Center,
+/// 2=Right. Pass `outline_color` as `None` to omit the outline.
+pub fn draw_text(
+    x: f32,
+    y: f32,
+    text: &str,
+    color: Color,
+    justify: Justify,
+    outline_color: Option<Color>,
+) {
+    unsafe {
+        let j = match justify {
+            Justify::Left => 0u32,
+            Justify::Center => 1,
+            Justify::Right => 2,
+        };
+        let (or, og, ob, oa) = match outline_color {
+            Some(c) => (c.r as u32, c.g as u32, c.b as u32, c.a as u32),
+            None => (0, 0, 0, 0),
+        };
+        let bytes = text.as_bytes();
+        host_draw_text(
+            x,
+            y,
+            bytes.as_ptr(),
+            bytes.len() as u32,
+            color.r as u32,
+            color.g as u32,
+            color.b as u32,
+            color.a as u32,
+            j,
+            or,
+            og,
+            ob,
+            oa,
+        );
+    }
+}
+
+/// Spawns a world-space particle into the host's particle system. It drifts by
+/// `(vx, vy)` px/s, accelerates by `(ax, ay)` px/s², lives for `life` seconds
+/// and fades its `a` opacity to 0 over that time. Drawn as a square of
+/// half-extent `size` pixels. Mirrors `ParticleSystem.Emit` of the original
+/// engine; the host integrates and renders the particles so every plugin shares
+/// one pool.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_particle(
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+    ax: f32,
+    ay: f32,
+    life: f32,
+    color: Color,
+    size: f32,
+) {
+    unsafe {
+        host_emit_particle(
+            x,
+            y,
+            vx,
+            vy,
+            ax,
+            ay,
+            life,
+            color.r as u32,
+            color.g as u32,
+            color.b as u32,
+            color.a as u32,
+            size,
+        );
+    }
+}
+
+/// Triggers a screen shake. Mirrors `Camera.Shake(intensity, duration)`. The
+/// host stores the request; the main loop consumes it and applies to the camera.
+pub fn shake(intensity: f32, duration: f32) {
+    unsafe {
+        host_shake(intensity, duration);
+    }
+}
+
 /// Kills the player: the host freezes the room and respawns it shortly after.
 /// Equivalent to `Player.Die()` in the original engine.
 pub fn die() {
     unsafe {
         host_die();
     }
+}
+
+/// Kills the player with a death direction, equivalent to `Player.Die(Vector2
+/// dir)` in the original engine. The direction is stored on the host and
+/// reused on respawn (e.g. to orient Madeline) — query it from the player
+/// plugin via [`death_dir`].
+pub fn die_dir(dir_x: f32, dir_y: f32) {
+    unsafe {
+        host_die_dir(dir_x, dir_y);
+    }
+}
+
+/// Returns the most recent death direction passed to [`die_dir`] (or `(0, 0)`
+/// for a plain [`die`]). The player plugin reads this on (re)spawn to set its
+/// facing/intro orientation, mirroring `Player.deathDir`.
+pub fn death_dir() -> (f32, f32) {
+    let mut out = [0.0f32; 2];
+    unsafe {
+        host_death_dir(out.as_mut_ptr());
+    }
+    (out[0], out[1])
 }
 
 /// Sets whether the host renders this entity (invisible entities are also
@@ -339,6 +569,21 @@ pub fn respawn_position() -> Vec2 {
         host_respawn_get(&mut out);
     }
     out
+}
+
+/// Returns true if the player's hitbox, offset by `(ox, oy)`, overlaps any
+/// `water` entity. Used by the player plugin to detect water entry/exit and
+/// "underwater" sub-conditions for `StSwim`.
+pub fn water_overlap(ox: f32, oy: f32) -> bool {
+    unsafe { host_collide_water(ox, oy) != 0 }
+}
+
+/// True when the straight line from `(x1, y1)` to `(x2, y2)` (world units) is
+/// unobstructed by solid tiles. Used for AI line-of-sight (e.g. a seeker
+/// spotting the player only when it has a clear view).
+#[must_use]
+pub fn line_of_sight(x1: f32, y1: f32, x2: f32, y2: f32) -> bool {
+    unsafe { host_line_of_sight(x1, y1, x2, y2) != 0 }
 }
 
 /// Returns the IDs of all live entities whose `entity_type` matches `name`.
@@ -580,6 +825,26 @@ impl Input {
     }
 }
 
+pub struct Mouse;
+
+impl Mouse {
+    /// Writes the current mouse position (in world units: screen - camera offset)
+    /// to `out`. Plugins use this to implement world-space mouse queries
+    /// (e.g. for placing objects in an editor or targeting a grapple).
+    pub fn position() -> Vec2 {
+        let mut out = Vec2::ZERO;
+        unsafe {
+            host_mouse_position_get(&mut out);
+        }
+        out
+    }
+
+    /// Returns true on the frame the left mouse button transitions from up to down.
+    pub fn left_pressed() -> bool {
+        unsafe { host_mouse_button_pressed() }
+    }
+}
+
 pub struct Collision {
     id: EntityId,
 }
@@ -594,6 +859,12 @@ impl Collision {
     #[must_use]
     pub fn check(&self, dx: f32, dy: f32) -> bool {
         unsafe { host_collide_check(self.id, dx, dy) }
+    }
+
+    /// Returns true when the circle at world `(cx, cy)` with radius `r` overlaps
+    /// any solid tile. Mirrors `Grid.Collide` for a circle collider.
+    pub fn check_circle(cx: f32, cy: f32, r: f32) -> bool {
+        unsafe { host_collide_circle_check(cx, cy, r) }
     }
 
     /// Marks the entity as a standable dynamic platform: actors can land and

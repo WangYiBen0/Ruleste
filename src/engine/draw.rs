@@ -2,7 +2,7 @@
 //! hook. The host collects them per frame and renders them with the entity
 //! sprites; scenery like the `wire` entity draws procedural geometry this way.
 
-use ruleste_plugins_api::types::Color;
+use ruleste_plugins_api::types::{Color, Justify};
 
 /// A straight line segment in world coordinates.
 #[derive(Debug, Clone, Copy)]
@@ -21,6 +21,26 @@ pub struct Rect {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    pub color: Color,
+}
+
+/// An unfilled axis-aligned rectangle: four `Line` segments at the edges.
+#[derive(Debug, Clone, Copy)]
+pub struct HollowRect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub color: Color,
+}
+
+/// A circle in world coordinates, rendered as pixel-perfect line segments.
+/// `cx`/`cy` is the centre, `r` is the radius.
+#[derive(Debug, Clone, Copy)]
+pub struct Circle {
+    pub cx: f32,
+    pub cy: f32,
+    pub r: f32,
     pub color: Color,
 }
 
@@ -60,4 +80,18 @@ pub struct TileBox {
     pub col: Vec<u32>,
     /// Per-cell row index in the tileset texture (row-major).
     pub row: Vec<u32>,
+}
+
+/// A run of text drawn from the active SpriteFont, mirrored by
+/// `Draw.Text / TextJustified / TextCentered` of the original engine.
+#[derive(Debug, Clone)]
+pub struct Text {
+    pub x: f32,
+    pub y: f32,
+    pub text: String,
+    pub color: Color,
+    pub justify: Justify,
+    /// Optional 1px outline color (drawn around each glyph). Mirrors
+    /// `Draw.OutlineText`.
+    pub outline: Option<Color>,
 }

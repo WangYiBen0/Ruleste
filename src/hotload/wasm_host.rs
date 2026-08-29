@@ -16,13 +16,14 @@ use std::time::SystemTime;
 
 use anyhow::{Context, Result, anyhow};
 use ruleste_plugins_api::export;
-use ruleste_plugins_api::types::Color;
+use ruleste_plugins_api::types::{Color, Vec2};
 use wasmtime::{Caller, Engine, Extern, Instance, Linker, Memory, Module, Store, TypedFunc};
 
 use crate::engine::autotiler::{Autotiler, TileGrid};
-use crate::engine::draw::{Image, Line, Rect, TileBox};
+use crate::engine::draw::{Circle, HollowRect, Image, Line, Rect, Text, TileBox};
 use crate::engine::ecs::World;
 use crate::engine::input::Input;
+use crate::engine::particles::{Particle, ParticleSystem};
 use crate::engine::physics::SolidGrid;
 
 pub const SCRATCH_ALLOC: &str = "ruleste_alloc";
@@ -35,6 +36,7 @@ pub const DEATH_FREEZE_TIME: f32 = 1.2;
 /// Set once from the `RULESTE_DEBUG` env var; plugins read it through
 /// `host_debug_enabled` to decide whether to emit verbose logs.
 static DEBUG_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static CORE_MODE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 #[derive(Debug, Clone)]
 pub struct GameEvent {
@@ -74,9 +76,28 @@ pub struct GameState {
     pub draw_images: Vec<Image>,
     /// Autotiled boxes (e.g. introCrusher slabs) submitted during the draw hook.
     pub draw_tile_boxes: Vec<TileBox>,
+    /// Hollow axis-aligned rectangles submitted by plugins during their draw hook.
+    pub draw_hollow_rects: Vec<HollowRect>,
+    /// Circles submitted by plugins during their draw hook.
+    pub draw_circles: Vec<Circle>,
+    /// Text commands submitted by plugins during their draw hook.
+    pub draw_texts: Vec<Text>,
+    /// Host-owned particle pool. Plugins emit particles via `host_emit_particle`;
+    /// the host updates and renders them each frame.
+    pub particles: ParticleSystem,
     /// Seconds remaining on the death freeze; positive while the player is
     /// dead and the room is frozen before respawning.
     pub death_timer: f32,
+    /// Pending screen shake requests from plugins (intensity, duration).
+    pub shake_requests: Vec<(f32, f32)>,
+    /// Top-left world-space camera position, updated by the main loop each
+    /// frame so plugin FFI can convert mouse coordinates into world units.
+    pub camera: Vec2,
+    /// Window-to-logical scale factor (`1.0` when the window is at the
+    /// logical 320x180 size, larger when maximised). Multiplies raw mouse
+    /// pixel coordinates down to logical units before applying the camera
+    /// offset.
+    pub pixel_scale: f32,
     /// Entities that have been consumed this session (e.g. a collected
     /// strawberry) and must not be re-created on respawn. Keyed by spawn blob.
     pub collected: HashSet<Vec<u8>>,
@@ -98,6 +119,13 @@ pub struct GameState {
     /// Player state numbers published by the player plugin each frame, so
     /// springs etc. can skip interactions the player forbids mid-dash.
     pub player_states: HashMap<u32, u32>,
+    /// Player ducking flags published by the player plugin each frame, so
+    /// `whiteBlock` can detect the duck-to-activate (mirrors `Player.Ducking`).
+    pub player_ducking: HashMap<u32, bool>,
+    /// Direction the player died in, set by `host_die_dir` and re-read by the
+    /// player plugin on (re)spawn to orient Madeline. `(0, 0)` means an
+    /// unoriented death (plain `host_die`).
+    pub death_dir: (f32, f32),
     /// Per-plugin event delivery cursor: how many entries of `events` each
     /// plugin has already consumed. `host_drain_events` hands each plugin its
     /// own view of the shared bus, so any number of plugins can listen without
@@ -120,7 +148,14 @@ impl GameState {
             draw_rects: Vec::new(),
             draw_images: Vec::new(),
             draw_tile_boxes: Vec::new(),
+            draw_hollow_rects: Vec::new(),
+            draw_circles: Vec::new(),
+            draw_texts: Vec::new(),
+            particles: ParticleSystem::new(),
             death_timer: 0.0,
+            shake_requests: Vec::new(),
+            camera: Vec2::ZERO,
+            pixel_scale: 1.0,
             collected: HashSet::new(),
             respawn_pos: None,
             autotiler: None,
@@ -128,6 +163,8 @@ impl GameState {
             player_dashes: HashMap::new(),
             player_stamina: HashMap::new(),
             player_states: HashMap::new(),
+            player_ducking: HashMap::new(),
+            death_dir: (0.0, 0.0),
             plugin_cursors: HashMap::new(),
             current_plugin: None,
         }
@@ -183,6 +220,7 @@ impl WasmHost {
                 .is_ok_and(|v| v != "0" && !v.eq_ignore_ascii_case("false")),
             std::sync::atomic::Ordering::Relaxed,
         );
+        CORE_MODE.store(0, std::sync::atomic::Ordering::Relaxed);
         Ok(WasmHost {
             engine,
             store,
@@ -214,6 +252,7 @@ impl WasmHost {
         for id in ids {
             self.despawn(id);
         }
+        self.store.data_mut().particles.clear();
         self.player_spawn = Some(player_respawn);
         for (ty, s) in spawns {
             if let Ok(Some(id)) = self.spawn_entity(ty, s.clone()) {
@@ -231,7 +270,11 @@ impl WasmHost {
             v.push(p.clone());
         }
         v.extend(self.room_entity_ids.iter().filter_map(|id| {
-            self.store.data().world.get(*id).map(|e| (e.entity_type.clone(), e.spawn.clone()))
+            self.store
+                .data()
+                .world
+                .get(*id)
+                .map(|e| (e.entity_type.clone(), e.spawn.clone()))
         }));
         self.respawn_entities = v;
     }
@@ -240,6 +283,13 @@ impl WasmHost {
     /// slabs (e.g. introCrusher). Call before spawning entities.
     pub fn set_autotiler(&mut self, autotiler: Autotiler) {
         self.store.data_mut().autotiler = Some(autotiler);
+    }
+
+    /// Sets the current session's core mode: 0 = Normal (Hot), 1 = Cold.
+    /// Should be called when the session's `CoreMode` changes (e.g. when the
+    /// player crosses a core mode switch tile in chapter 3).
+    pub fn set_core_mode(&mut self, cold: bool) {
+        CORE_MODE.store(cold as u8, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn game_state(&mut self) -> &mut GameState {
@@ -428,6 +478,8 @@ impl WasmHost {
             }
         }
         self.store.data_mut().current_plugin = None;
+        // Advance the host-owned particle pool after plugin logic has run.
+        self.store.data_mut().particles.update(dt);
         // Garbage-collect events every plugin has already consumed.
         let min_consumed = self
             .store
@@ -474,6 +526,7 @@ impl WasmHost {
         for id in ids {
             self.despawn(id);
         }
+        self.store.data_mut().particles.clear();
         let collected = self.store.data().collected.clone();
         let recipes = self.respawn_entities.clone();
         for (entity_type, spawn) in &recipes {
@@ -517,6 +570,9 @@ impl WasmHost {
         self.store.data_mut().draw_rects.clear();
         self.store.data_mut().draw_images.clear();
         self.store.data_mut().draw_tile_boxes.clear();
+        self.store.data_mut().draw_hollow_rects.clear();
+        self.store.data_mut().draw_circles.clear();
+        self.store.data_mut().draw_texts.clear();
         let jobs: Vec<(u32, usize)> = self
             .store
             .data()
@@ -537,6 +593,10 @@ impl WasmHost {
                 eprintln!("ruleste: plugin draw error (entity {id}): {e}");
             }
         }
+        // Bake the live particles into this frame's rectangle list so the
+        // existing rectangle renderer draws them (in world space, above entities).
+        let state = self.store.data_mut();
+        state.particles.append_to_rects(&mut state.draw_rects);
     }
 
     pub fn despawn(&mut self, id: u32) {
@@ -903,12 +963,66 @@ impl WasmHost {
                 caller.data_mut().input.consume(action);
             },
         )?;
+        // --- Mouse position in world space (screen - camera offset) ---
+        linker.func_wrap(
+            "env",
+            "host_mouse_position_get",
+            |mut caller: Caller<'_, GameState>, out: u32| {
+                let m = caller.data().input.mouse.x;
+                let n = caller.data().input.mouse.y;
+                let scale = caller.data().pixel_scale;
+                let cam = caller.data().camera;
+                let wx = m / scale + cam.x;
+                let wy = n / scale + cam.y;
+                write_vec2(&mut caller, out, wx, wy);
+            },
+        )?;
+        // --- Left mouse button pressed edge this frame ---
+        linker.func_wrap(
+            "env",
+            "host_mouse_button_pressed",
+            |caller: Caller<'_, GameState>| -> i32 {
+                i32::from(caller.data().input.mouse.left_pressed)
+            },
+        )?;
         linker.func_wrap(
             "env",
             "host_collide_check",
             |mut caller: Caller<'_, GameState>, id: u32, ox: f32, oy: f32| {
                 let state = caller.data_mut();
                 i32::from(state.solids.entity_collide(&state.world, id, ox, oy))
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_collide_circle_check",
+            |caller: Caller<'_, GameState>, cx: f32, cy: f32, r: f32| -> i32 {
+                i32::from(caller.data().solids.collide_circle(cx, cy, r))
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_collide_water",
+            |caller: Caller<'_, GameState>, ox: f32, oy: f32| -> i32 {
+                let state = caller.data();
+                let player = match state.world.iter().find(|e| e.entity_type == "player") {
+                    Some(p) => p,
+                    None => return 0,
+                };
+                let px = player.position.x + player.hitbox_offset.x + ox;
+                let py = player.position.y + player.hitbox_offset.y + oy;
+                let pw = player.hitbox.x;
+                let ph = player.hitbox.y;
+                let hit = state.world.iter().any(|e| {
+                    e.entity_type == "water" && {
+                        let ex = e.position.x + e.hitbox_offset.x;
+                        let ey = e.position.y + e.hitbox_offset.y;
+                        let ew = e.hitbox.x;
+                        let eh = e.hitbox.y;
+                        px < ex + ew && px + pw > ex && py < ey + eh && py + ph > ey
+                    }
+                });
+                i32::from(hit)
             },
         )?;
         linker.func_wrap(
@@ -929,6 +1043,13 @@ impl WasmHost {
             |mut caller: Caller<'_, GameState>, id: u32, on: i32| {
                 let state = caller.data_mut();
                 crate::engine::physics::SolidGrid::mark_solid_entity(&mut state.world, id, on != 0);
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_line_of_sight",
+            |caller: Caller<'_, GameState>, x1: f32, y1: f32, x2: f32, y2: f32| {
+                i32::from(caller.data().solids.line_of_sight(x1, y1, x2, y2))
             },
         )?;
         linker.func_wrap(
@@ -1027,11 +1148,158 @@ impl WasmHost {
                 });
             },
         )?;
-        // --- Kill the player: freeze the room, then respawn ---
-        linker.func_wrap("env", "host_die", |mut caller: Caller<'_, GameState>| {
+        // --- Draw a hollow rectangle (axis-aligned, unfilled) ---
+        linker.func_wrap(
+            "env",
+            "host_draw_hollow_rect",
+            |mut caller: Caller<'_, GameState>,
+             x: f32,
+             y: f32,
+             w: f32,
+             h: f32,
+             r: u32,
+             g: u32,
+             b: u32,
+             a: u32| {
+                caller.data_mut().draw_hollow_rects.push(HollowRect {
+                    x,
+                    y,
+                    w,
+                    h,
+                    color: Color {
+                        r: r as u8,
+                        g: g as u8,
+                        b: b as u8,
+                        a: a as u8,
+                    },
+                });
+            },
+        )?;
+        // --- Draw a circle (pixel-perfect outline) ---
+        linker.func_wrap(
+            "env",
+            "host_draw_circle",
+            |mut caller: Caller<'_, GameState>,
+             cx: f32,
+             cy: f32,
+             r: f32,
+             red: u32,
+             green: u32,
+             blue: u32,
+             alpha: u32| {
+                caller.data_mut().draw_circles.push(Circle {
+                    cx,
+                    cy,
+                    r,
+                    color: Color {
+                        r: red as u8,
+                        g: green as u8,
+                        b: blue as u8,
+                        a: alpha as u8,
+                    },
+                });
+            },
+        )?;
+        // --- Append a text command (Draw.Text) ---
+        linker.func_wrap(
+            "env",
+            "host_draw_text",
+            |mut caller: Caller<'_, GameState>,
+             x: f32,
+             y: f32,
+             text_ptr: u32,
+             text_len: u32,
+             r: u32,
+             g: u32,
+             b: u32,
+             a: u32,
+             justify: u32,
+             outline_r: u32,
+             outline_g: u32,
+             outline_b: u32,
+             outline_a: u32| {
+                let text = read_string(&mut caller, text_ptr, text_len);
+                let justify = match justify {
+                    1 => ruleste_plugins_api::types::Justify::Center,
+                    2 => ruleste_plugins_api::types::Justify::Right,
+                    _ => ruleste_plugins_api::types::Justify::Left,
+                };
+                let outline = if outline_a != 0 {
+                    Some(Color {
+                        r: outline_r as u8,
+                        g: outline_g as u8,
+                        b: outline_b as u8,
+                        a: outline_a as u8,
+                    })
+                } else {
+                    None
+                };
+                caller.data_mut().draw_texts.push(Text {
+                    x,
+                    y,
+                    text,
+                    color: Color {
+                        r: r as u8,
+                        g: g as u8,
+                        b: b as u8,
+                        a: a as u8,
+                    },
+                    justify,
+                    outline,
+                });
+            },
+        )?;
+        // --- Spawn a particle into the host-owned particle system ---
+        linker.func_wrap(
+            "env",
+            "host_emit_particle",
+            |mut caller: Caller<'_, GameState>,
+             x: f32,
+             y: f32,
+             vx: f32,
+             vy: f32,
+             ax: f32,
+             ay: f32,
+             life: f32,
+             r: u32,
+             g: u32,
+             b: u32,
+             a: u32,
+             size: f32| {
+                caller.data_mut().particles.emit(Particle::new(
+                    x,
+                    y,
+                    vx,
+                    vy,
+                    ax,
+                    ay,
+                    life,
+                    Color {
+                        r: r as u8,
+                        g: g as u8,
+                        b: b as u8,
+                        a: a as u8,
+                    },
+                    size,
+                ));
+            },
+        )?;
+        // --- Request a screen shake (intensity in pixels, duration seconds) ---
+        linker.func_wrap(
+            "env",
+            "host_shake",
+            |mut caller: Caller<'_, GameState>, intensity: f32, duration: f32| {
+                caller.data_mut().shake_requests.push((intensity, duration));
+            },
+        )?;
+        // Freeze the room and hide the player, recording the death direction so
+        // the player plugin can re-orient on respawn (`Player.deathDir`). Shared
+        // by `host_die` (no direction) and `host_die_dir`.
+        fn kill_player(caller: &mut Caller<'_, GameState>, dir: (f32, f32)) {
             let state = caller.data_mut();
             if state.death_timer <= 0.0 {
                 state.death_timer = DEATH_FREEZE_TIME;
+                state.death_dir = dir;
                 let ids: Vec<u32> = state
                     .world
                     .iter()
@@ -1044,7 +1312,32 @@ impl WasmHost {
                     }
                 }
             }
+        }
+        // --- Kill the player: freeze the room, then respawn ---
+        linker.func_wrap("env", "host_die", |mut caller: Caller<'_, GameState>| {
+            kill_player(&mut caller, (0.0, 0.0));
         })?;
+        // --- Kill the player with a death direction (Player.Die(Vector2 dir)) ---
+        linker.func_wrap(
+            "env",
+            "host_die_dir",
+            |mut caller: Caller<'_, GameState>, dir_x: f32, dir_y: f32| {
+                kill_player(&mut caller, (dir_x, dir_y));
+            },
+        )?;
+        // --- Read back the last death direction (Player.deathDir) ---
+        linker.func_wrap(
+            "env",
+            "host_death_dir",
+            |caller: Caller<'_, GameState>, out: u32| {
+                let dir = caller.data().death_dir;
+                let out = out as usize as *mut f32;
+                unsafe {
+                    *out = dir.0;
+                    *out.add(1) = dir.1;
+                }
+            },
+        )?;
         // --- Consume an entity this session (won't respawn on death) ---
         linker.func_wrap(
             "env",
@@ -1244,6 +1537,16 @@ impl WasmHost {
         linker.func_wrap("env", "host_debug_enabled", |_: Caller<'_, GameState>| {
             i32::from(DEBUG_ENABLED.load(std::sync::atomic::Ordering::Relaxed))
         })?;
+        linker.func_wrap("env", "host_core_mode_get", |_: Caller<'_, GameState>| {
+            i32::from(CORE_MODE.load(std::sync::atomic::Ordering::Relaxed))
+        })?;
+        linker.func_wrap(
+            "env",
+            "host_core_mode_set",
+            |_: Caller<'_, GameState>, cold: i32| {
+                CORE_MODE.store(cold as u8, std::sync::atomic::Ordering::Relaxed);
+            },
+        )?;
         // --- Player resource access (published by the player plugin) ---
         linker.func_wrap(
             "env",
@@ -1290,6 +1593,20 @@ impl WasmHost {
             "host_player_state_set",
             |mut caller: Caller<'_, GameState>, id: u32, state: u32| {
                 caller.data_mut().player_states.insert(id, state);
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_player_ducking_get",
+            |caller: Caller<'_, GameState>, id: u32| {
+                i32::from(*caller.data().player_ducking.get(&id).unwrap_or(&false))
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_player_ducking_set",
+            |mut caller: Caller<'_, GameState>, id: u32, ducking: i32| {
+                caller.data_mut().player_ducking.insert(id, ducking != 0);
             },
         )?;
         Ok(linker)
