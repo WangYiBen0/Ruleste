@@ -7,7 +7,7 @@
 
 use ruleste_plugins_api::host::{self, draw_rect, entities_by_type};
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity, Hitbox, Position};
+use ruleste_plugins_api::plugin::{Entity, Hitbox, Position, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId, Vec2};
 
 ruleste_plugins_api::ruleste_meta!("dark-chaser");
@@ -15,11 +15,24 @@ ruleste_plugins_api::ruleste_entity_types!("darkChaser");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const BODY: Color = Color { r: 0x14, g: 0x10, b: 0x1c, a: 0xff };
-const EYE: Color = Color { r: 0xff, g: 0x40, b: 0x40, a: 0xff };
+const BODY: Color = Color {
+    r: 0x14,
+    g: 0x10,
+    b: 0x1c,
+    a: 0xff,
+};
+const EYE: Color = Color {
+    r: 0xff,
+    g: 0x40,
+    b: 0x40,
+    a: 0xff,
+};
 
 const SPEED: f32 = 70.0;
 const R: f32 = 7.0;
+/// Within this distance (squared) the chaser reels the player in via
+/// `EV_ATTRACT`; matches the player's `ATTRACT_RANGE_SQ`.
+const ATTRACT_RANGE_SQ: f32 = 90.0 * 90.0;
 
 fn player_pos() -> Option<Vec2> {
     let players = entities_by_type("player");
@@ -57,6 +70,15 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         let step = (SPEED * dt).min(d);
         e.position.set_xy(p.x + dx / d * step, p.y + dy / d * step);
     }
+    // Reel the player in while it's close enough (the player's `StAttract`
+    // lerps toward this position until the chaser backs off or connects).
+    let cur = e.position.get();
+    if (target.x - cur.x).powi(2) + (target.y - cur.y).powi(2) <= ATTRACT_RANGE_SQ {
+        let mut buf = [0u8; 8];
+        buf[0..4].copy_from_slice(&cur.x.to_le_bytes());
+        buf[4..8].copy_from_slice(&cur.y.to_le_bytes());
+        host::emit(id, host::EV_ATTRACT, &buf);
+    }
     // Kill on contact with the player center.
     if let Some(tp) = player_pos() {
         let players = entities_by_type("player");
@@ -65,7 +87,13 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             let (pw, ph, pox, poy) = Hitbox::new(pid).get();
             let pcx = pp.x + pox + pw / 2.0;
             let pcy = pp.y + poy + ph / 2.0;
-            if overlap_circle(pcx, pcy, e.position.get().x, e.position.get().y, R + (pw.min(ph)) / 2.0) {
+            if overlap_circle(
+                pcx,
+                pcy,
+                e.position.get().x,
+                e.position.get().y,
+                R + (pw.min(ph)) / 2.0,
+            ) {
                 let _ = tp;
                 host::die();
             }

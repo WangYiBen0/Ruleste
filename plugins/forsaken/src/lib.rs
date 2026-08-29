@@ -8,7 +8,7 @@
 
 use ruleste_plugins_api::host::draw_rect;
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 
 use std::cell::RefCell;
@@ -18,8 +18,18 @@ ruleste_plugins_api::ruleste_entity_types!("birdForsakenCityGem", "memorialTextC
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const BIRD: Color = Color { r: 0xe0, g: 0xc0, b: 0x60, a: 0xff };
-const GEM: Color = Color { r: 0x18, g: 0x18, b: 0x20, a: 0xff };
+const BIRD: Color = Color {
+    r: 0xe0,
+    g: 0xc0,
+    b: 0x60,
+    a: 0xff,
+};
+const GEM: Color = Color {
+    r: 0x18,
+    g: 0x18,
+    b: 0x20,
+    a: 0xff,
+};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {

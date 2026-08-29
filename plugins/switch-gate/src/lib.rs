@@ -7,10 +7,10 @@
 //! can pass through where it stood. Listens on the event bus, so it must live in
 //! its own plugin crate (the host keeps one event cursor per crate).
 
-use ruleste_plugins_api::host::{draw_rect, drain_events};
 use ruleste_plugins_api::event;
+use ruleste_plugins_api::host::{drain_events, draw_rect};
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId, Vec2};
 
 use std::cell::RefCell;
@@ -20,8 +20,18 @@ ruleste_plugins_api::ruleste_entity_types!("switchGate");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const GATE: Color = Color { r: 0x5f, g: 0xcd, b: 0xe4, a: 0xcc };
-const GATE_OPEN: Color = Color { r: 0x5f, g: 0xcd, b: 0xe4, a: 0x30 };
+const GATE: Color = Color {
+    r: 0x5f,
+    g: 0xcd,
+    b: 0xe4,
+    a: 0xcc,
+};
+const GATE_OPEN: Color = Color {
+    r: 0x5f,
+    g: 0xcd,
+    b: 0xe4,
+    a: 0x30,
+};
 
 #[derive(Clone, Copy)]
 struct State {

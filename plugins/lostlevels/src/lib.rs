@@ -1,7 +1,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
-use ruleste_plugins_api::host::{draw_rect, entities_by_type, die};
+use ruleste_plugins_api::host::{die, draw_rect, entities_by_type};
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 use std::cell::RefCell;
 
@@ -27,11 +27,36 @@ ruleste_plugins_api::ruleste_entity_types!(
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const SOLID: Color = Color { r: 0x88, g: 0x88, b: 0x88, a: 0xff };
-const HAZARD: Color = Color { r: 0xff, g: 0x44, b: 0x44, a: 0xff };
-const PROP: Color = Color { r: 0x99, g: 0x88, b: 0x77, a: 0xff };
-const PLAT: Color = Color { r: 0xaa, g: 0xaa, b: 0xcc, a: 0xff };
-const LIGHT: Color = Color { r: 0xff, g: 0xff, b: 0x88, a: 0xff };
+const SOLID: Color = Color {
+    r: 0x88,
+    g: 0x88,
+    b: 0x88,
+    a: 0xff,
+};
+const HAZARD: Color = Color {
+    r: 0xff,
+    g: 0x44,
+    b: 0x44,
+    a: 0xff,
+};
+const PROP: Color = Color {
+    r: 0x99,
+    g: 0x88,
+    b: 0x77,
+    a: 0xff,
+};
+const PLAT: Color = Color {
+    r: 0xaa,
+    g: 0xaa,
+    b: 0xcc,
+    a: 0xff,
+};
+const LIGHT: Color = Color {
+    r: 0xff,
+    g: 0xff,
+    b: 0x88,
+    a: 0xff,
+};
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Kind {
@@ -90,7 +115,8 @@ thread_local! {
 }
 
 fn spawn_type(data: *const u8, len: u32) -> String {
-    spawn_data(unsafe { std::slice::from_raw_parts(data, len as usize) }).get_str("_entity_type", "")
+    spawn_data(unsafe { std::slice::from_raw_parts(data, len as usize) })
+        .get_str("_entity_type", "")
 }
 
 #[unsafe(no_mangle)]
@@ -105,16 +131,22 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let w = spawn.get_float("width", 16.0).max(4.0);
     let h = spawn.get_float("height", 16.0).max(4.0);
     e.hitbox.set(w, h, 0.0, 0.0);
-    let solid = matches!(
-        kind,
-        Kind::CrumbleWallOnRumble | Kind::LightningBlock
-    );
+    let solid = matches!(kind, Kind::CrumbleWallOnRumble | Kind::LightningBlock);
     let platform = matches!(kind, Kind::FloatySpaceBlock);
     e.collision.solid(solid);
     e.collision.platform(platform);
     let nodes: Vec<(f32, f32)> = spawn.nodes().iter().map(|n| (n.x, n.y)).collect();
     STATES.with(|s| {
-        s.borrow_mut().insert(id, State { kind, w, h, nodes, idx: 0 });
+        s.borrow_mut().insert(
+            id,
+            State {
+                kind,
+                w,
+                h,
+                nodes,
+                idx: 0,
+            },
+        );
     });
 }
 
@@ -137,7 +169,8 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             e.position.set_xy(dest.0, dest.1);
             st.idx = (st.idx + 1) % st.nodes.len();
         } else {
-            e.position.set_xy(p.x + dx / dist * speed * dt, p.y + dy / dist * speed * dt);
+            e.position
+                .set_xy(p.x + dx / dist * speed * dt, p.y + dy / dist * speed * dt);
         }
     }
     if hazard {

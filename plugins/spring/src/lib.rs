@@ -95,6 +95,24 @@ fn push_f32(buf: &mut Vec<u8>, v: f32) {
     buf.extend_from_slice(&v.to_le_bytes());
 }
 
+/// Returns the first entity of one of `types` whose hitbox overlaps the spring
+/// rect, so the spring can also fire for `Holdable` / `Puffer` / `Seeker`
+/// actors (mirroring `Spring.OnHoldable` / `OnPuffer` / `OnSeeker`).
+fn overlap_target(types: &[&str], sx: f32, sy: f32, sw: f32, sh: f32) -> Option<EntityId> {
+    for t in types {
+        for eid in entities_by_type(t) {
+            let ep = host::Position::new(eid).get();
+            let (ew, eh, eox, eoy) = host::Hitbox::new(eid).get();
+            let ex = ep.x + eox;
+            let ey = ep.y + eoy;
+            if ex < sx + sw && ex + ew > sx && ey < sy + sh && ey + eh > sy {
+                return Some(eid);
+            }
+        }
+    }
+    None
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     with_state(id, |st| {
@@ -168,6 +186,32 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                     }
                 }
             }
+        }
+
+        // `OnHoldable` / `OnPuffer` / `OnSeeker`: non-player actors landing on
+        // the spring fire it too. Emit a `SPRING_BOUNCE` so the targeted
+        // plugin (theo-crystal / key / seeker / puffer) can apply its own
+        // launch; the spring just commits its cooldown.
+        if let Some(target) =
+            overlap_target(&["theo-crystal", "key", "seeker", "puffer"], sx, sy, sw, sh)
+        {
+            let orientation_byte: u8 = match st.orientation {
+                Orientation::Floor => 0,
+                Orientation::WallLeft => 1,
+                Orientation::WallRight => 2,
+            };
+            let (from_x, from_y) = match st.orientation {
+                Orientation::Floor => (sp.x + sox + sw * 0.5, sp.y + soy),
+                Orientation::WallLeft => (sp.x + sox + sw, sp.y + soy + sh * 0.5),
+                Orientation::WallRight => (sp.x + sox, sp.y + soy + sh * 0.5),
+            };
+            let mut buf = Vec::new();
+            buf.extend_from_slice(&target.to_le_bytes());
+            buf.push(orientation_byte);
+            push_f32(&mut buf, from_x);
+            push_f32(&mut buf, from_y);
+            host::emit(id, host::EV_SPRING_BOUNCE, &buf);
+            st.cooldown = 0.2;
         }
     });
 }

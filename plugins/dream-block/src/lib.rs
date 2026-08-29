@@ -232,6 +232,7 @@ fn line_amplitude(seed: f32, index: f32) -> f32 {
 }
 
 /// Wobble line drawing (approximated with line segments)
+#[allow(clippy::too_many_arguments)]
 fn draw_wobble_line(
     x1: f32,
     y1: f32,
@@ -309,7 +310,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let below = spawn.get_bool("below", false);
 
     // Node position from entity's node list (first node)
-    let node = spawn.nodes().get(0).copied();
+    let node = spawn.nodes().first().copied();
 
     let entity = Entity::new(id);
     entity.position.set_xy(x, y);

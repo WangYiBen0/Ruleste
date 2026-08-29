@@ -1,7 +1,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
-use ruleste_plugins_api::host::{draw_rect, entities_by_type, die};
+use ruleste_plugins_api::host::{core_mode, die, draw_rect, entities_by_type, set_core_mode};
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 use std::cell::RefCell;
 
@@ -15,9 +15,24 @@ ruleste_plugins_api::ruleste_entity_types!(
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const LAVA: Color = Color { r: 0xff, g: 0x66, b: 0x22, a: 0xcc };
-const MSG: Color = Color { r: 0xaa, g: 0xaa, b: 0xaa, a: 0xff };
-const TOGGLE: Color = Color { r: 0x44, g: 0x88, b: 0xcc, a: 0xff };
+const LAVA: Color = Color {
+    r: 0xff,
+    g: 0x66,
+    b: 0x22,
+    a: 0xcc,
+};
+const MSG: Color = Color {
+    r: 0xaa,
+    g: 0xaa,
+    b: 0xaa,
+    a: 0xff,
+};
+const TOGGLE: Color = Color {
+    r: 0x44,
+    g: 0x88,
+    b: 0xcc,
+    a: 0xff,
+};
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Kind {
@@ -42,6 +57,7 @@ struct State {
     kind: Kind,
     w: f32,
     h: f32,
+    cooldown: f32,
 }
 
 thread_local! {
@@ -50,7 +66,8 @@ thread_local! {
 }
 
 fn spawn_type(data: *const u8, len: u32) -> String {
-    spawn_data(unsafe { std::slice::from_raw_parts(data, len as usize) }).get_str("_entity_type", "")
+    spawn_data(unsafe { std::slice::from_raw_parts(data, len as usize) })
+        .get_str("_entity_type", "")
 }
 
 #[unsafe(no_mangle)]
@@ -66,7 +83,15 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let h = spawn.get_float("height", 16.0).max(4.0);
     e.hitbox.set(w, h, 0.0, 0.0);
     STATES.with(|s| {
-        s.borrow_mut().insert(id, State { kind, w, h });
+        s.borrow_mut().insert(
+            id,
+            State {
+                kind,
+                w,
+                h,
+                cooldown: 0.0,
+            },
+        );
     });
 }
 
@@ -89,6 +114,30 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             if p.x < pp.x + pw && p.x + st.w > pp.x && p.y < pp.y + ph && p.y + st.h > pp.y {
                 die();
             }
+        }
+    }
+    if st.kind == Kind::CoreModeToggle {
+        let mut cooldown = st.cooldown;
+        if cooldown > 0.0 {
+            cooldown -= dt;
+        } else {
+            // Flip the session's core mode when the player touches the toggle.
+            for pid in entities_by_type("player") {
+                let pp = Entity::new(pid).position.get();
+                let (pw, ph, _, _) = Entity::new(pid).hitbox.get();
+                if p.x < pp.x + pw && p.x + st.w > pp.x && p.y < pp.y + ph && p.y + st.h > pp.y {
+                    set_core_mode(core_mode() == 0);
+                    cooldown = 1.0;
+                    break;
+                }
+            }
+        }
+        if cooldown != st.cooldown {
+            STATES.with(|s| {
+                if let Some(s) = s.borrow_mut().get_mut(&id) {
+                    s.cooldown = cooldown;
+                }
+            });
         }
     }
 }

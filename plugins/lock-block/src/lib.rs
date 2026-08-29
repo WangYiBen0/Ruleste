@@ -6,10 +6,10 @@
 //! `references/source/Celeste/Celeste/LockBlock.cs`. It only listens, so it lives
 //! in its own crate.
 
-use ruleste_plugins_api::host::{draw_rect, drain_events};
 use ruleste_plugins_api::event;
+use ruleste_plugins_api::host::{drain_events, draw_rect};
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 
 use std::cell::RefCell;
@@ -19,8 +19,18 @@ ruleste_plugins_api::ruleste_entity_types!("lockBlock");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const LOCK: Color = Color { r: 0x9a, g: 0x6a, b: 0x3a, a: 0xff };
-const LOCK_OPEN: Color = Color { r: 0x9a, g: 0x6a, b: 0x3a, a: 0x30 };
+const LOCK: Color = Color {
+    r: 0x9a,
+    g: 0x6a,
+    b: 0x3a,
+    a: 0xff,
+};
+const LOCK_OPEN: Color = Color {
+    r: 0x9a,
+    g: 0x6a,
+    b: 0x3a,
+    a: 0x30,
+};
 
 #[derive(Clone, Copy)]
 struct State {

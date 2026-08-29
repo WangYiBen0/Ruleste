@@ -1,7 +1,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
-use ruleste_plugins_api::host::{draw_rect, entities_by_type, collect, set_respawn};
+use ruleste_plugins_api::host::{collect, draw_rect, entities_by_type, set_respawn};
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 use std::cell::RefCell;
 
@@ -15,12 +15,33 @@ ruleste_plugins_api::ruleste_entity_types!(
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const CLOUD: Color = Color { r: 0xee, g: 0xee, b: 0xff, a: 0xff };
-const FLAG: Color = Color { r: 0x44, g: 0xcc, b: 0x66, a: 0xff };
-const GEM: Color = Color { r: 0xff, g: 0xee, b: 0x55, a: 0xff };
-const MANAGER: Color = Color { r: 0x66, g: 0x66, b: 0x66, a: 0xff };
+const CLOUD: Color = Color {
+    r: 0xee,
+    g: 0xee,
+    b: 0xff,
+    a: 0xff,
+};
+const FLAG: Color = Color {
+    r: 0x44,
+    g: 0xcc,
+    b: 0x66,
+    a: 0xff,
+};
+const GEM: Color = Color {
+    r: 0xff,
+    g: 0xee,
+    b: 0x55,
+    a: 0xff,
+};
+const MANAGER: Color = Color {
+    r: 0x66,
+    g: 0x66,
+    b: 0x66,
+    a: 0xff,
+};
 
 #[derive(Copy, Clone, PartialEq, Eq)]
+#[allow(clippy::enum_variant_names)]
 enum Kind {
     SummitGemManager,
     SummitCheckpoint,
@@ -53,7 +74,8 @@ thread_local! {
 }
 
 fn spawn_type(data: *const u8, len: u32) -> String {
-    spawn_data(unsafe { std::slice::from_raw_parts(data, len as usize) }).get_str("_entity_type", "")
+    spawn_data(unsafe { std::slice::from_raw_parts(data, len as usize) })
+        .get_str("_entity_type", "")
 }
 
 #[unsafe(no_mangle)]
@@ -77,7 +99,16 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     }
     let nodes: Vec<(f32, f32)> = spawn.nodes().iter().map(|n| (n.x, n.y)).collect();
     STATES.with(|s| {
-        s.borrow_mut().insert(id, State { kind, w, h, nodes, idx: 0 });
+        s.borrow_mut().insert(
+            id,
+            State {
+                kind,
+                w,
+                h,
+                nodes,
+                idx: 0,
+            },
+        );
     });
 }
 
@@ -99,7 +130,8 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             e.position.set_xy(dest.0, dest.1);
             st.idx = (st.idx + 1) % st.nodes.len();
         } else {
-            e.position.set_xy(p.x + dx / dist * speed * dt, p.y + dy / dist * speed * dt);
+            e.position
+                .set_xy(p.x + dx / dist * speed * dt, p.y + dy / dist * speed * dt);
         }
     } else if st.kind == Kind::SummitGem {
         let e = Entity::new(id);

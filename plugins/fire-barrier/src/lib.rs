@@ -1,7 +1,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
-use ruleste_plugins_api::host::{draw_rect, entities_by_type, die};
+use ruleste_plugins_api::host::{die, draw_rect, entities_by_type, is_cold_mode};
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 
 ruleste_plugins_api::ruleste_meta!("fireBarrier");
@@ -9,7 +9,12 @@ ruleste_plugins_api::ruleste_entity_types!("fireBarrier");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const FLAME: Color = Color { r: 0xff, g: 0x44, b: 0x22, a: 0xff };
+const FLAME: Color = Color {
+    r: 0xff,
+    g: 0x44,
+    b: 0x22,
+    a: 0xff,
+};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
@@ -26,6 +31,13 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(id: EntityId, _dt: f32) {
     let e = Entity::new(id);
+    // In Cold core mode the barrier is disabled: passable and non-lethal
+    // (mirrors `FireBarrier.Collidable = CoreMode == Hot`).
+    let hot = !is_cold_mode();
+    e.collision.solid(hot);
+    if !hot {
+        return;
+    }
     let p = e.position.get();
     let (w, h, _, _) = e.hitbox.get();
     for pid in entities_by_type("player") {

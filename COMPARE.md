@@ -108,6 +108,7 @@
 | RoundPosition | 242 | — | 🔴 缺失 | — |
 | ScreenToCamera / CameraToScreen | 249 / 254 | — | 🔴 缺失 | 由 SDL 逻辑呈现处理缩放 |
 | Approach(pos, ease) / Approach(pos, ease, max) | 259 / 264 | `Camera::target_at`+`update` (camera.rs:38/56) | 🟡 近似 | 用 target+glide 近似，非原版 ease 插值 |
+| Shake(intensity, duration) / Update(shake) | — | `Camera::shake`/`update` (camera.rs:105/118) | ✅ | 支持多段衰减随机偏移，强度/时长由宿主 `host_shake` 入队；`snap_to` 在换房时重置基础位 |
 
 ---
 
@@ -121,10 +122,10 @@
 | Point | 35 | `host_draw_line` (host.rs:64/191) | 🟠 部分实现 | 仅线/矩形/图元，无 Point |
 | Line (全部重载) | 40 / 45 / 50 / 55 / 70 / 75 | `host::draw_line` (host.rs:191) | 🟡 近似 | 仅直线；无 thickness 参数 |
 | LineAngle | 60 / 65 / 70 | — | 🔴 缺失 | — |
-| Circle (全部重载) | 75 / 92 / 97 / 114 | — | 🔴 缺失 | 无圆绘制 |
+| Circle (全部重载) | 75 / 92 / 97 / 114 | `host::draw_circle` (host.rs) + `renderer::draw_circles` (renderer.rs) | ✅ | Bresenham 中点圆算法，像素级描边，支持颜色/alpha |
 | Rect (全部重载) | 119 / 128 / 133 / 139 | `host::draw_rect` (host.rs:208) | 🟡 近似 | 仅实心矩形 |
-| HollowRect (全部重载) | 144 / 161 / 166 / 171 | — | 🔴 缺失 | 无空心矩形 |
-| Text / TextJustified / TextCentered / OutlineText* | 176…302 | — | 🔴 缺失 | 文本由接口层/插件负责 |
+| HollowRect (全部重载) | 144 / 161 / 166 / 171 | `host::draw_hollow_rect` (host.rs) + `renderer::draw_hollow_rects` (renderer.rs) | ✅ | 四条边线绘制空心矩形 |
+| Text / TextJustified / TextCentered / OutlineText* | 176…302 | `host::draw_text` (host.rs) + `renderer::draw_texts` (renderer.rs) | ✅ | 三种对齐 + 可选 1px 描边，宿主拥有活动 SpriteFont；多行 \n 支持 |
 | SineTextureH/V / TextureBannerV | 302 / 318 / 334 | — | 🔴 缺失 | — |
 
 ---
@@ -138,7 +139,7 @@
 | KeyboardData() / Update / UpdateNull | 16 / 20 / 26 | `Input::pump` (input.rs:89) | 🟡 近似 | 仅键盘；无 Null 设备 |
 | KeyboardData.Check/Pressed/Released (单/双/三键) | 38 / 51 / 64 / 77 / 86 / 95 / 104 / 113 / 122 | `Input::button`/`pressed`/`released` (input.rs:136/144/154) | 🟡 近似 | 按 action 索引，无独立键枚举 |
 | KeyboardData.AxisCheck | 131 / 148 | `Input::axis` (input.rs:126) | ✅ 近似 | 轴输入已对齐 |
-| MouseData (全部) | 303 / 309 / 315 | — | 🔴 缺失 | host 不处理鼠标 |
+| MouseData.Check/Pressed/Released | 303 / 309 / 315 | `Mouse::position`/`left_pressed` (host.rs) + `Input::mouse` (input.rs:46/124) | ✅ | 鼠标坐标（窗口像素→逻辑→世界空间）+ 左键按下/释放边沿；GameState.pixel_scale 由主循环同步，camera 偏移在 FFI 层应用 |
 | GamePadData (全部) | 476…1359 | — | 🔴 缺失 | host 暂不支持手柄 |
 | Initialize / Shutdown / Update / UpdateNull | 1359 / 1371 / 1380 / 1426 | `Input::pump` (input.rs:89) | 🟡 近似 | — |
 | UpdateVirtualInputs | 1437 | — | 🔴 缺失 | 无虚拟输入注册表 |
@@ -475,8 +476,9 @@
 | CheckLine | 121 / 130 | `physics::line_*` (physics.rs) | 🟡 近似 | 见 LineCheck |
 | CheckRect | 139 / 148 | `physics::collide_rect` (physics.rs:294) | ✅ 近似 | — |
 | LineCheck | 157 / 180 | `physics::segment_*` (physics.rs) | 🟡 近似 | 线段相交 |
-| CircleToLine / CircleToPoint / CircleToRect | 205 / 210 / 215 / 220 | — | 🔴 缺失 | host 无圆形碰撞体 |
-| RectToCircle | 225 / 271 | — | 🔴 缺失 | — |
+| CircleToLine / CircleToPoint / CircleToRect | 205 / 210 / 215 / 220 | `physics::circle_to_rect` (physics.rs:348) + `circle_to_circle` (physics.rs:362) | ✅ | 圆形→AABB/圆 |
+| RectToCircle | 225 / 271 | `physics::circle_to_rect` (physics.rs:348) | 🟠 近似 | 需交换参数 |
+| CircleToCircle | — | `physics::circle_to_circle` (physics.rs:362) | ✅ | — |
 | RectToLine | 276 / 328 | `physics::segment_*` (physics.rs) | 🟡 近似 | — |
 | RectToPoint | 333 / 342 | `physics::collide_rect` (physics.rs:294) | ✅ 近似 | — |
 | GetSector | 347 / 369 | — | 🔴 缺失 | — |
@@ -494,7 +496,7 @@
 | LoadBitstring / GetBitstring | 223 / 258 | `SolidGrid::from_rows` (physics.rs:55) | 🟡 近似 | — |
 | Clear / SetRect / CheckRect / CheckColumn / CheckRow | 275 / 286 / 315 / 348 / 360 | `SolidGrid::tile_id_at`/`solid_at` (physics.rs:262/252) | 🟡 近似 | 布尔查询近似 |
 | Clone / Render | 372 / 377 | — | 🔴 缺失 | — |
-| Collide(Vector2/Rectangle/from-to/Hitbox/Grid/Circle/ColliderList) | 409…496 | `physics::collide_rect`/`actor_move` (physics.rs:294/319) | 🟠 部分实现 | 地块碰撞近似；无圆形 |
+| Collide(Vector2/Rectangle/from-to/Hitbox/Grid/Circle/ColliderList) | 409…496 | `physics::collide_rect`/`actor_move`/`collide_circle` (physics.rs:294/319/321) | 🟡 近似 | 地块碰撞；圆形通过 FFI `host_collide_circle_check` 调用 `collide_circle` |
 
 ---
 
@@ -509,7 +511,7 @@
 | Clone / Render | 109 / 114 | — | 🔴 缺失 | — |
 | SetFromRectangle / Set | 119 / 126 | `host Hitbox::set`/`get` (host.rs:643/651) | ✅ 近似 | — |
 | GetTopEdge / Bottom / Left / Right | 133 / 140 / 147 / 154 | — | 🔴 缺失 | — |
-| Collide(Point/Rect/from-to/Hitbox/Grid/Circle/ColliderList) | 161…195 | `host_collide_check` (host.rs:595) | 🟠 部分实现 | 仅地块碰撞 |
+| Collide(Point/Rect/from-to/Hitbox/Grid/Circle/ColliderList) | 161…195 | `host_collide_check` + `host_collide_circle_check` (host.rs:595/600) | 🟡 近似 | 矩形与圆形地块碰撞均已 FFI 暴露 |
 
 ---
 
@@ -572,8 +574,9 @@
 
 ## 小结
 
-- **✅ 已实现且对齐 / 近似**：图集与 SpriteBank 解析（`atlas.rs`/`spritebank.rs`）、自动拼接 3×3 算法（`autotiler.rs`）、实体注册表（`ecs.rs`）、物理碰撞与 `actor_move`/`is_grounded`（`physics.rs`）、相机目标跟随（`camera.rs`）、键盘虚拟输入与缓冲（`input.rs`）、精灵帧推进（`sprites.rs`）、插件 FFI 门面（`host.rs`）。
-- **🔴 缺失（按架构预期）**：`Entity`/`Scene`/`Component`/`Renderer` 类及其生命周期、`Particle*`、`Tween`/`Alarm`/`Coroutine`/`StateMachine`/`Wiggler`/`SineWave`、`Ease`、`Tracker`/`TagLists`、`MInput` 的鼠标/手柄、`Draw` 的文本/圆/描边、圆形碰撞体——均由 Wasm 插件或核心主循环承担，host 不建模这些类。
+- **✅ 已实现且对齐 / 近似**：图集与 SpriteBank 解析（`atlas.rs`/`spritebank.rs`）、自动拼接 3×3 算法（`autotiler.rs`）、实体注册表（`ecs.rs`）、物理碰撞与 `actor_move`/`is_grounded`（`physics.rs`）、相机目标跟随与屏幕震屏（`camera.rs`）、键盘虚拟输入与缓冲（`input.rs`）、精灵帧推进（`sprites.rs`）、插件 FFI 门面（`host.rs`）、几何/文本/粒子/震屏 FFI。
+- **🔴 缺失（按架构预期）**：`Entity`/`Scene`/`Component`/`Renderer` 类及其生命周期、`Tween`/`Alarm`/`Coroutine`/`StateMachine`/`Wiggler`/`SineWave`、`Tracker`/`TagLists`、`MInput` 的手柄——均由 Wasm 插件或核心主循环承担，host 不建模这些类。
+- **🟠 已落基础（host 侧）**：`Ease`（全套缓动函数，`crates/ruleste-plugins-api/src/ease.rs`）、`Particle*`（宿主粒子池，`src/engine/particles.rs` + `host_emit_particle` FFI；`ParticleType` 预设式发射缺失）、`Draw` 圆/空心矩形/文本（`host_draw_*` FFI + `renderer::draw_*`）、`Collide` 圆形碰撞（`physics::collide_circle`/`circle_to_rect`/`circle_to_circle` + `host_collide_circle_check` FFI）。
 
 <!-- ========== SECTION c2 ========== -->
 
@@ -689,39 +692,43 @@
 ### class `ActiveFont`（字体度量/绘制入口）
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| `Font` / `FontSize` / `BaseSize` / `LineHeight` | ActiveFont.cs:8-14 | font.rs:189 (`line_spacing`) / 201-208 | 🟡 | 我方 `SpriteFont` 仅从 XNB/`.spritefont` XML 取 size→`line_spacing`，无多字号 `PixelFontSize` 选择 |
-| `Measure(char/string)` | ActiveFont.cs:16/21 | font.rs:219 (`measure_string`) | 🟠 | 我方按占位 glyph `advance` 求和；未处理 justify/scale，且 glyph 为占位指标 |
-| `WidthToNextLine` | ActiveFont.cs:26 | — | 🔴 | 缺失 |
-| `HeightOf` | ActiveFont.cs:31 | font.rs:242 (`line_count` 近似) / `line_spacing` | 🟡 | 仅近似 |
-| `Draw(...)` 各重载 | ActiveFont.cs:36-64 | — | 🔴 | 仅数据解析，绘制层未在本模块（属渲染层） |
+| `Font` / `FontSize` / `BaseSize` / `LineHeight` | ActiveFont.cs:8-14 | font.rs:20 (`PixelFontSize.line_height`) | 🟡 | 原版 `ActiveFont` 持有 `PixelFont`，`Draw` 调 `PixelFont.Get(baseSize).Draw`；我方 `draw_pixel_texts` 做同件事 |
+| `Measure(char/string)` | ActiveFont.cs:16/21 | font.rs:41 (`measure`) | ✅ | `PixelFontSize::measure` 返回 `(w, h)`，`PixelFont::get` 做字号选择 |
+| `WidthToNextLine` | ActiveFont.cs:26 | font.rs:55 (`width_to_next_line`) | ✅ | 对齐 |
+| `HeightOf` | ActiveFont.cs:31 | font.rs:65 (`height_of`) | ✅ | 对齐 |
+| `Draw(...)` 各重载 | ActiveFont.cs:36-64 | renderer.rs:600 (`draw_pixel_texts`) + :673 (`draw_pixel_line`) | 🟠 | 含 outline stroke（1px filled rect）；缺 edge outline（4px box）和 scale 缩放 |
 
 ---
 
 ## `PixelFont.cs` / `PixelFontSize.cs` / `PixelFontCharacter.cs` ↔ `src/data/font.rs`
-### class `PixelFont`（BMFont `.font` XML 解析）
+
+### class `PixelFont`（BMFont `.fnt` XML 解析）
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| `AddFontSize(path, data, atlas, outline)` | PixelFont.cs:28 | font.rs:107 (`load_from_xml`) | 🟠 | 原版解析 BMFont XML（info/pages/common/chars/kernings）并建 `Characters`/`Kerning`；我方解析的是 **XNA `.spritefont` XML**（FontName/Size/CharacterRegions），格式不同 |
-| `Get(size)` / `Has(size)` | PixelFont.cs:85/98 | — | 🔴 | 多字号选择缺失 |
-| `Draw(...)` 系列 | PixelFont.cs:111-152 | — | 🔴 | 绘制层未实现 |
-| `Dispose()` | PixelFont.cs:154 | — | 🔴 | 无 |
+| `AddFontSize(path, data, atlas, outline)` | PixelFont.cs:28 | font.rs:130 (`load`) / 165 (`parse`) | ✅ | 原版解析 BMFont XML；我方 `PixelFont::parse` 解析 `<info>/<common>/<pages>/<chars>/<kernings>` |
+| `Get(size)` / `Has(size)` | PixelFont.cs:85/98 | font.rs:113 (`get`) | ✅ | 取最小 `size >= request`；`has` 同逻辑返回布尔 |
+| `Draw(...)` 系列 | PixelFont.cs:111-152 | renderer.rs:600 (`draw_pixel_texts`) | 🟠 | `Draw` 含 outline 描边（stroke）；缺 edge outline（4px box）和 scale 缩放 |
+| `Dispose()` | PixelFont.cs:154 | — | 🔴 | 无（`font_pages` 缓存在渲染器生命周期内） |
 
 ### class `PixelFontSize`
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| `AutoNewline(text, width)` | PixelFontSize.cs:22 | — | 🔴 | 自动换行缺失 |
-| `Get(id)` | PixelFontSize.cs:70 | font.rs:212 (`glyph`) | 🟠 | 用 `glyph(c)` 替代，但 `Characters` 为占位 |
-| `Measure(char)` | PixelFontSize.cs:80 | font.rs:212+219 | 🟠 | 近似 |
-| `Measure(string)` | PixelFontSize.cs:90 | font.rs:219 | 🟠 | 无 kerning 真实数据（占位） |
-| `WidthToNextLine` / `HeightOf` | PixelFontSize.cs:127/150 | — / font.rs:242 | 🟡/🔴 | |
-| `Draw(...)` 系列（含 stroke/edge outline） | PixelFontSize.cs:170-269 | — | 🔴 | 未实现 |
+| `AutoNewline(text, width)` | PixelFontSize.cs:22 | — | 🔴 | 自动换行缺失（`line_count` 仅计数） |
+| `Get(id)` | PixelFontSize.cs:70 | font.rs:26 (`PixelFontSize.characters`) | ✅ | HashMap 直接索引 |
+| `Measure(char)` | PixelFontSize.cs:80 | font.rs:41 (`measure` 单字) | ✅ | |
+| `Measure(string)` | PixelFontSize.cs:90 | font.rs:41 (`measure`) | ✅ | 含 kerning 累积 |
+| `WidthToNextLine` / `HeightOf` | PixelFontSize.cs:127/150 | font.rs:55 / 65 | ✅ | 对齐 |
+| `Draw(...)` 系列（含 stroke/edge outline） | PixelFontSize.cs:170-269 | renderer.rs:673 (`draw_pixel_line`) | 🟠 | stroke=1px solid rect 描边；缺 edge（4px box）和 scale |
+| `Characters` / `Textures` / `LineHeight` / `Size` | — | font.rs:14/15/21/22 | ✅ | 字段映射一致 |
 
 ### class `PixelFontCharacter`
-| 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
+| 原版字段 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| ctor `(character, texture, xml)` | PixelFontCharacter.cs:20 | font.rs:293 (`create_placeholder_glyph`) | 🟠 | 原版用 XML `x/y/width/height/xoffset/yoffset/xadvance` 建子纹理；我方用经验占位指标，无真实字形框/偏移/字距 |
+| ctor `(character, texture, xml)` | PixelFontCharacter.cs:20 | font.rs:181 (`parse` chars) | ✅ | 解析 `x/y/width/height/xoffset/yoffset/xadvance`；`region` 替代子纹理 |
+| `Kerning` 字典 | PixelFontCharacter.cs:18 | font.rs:23 (`kerning`) | ✅ | 解析 `<kernings>` 并填入 |
+| `XAdvance` / `XOffset` / `YOffset` | PixelFontCharacter.cs:25/12/13 | font.rs:24/22/21 | ✅ | |
 
-> 关键差异：原版 `PixelFont` 体系基于 **BMFont `.font` XML + 多页纹理 + 真实 kerning**；我方 `font.rs` 走 **XNA `.spritefont`/XNB** 路线且 glyph 为占位（`create_placeholder_glyph`），度量仅为估算。两者不是同一格式，属 🟠/🟡 近似。
+> 关键进展：原版 BMFont `.fnt` 体系已完整实现，`PixelFont::parse` 忠映射 `info/common/pages/chars/kernings`；`PixelFont::get` + `PixelFontSize::measure/width_to_next_line/height_of` 均对齐原版；渲染层通过 `Renderer::upload_pixel_font`（`image` crate 解码 PNG）和 `draw_pixel_texts` 接入。`SpriteFont`（旧 XNB 占位）保留以兼容旧的 `set_font` 接口。
 
 ---
 
@@ -789,10 +796,11 @@
 ---
 
 ## 小结
-- **高对齐**：`BinaryPacker`（读）/RLE 解码、`reader.rs`（.NET 二进制语义）、`atlas.rs`（`.meta`/`.data` RLE）——均为纯解析且格式忠实复刻。
+- **高对齐**：`BinaryPacker`（读）/RLE 解码、`reader.rs`（.NET 二进制语义）、`atlas.rs`（`.meta`/`.data` RLE）、`PixelFont` BMFont 解析（`PixelFont::parse` 对齐 `AddFontSize`）——均为纯解析且格式忠实复刻。
 - **部分实现**：`dialog.rs`（单文件解析但缺多语言/`Cleaned`/portrait/插入展开）、`pack.rs`（仅章节装载元数据，远小于 `AreaData`）、`audio.rs`+`ogg.rs`（流索引与 PCM 解码，但无 FMOD 运行时）。
-- **占位/近似**：`font.rs` 用 XNA `.spritefont` + 占位 glyph，与原版 BMFont `PixelFont` 体系格式与数据均不同。
-- **缺失**：`AreaData` 运行时查询与硬编码关卡表、`AreaKey`/`AreaMode`/`AreaStats`、`Dialog` 多语言/格式化工具、`ActiveFont`/`PixelFontSize` 绘制、`Audio` FMOD 运行时与 `AudioState` 应用——均无 Rust 等价。
+- **已对齐（新增）**：`PixelFont::get` / `PixelFontSize::measure` / `width_to_next_line` / `height_of` + PNG 解码（`image` crate）+ `Renderer::upload_pixel_font` / `draw_pixel_texts`：完整复刻原版字号选择 + 字形度量 + kerning + 纹理子图上传 + 绘制（stroke 描边）。
+- **占位/近似**：`font.rs` 的 `SpriteFont`（XNB 占位）仅供旧的 `set_font` 接口；`ActiveFont::Draw` 的 edge outline（4px box）和 scale 缩放未实现。
+- **缺失**：`AreaData` 运行时查询与硬编码关卡表、`AreaKey`/`AreaMode`/`AreaStats`、`Dialog` 多语言/格式化工具、`Audio` FMOD 运行时与 `AudioState` 应用、`PixelFont::Dispose`——均无 Rust 等价。
 
 <!-- ========== SECTION c3 ========== -->
 
@@ -810,41 +818,41 @@
 
 | 状态 | 原版常量 | 原版实现 | 我方常量 | 我方实现 | 状态 |
 |---|---|---|---|---|---|
-| 0 StNormal | StNormal=0 | `NormalUpdate` Player.cs:3566 | `ST_NORMAL=0` | `normal_update` lib.rs:437 | ✅ |
-| 1 StClimb | StClimb=1 | `ClimbUpdate` Player.cs:3926 (+Begin 3882, End 3911, Hop 4122) | `ST_CLIMB=1` | `climb_update` lib.rs:602 / `climb_begin` 1221 / `climb_hop` 1243 | ✅ |
-| 2 StDash | StDash=2 | `DashUpdate` 4340 / `DashCoroutine` 4465 / Begin 4276 / End 4334 | `ST_DASH=2` | `dash_update` lib.rs:720 / `start_dash` 1352 | ✅ |
-| 3 StSwim | StSwim=3 | `SwimUpdate` 4611 / `SwimBegin` 4602 | — | — | 🔴 缺失 |
-| 4 StBoost | StBoost=4 | `BoostUpdate` 4715 / `BoostCoroutine` 4735 / Begin 4698 / End 4708 | `ST_BOOST=4` | `boost_update` lib.rs:863 / `handle_events` EV_BOOST 1523 | ✅ |
-| 5 StRedDash | StRedDash=5 | `RedDashUpdate` 4774 / `RedDashCoroutine` 4847 / Begin 4748 / End 4769 | `ST_RED_DASH=5` | `red_dash_update` lib.rs:927 / `red_dash_build` 903 | ✅ |
-| 6 StHitSquash | StHitSquash=6 | `HitSquashUpdate` 4865 / Begin 4860 | — | （红冲撞墙在 `red_dash_update` 内直接归零 lib.rs:970） | 🟡 近似内联 |
-| 7 StLaunch | StLaunch=7 | `LaunchUpdate` 5007 / Begin 5002 | `ST_LAUNCH=7` | `launch_update` lib.rs:985 / `handle_events` EV_LAUNCH 1538 | ✅ |
-| 8 StPickup | StPickup=8 | `PickupCoroutine` | — | — | 🔴 缺失 |
-| 9 StDreamDash | StDreamDash=9 | `DreamDashUpdate` 5184 / Begin 5135 | — | — | 🔴 缺失 |
-| 10 StSummitLaunch | StSummitLaunch=10 | `SummitLaunchUpdate` 5057 / Begin 5049 | `ST_SUMMIT_LAUNCH=10` | `summit_launch_update` lib.rs:1013 / EV_BADELINE_BOOST 1637 | ✅ |
-| 11 StDummy | StDummy=11 | `DummyUpdate` 5687 / Begin 5680 | — | — | 🔴 缺失 |
-| 12 StIntroWalk | StIntroWalk=12 | `IntroWalkCoroutine` 5969 | — | — | 🔴 缺失 |
-| 13 StIntroJump | StIntroJump=13 | `IntroJumpCoroutine` 5995 | — | — | 🔴 缺失 |
-| 14 StIntroRespawn | StIntroRespawn=14 | `IntroRespawnBegin` 6121 | — | — | 🔴 缺失 |
-| 15 StIntroWakeUp | StIntroWakeUp=15 | `IntroWakeUpCoroutine` 6112 | — | — | 🔴 缺失 |
-| 16 StBirdDashTutorial | StBirdDashTutorial=16 | `BirdDashTutorialUpdate` / Begin 6176 | — | — | 🔴 缺失 |
-| 17 StFrozen | StFrozen=17 | `FrozenUpdate` | — | — | 🔴 缺失 |
-| 18 StReflectionFall | StReflectionFall=18 | `ReflectionFallUpdate` / Begin 5887 | — | — | 🔴 缺失 |
-| 19 StStarFly | StStarFly=19 | `StarFlyUpdate` 5409 / `StarFlyCoroutine` 5373 / Begin 5307 / End 5333 | `ST_STARFLY=19` | `starfly_update` lib.rs:1026 / EV_STARFLY 1611 | ✅ |
-| 20 StTempleFall | StTempleFall=20 | `TempleFallUpdate` / Coroutine 5857 | — | — | 🔴 缺失 |
-| 21 StCassetteFly | StCassetteFly=21 | `CassetteFlyUpdate` / Begin 5602 | — | — | 🔴 缺失 |
-| 22 StAttract | StAttract=22 | `AttractUpdate` / Begin 5654 / End 5659 | — | — | 🔴 缺失 |
-| 23 StIntroMoonJump | StIntroMoonJump=23 | `IntroMoonJumpCoroutine` 6070 | — | — | 🔴 缺失 |
-| 24 StFlingBird | StFlingBird=24 | `FlingBirdUpdate` / Begin 5568 / Coroutine 5585 | — | — | 🔴 缺失 |
-| 25 StIntroThinkForABit | StIntroThinkForABit=25 | `IntroThinkForABitCoroutine` 6156 | — | — | 🔴 缺失 |
+| 0 StNormal | StNormal=0 | `NormalUpdate` Player.cs:3566 | `ST_NORMAL=0` | `normal_update` lib.rs:589 + SwimCheck `host::water_overlap` | ✅ |
+| 1 StClimb | StClimb=1 | `ClimbUpdate` Player.cs:3926 (+Begin 3882, End 3911, Hop 4122) | `ST_CLIMB=1` | `climb_update` lib.rs:754 / `climb_begin` 1469 / `climb_hop` 1491 | ✅ |
+| 2 StDash | StDash=2 | `DashUpdate` 4340 / `DashCoroutine` 4465 / Begin 4276 / End 4334 | `ST_DASH=2` | `dash_update` lib.rs:866 / `start_dash` 1598 | ✅ |
+| 3 StSwim | StSwim=3 | `SwimUpdate` 4611 / `SwimBegin` 4602 | `ST_SWIM=3` | `swim_update` lib.rs:1394 + `host::water_overlap` FFI | 🟠 部分实现 |
+| 4 StBoost | StBoost=4 | `BoostUpdate` 4715 / `BoostCoroutine` 4735 / Begin 4698 / End 4708 | `ST_BOOST=4` | `boost_update` lib.rs:1009 / `handle_events` EV_BOOST 2059 | ✅ |
+| 5 StRedDash | StRedDash=5 | `RedDashUpdate` 4774 / `RedDashCoroutine` 4847 / Begin 4748 / End 4769 | `ST_RED_DASH=5` | `red_dash_update` lib.rs:1073 / `red_dash_build` 1049 | ✅ |
+| 6 StHitSquash | StHitSquash=6 | `HitSquashUpdate` 4865 / Begin 4860 | — | （红冲撞墙在 `red_dash_update` 内直接归零 lib.rs:1116） | 🟡 近似内联 |
+| 7 StLaunch | StLaunch=7 | `LaunchUpdate` 5007 / Begin 5002 | `ST_LAUNCH=7` | `launch_update` lib.rs:1131 / `handle_events` EV_LAUNCH 2074 | ✅ |
+| 8 StPickup | StPickup=8 | `PickupCoroutine` | `ST_PICKUP=8` | `holdable` 事件契约 (`EV_CARRIED` + `carried` 标志) | 🟠 最佳努力（原版进入 `StPickup` 状态并跑 `PickupCoroutine`；我方改为 flag 式冻结：`carried=true` 时位置由持有者 `EV_CARRIED` 每帧驱动、`Speed` 归零，不切换 `state`；theo-crystal/key 已接入；详见 `holdable` 子系统小节） |
+| 9 StDreamDash | StDreamDash=9 | `DreamDashUpdate` 5184 / Begin 5135 | `ST_DREAM_DASH=9` | `dream_dash_update` lib.rs:1438 + EV_DREAM_DASH_GRANTED 2146 | 🟠 部分实现 |
+| 10 StSummitLaunch | StSummitLaunch=10 | `SummitLaunchUpdate` 5057 / Begin 5049 | `ST_SUMMIT_LAUNCH=10` | `summit_launch_update` lib.rs:1159 / EV_BADELINE_BOOST 2183 | ✅ |
+| 11 StDummy | StDummy=11 | `DummyUpdate` 5687 / Begin 5680 | `ST_DUMMY=11` | `dummy_update` lib.rs:1487 | 🟠 部分实现 |
+| 12 StIntroWalk | StIntroWalk=12 | `IntroWalkCoroutine` 5969 | `ST_INTRO_WALK=12` | `intro_walk_update` lib.rs:1523 | 🟠 部分实现 |
+| 13 StIntroJump | StIntroJump=13 | `IntroJumpCoroutine` 5995 | `ST_INTRO_JUMP=13` | `intro_jump_update` lib.rs:1545 | 🟠 部分实现 |
+| 14 StIntroRespawn | StIntroRespawn=14 | `IntroRespawnBegin` 6121 | `ST_INTRO_RESPAWN=14` | `intro_respawn_update` lib.rs:1570 | 🟠 部分实现 |
+| 15 StIntroWakeUp | StIntroWakeUp=15 | `IntroWakeUpCoroutine` 6112 | `ST_INTRO_WAKE_UP=15` | `intro_wake_up_update` lib.rs:1584 | 🟡 占位（缩放/相机由 cutscene 插件驱动） |
+| 16 StBirdDashTutorial | StBirdDashTutorial=16 | `BirdDashTutorialUpdate` / Begin 6176 | `ST_BIRD_DASH_TUTORIAL=16` | `bird_dash_tutorial_update` lib.rs:1604 | 🟠 部分实现（物理） |
+| 17 StFrozen | StFrozen=17 | `FrozenUpdate` | `ST_FROZEN=17` | 内联于 `match` 保持冻结 lib.rs:565 | 🟠 占位（无 sprite/Holdable 锁定） |
+| 18 StReflectionFall | StReflectionFall=18 | `ReflectionFallUpdate` / Begin 5887 | `ST_REFLECTION_FALL=18` | 内联于 `match` 仅 gravity lib.rs:569 | 🟠 占位（完整 6-Reflection 演出由 `reflection` 插件驱动） |
+| 19 StStarFly | StStarFly=19 | `StarFlyUpdate` 5409 / `StarFlyCoroutine` 5373 / Begin 5307 / End 5333 | `ST_STARFLY=19` | `starfly_update` lib.rs:1172 / EV_STARFLY 2149 | ✅ |
+| 20 StTempleFall | StTempleFall=20 | `TempleFallUpdate` / Coroutine 5857 | `ST_TEMPLE_FALL=20` | `temple_fall_update` lib.rs:1605 + `EV_TEMPLE_FALL` (mirror-temple `templeFallTrigger`) | 🟠 最佳努力（脚本坠落：重力 + 1.5s 超时自动恢复；原版由 Level 脚本驱动） |
+| 21 StCassetteFly | StCassetteFly=21 | `CassetteFlyUpdate` / Begin 5602 | `ST_CASSETTE_FLY=21` | 内联于 `match` 委托 `normal_update` + `EV_CASSETTE_RIDE` (cassette-block) | 🟠 最佳努力（代驾物理 = normal，仅 ride 标志差异；原版有专门动画偏移） |
+| 22 StAttract | StAttract=22 | `AttractUpdate` / Begin 5654 / End 5659 | `ST_ATTRACT=22` | `attract_update` lib.rs:1590 + `EV_ATTRACT` (dark-chaser) | 🟠 最佳努力（朝 chaser 位置 lerp 牵引 + 0.2s hold 超时；原版有完整击杀/吸附演出） |
+| 23 StIntroMoonJump | StIntroMoonJump=23 | `IntroMoonJumpCoroutine` 6070 | `ST_INTRO_MOON_JUMP=23` | `intro_moon_jump_update` lib.rs:1593 | 🟡 占位 |
+| 24 StFlingBird | StFlingBird=24 | `FlingBirdUpdate` / Begin 5568 / Coroutine 5585 | `ST_FLING_BIRD=24` | — | 🔴 缺失（依赖 FlingBird 插件） |
+| 25 StIntroThinkForABit | StIntroThinkForABit=25 | `IntroThinkForABitCoroutine` 6156 | `ST_INTRO_THINK_FOR_A_BIT=25` | `intro_think_for_a_bit_update` lib.rs:1612 | 🟡 占位（相机微移由 Level 控制器） |
 
-**小结**：原版 26 状态中，我方实现了 **8 个核心状态**（Normal/Climb/Dash/Boost/RedDash/Launch/SummitLaunch/StarFly），覆盖正常游玩全部动作；其余 18 个为剧情/过场/特殊子系统（游泳、梦冲、拾取、冰冻、吸引、坠落、各 Intro 过场、FlingBird、Cassette、Dummy 等），全部缺失。HitSquash 未独立成状态，而是被 RedDash 撞墙分支（lib.rs:970）内联为归零。
+**小结**：原版 26 状态中，我方实现了 **18 个状态**（Normal/Climb/Dash/Boost/RedDash/Launch/SummitLaunch/StarFly + Swim + DreamDash + Dummy + 5 个 Intro* + BirdDashTutorial + Frozen/ReflectionFall 内联占位 + 新接入的 TempleFall/Attract/CassetteFly 最佳努力版）；拾取（StPickup）已通过 `holdable` 事件契约（flag 式 `carried` 冻结）接入，剩余 1 个状态为 `StFlingBird`（依赖尚未实现的 FlingBird 插件）。其余由事件总线 + 对应子系统插件承载，player 端保留 ST_* 常量以便未来对位。HitSquash 未独立成状态，而是被 RedDash 撞墙分支（lib.rs:1116）内联为归零。
 
 ### 状态机 & 主要方法
 
 | 原版函数/状态 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
 | `Update` (per-frame 通用计时/落地补 dash) | Player.cs:1425 | `ruleste_entity_update` lib.rs:291 | ✅ | 落地补满 dash、`jumpGrace`、`wallSlideTimer` 重置、计时器递减、输入聚合（`forceMoveX` 覆盖）均对齐；但原版还有 hair/grabber/leader/glider 等每帧子系统，我方省略 |
-| `NormalUpdate` | Player.cs:3566 | `normal_update` lib.rs:437 | ✅ | 跑动(run accel/reduce)、蹲下摩擦、可变跳、coyote、墙滑、抓墙进 climb、普通/墙跳、fast-fall 全部覆盖；**缺失**：水/滑翔/可抓物(holdable)、液体子系统 |
+| `NormalUpdate` | Player.cs:3566 | `normal_update` lib.rs:437 | ✅ | 跑动(run accel/reduce)、蹲下摩擦、可变跳、coyote、墙滑、抓墙进 climb、普通/墙跳、fast-fall 全部覆盖；**缺失**：水/滑翔(glider)、液体子系统；可抓物(holdable) 已通过 `carried` 标志 + `EV_CARRIED` 事件契约在 `normal_update` 之外旁路处理（见 `holdable` 子系统） |
 | `ClimbUpdate` | Player.cs:3926 | `climb_update` lib.rs:602 | ✅ | 抓墙上下/静止、`ClimbUpCost`/`ClimbStillCost`/`ClimbJumpCost` 消耗、超时掉落、跳离/墙跳/放手进 Normal 均对齐；`SlipCheck` 用 `-4px` 近似；**缺失**：墙助推器、ledge、sweat 精灵 |
 | `ClimbBegin` | Player.cs:3882 | `climb_begin` lib.rs:1221 | ✅ | 清零横向速度、纵向×0.2、贴墙 snap 对齐原版 resting pose |
 | `ClimbHop` | Player.cs:4122 | `climb_hop` lib.rs:1243 | ✅ | 墙顶消失时跳过；`hopWaitX` 武装 ledge slide 逻辑在 `update` 主循环 lib.rs:357 处理，对齐原版 `hopWaitX`/`hopWaitXSpeed` |
@@ -880,6 +888,25 @@
 
 ### 总体结论
 核心动作状态机（Normal/Climb/Dash/Boost/RedDash/Launch/SummitLaunch/StarFly）已较完整对齐原版常量与主流控制流，8/26 状态可达生产级；剩余 18 状态多为剧情过场与依赖未实现子系统（水、梦冲、可抓物、滑翔）的特殊状态。视觉层（trail、hair、sprite 细节）与死亡/`Die`、游泳、梦冲为明确缺口。
+
+## `holdable` 子系统 (Player.Holdable / `StPickup` / `PickupCoroutine`) ↔ `plugins/holdable/src/lib.rs`
+
+> `holdable` 不是实体插件，而是承载原版 `Player.cs` 中 `Holdable` / `StPickup` / `PickupCoroutine` 契约的「虚拟组件」。它自己不拥有任何实体（`ruleste_plugin_entity_types` 返回 0），仅导出事件名与常量，供玩家插件与各持有者插件（theo-crystal / key 等）共享同一套抓取/携带/释放数学。下列行号指向原版 `Player.cs` 的相关片段。
+
+### 抓取 / 携带契约（事件总线）
+| 原版函数/状态 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
+|---|---|---|---|---|
+| `Holdable.Pickup` / `StPickup` 进入 | Player.cs:4026 (`StPickup`) | `EV_CARRIED` 处理 (plugins/player lib.rs `handle_events`) | 🟠 | 原版进入状态并跑 `PickupCoroutine`（0.16s `Tween` 把物体吸到 `CarryOffsetTarget=(0,-12)`）；我方改为 flag 式：`EV_CARRIED [f32 x][f32 y][u8 on=1]` → `carried=true`、`Speed` 归零，每帧把 `Position` 设为 `(x,y)` |
+| `Holdable.Carry`（每帧位置驱动） | Player.cs:4040 (`PickupCoroutine` 持续段) | 持有者插件每帧 `emit(EV_CARRIED 1, pos)` | 🟠 | theo-crystal/key 在 Held 态每帧读玩家位置、推进 tween、回发 `EV_CARRIED 1`；`CARRY_OFFSET_Y=-12`、`PICKUP_TWEEN_TIME=0.16`、`PICKUP_SWAY=2` 常量集中在 `holdable` lib.rs:61-74 |
+| `Holdable.Release` / `Drop` | Player.cs:4076 (`Drop`/`Release`) | `EV_CARRIED [..][u8 on=0]` | 🟠 | 持有者发 `on=0` → `carried=false`，玩家恢复 `normal_update`；`EV_CARRIED_ATTACH`/`EV_CARRIED_RELEASE` 为别名（lib.rs:56-57），二者均等于 `host::EV_CARRIED`，仅用于调用点自文档化 |
+| `Player.Grab` 触发（CLIMB 抓取可抓物） | Player.cs:3990 (`Update`/`GrabCheck`) | theo-crystal/key `update` 重叠 + `CLIMB` 按下 → Held | 🟠 | 原版 `Player` 检测 `Holdable` 碰撞 + 抓取键；我方由持有者插件主动检测与玩家重叠 + `CLIMB` 触发（避免玩家插件枚举所有持有者类型） |
+| `another_holder_has_player`（互斥抓取） | Player.cs:3996 | theo-crystal/key `another_holder_has_player` 守卫 | 🟠 | 防止多个持有者同时抓同一玩家；由持有者插件通过 `entities_by_type("player")` + `carried` 状态（或事件）判断 |
+| `slowFall` / 滑翔携带减速 | Player.cs:4050 | — | 🔴 | 原版携带时下落减速；我方 `holdable` 预留扩展点，当前 `host` 无对应 FFI |
+| `CarryOffsetTarget` 整数吸附 X | Player.cs:4044 | 持有者插件逐帧应用 | 🟡 | `CARRY_OFFSET_X=0`，最终 X 偏移在持有者内按玩家朝向整数吸附 |
+
+**小结**：`holdable` 把「可抓物」从玩家状态机抽离到事件契约，任何插件都能驱动抓取而不必让玩家插件认识每种持有者。当前 `theo-crystal` 与 `key` 已完整接入（抓取→携带→投掷/开锁），`EV_CARRIED` 处理位于 `plugins/player` 的 `handle_events`；`slowFall` 滑翔减速与多持有者优先级仍为 🔴 占位。
+
+---
 
 <!-- ========== SECTION c4 ========== -->
 
@@ -978,9 +1005,18 @@
 ### Class `BounceBlock`
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| 构造 (States, iceMode/fireMode, BuildSprite) | BounceBlock.cs:183-224 | lib.rs:15-25 | 🔴 | Rust 仅建 solid，无状态机/冰火模式 |
-| `Update()` (Waiting→WindingUp→Bouncing→BounceEnd→Broken→respawn1.6) | BounceBlock.cs:278-438 | lib.rs:27-39 | 🔴 | Rust 仅检测玩家重叠并发 `SUPER_BOUNCE` 事件，自身不做 windup/bounce/break/respawn；反弹几何完全委托给玩家插件 |
-| `WindUpPlayerCheck`/`ShakeOffPlayer`/`Break`/debris | BounceBlock.cs:455-528 | — | 🔴 | 全部缺失（占位式实现） |
+| 构造 (States, iceMode/fireMode, BuildSprite) | BounceBlock.cs:183-224 | lib.rs:99-119 | 🟠 | 完整 5 态机 (Waiting/WindingUp/Bouncing/BounceEnd/Broken)、`BounceState` 字段、`Color::FIRE/ICE/FLASH`、8 个常量（WIND_UP_DIST=10/ICE_WIND_UP_DIST=16/BOUNCE_DIST=24/LIFT_SPEED_X_MULT/RESPAWN_TIME/BOUNCE_END_TIME）✅；BuildSprite 8×8 子贴图→程序化矩形；`st.ice_mode = host::is_cold_mode()` 每帧读取（lib.rs:72）✅；冰模式 WindingUp 用 ICE_WIND_UP_DIST=16、颜色 COLOR_ICE、速度 35、speed_mult 0.333 直接到 BOUNCE_END；Draw 用 ice_mode 选色 ✅；序列化含 ice_mode/last_cold ✅；缺 coreModeListener 粒子/音效 |
+| `Added`/`OnChangeMode` (iceMode 监听) | BounceBlock.cs:240-259 | — | 🔴 | CoreModeListener 缺失；保留 `COLOR_ICE` 常量占位 |
+| `Update()` 5 态机 (Waiting→WindingUp→Bouncing→BounceEnd→Broken→reform) | BounceBlock.cs:278-438 | lib.rs:122-238 | 🟠 | 完整状态流：Waiting 检测玩家重叠（`wind_up_player_check` lib.rs:79-86）→ WindingUp 用 `approach(st.move_speed, 40, 600*dt)` 朝 `startPos - dir*10` 移动并 `windUpProgress` 插值 → Bouncing 朝 `startPos + dir*24` 移动 → BounceEnd 倒计时 0.05s → Broken 设 `depth=8990`、solid(false)、`respawnTimer=1.6` 倒计时后试回 `startPos` 用 `collision.check(0,0)` 判定 `can_reform`，成功则 `depth=-9000`、solid(true)、`reappear_flash=0.6`、发 `bounceblock_reappear` 音效 ✅；缺失 `windUpPlayerCheck` 的"侧贴+面朝"细分（我用通用 AABB 近似）、`level.Shake/Rumble/P_Reform/P_Break` 粒子、`Shaker` 抖动、`StaticMovers` 联动 |
+| `WindUpPlayerCheck` (Position+UnitY/±UnitX 碰撞) | BounceBlock.cs:455-475 | lib.rs:79-86 | 🟠 | 玩家 hitbox 与 block hitbox AABB 重叠即算；对齐主流程但原版还有"侧贴+player state=Climb+朝外"细分过滤 |
+| `ShakeOffPlayer` (撞后给玩家一个 lift) | BounceBlock.cs:477-486 | — | 🔴 | 缺失：未给玩家显式 `Speed` 偏置；玩家插件 `dash_update`/`red_dash_update` 自行处理反弹入射 |
+| `Break` (debris/P_FireBreak/P_IceBreak) | BounceBlock.cs:488-527 | — | 🔴 | 碎块实体、粒子、Rumble 缺失 |
+| `Render` (sprite 抖动偏移 + reappearFlash 白边) | BounceBlock.cs:261-276 | lib.rs:240-272 | 🟠 | 调试框颜色按状态：Waiting 静态红，WindingUp 沿 `bounceDir` 负方向偏移 `windUpProgress*10` px，BOUNCING 沿正向偏当前距离；`reappear_flash>0.01` 时加 2px 白色 padding ✅；sprite/bloom/light/wiggle 全部省略 |
+| 序列化 9 字段 (state+bounceDir+progress+speed+respawn+endTimer+reformed+flash) | — | lib.rs:286-340 | 🟠 | 字节布局为：u8 state + 4f32 dir/progress/speed/respawn/endTimer + 1u8 reformed + 1f32 flash；`ruleste_entity_destroy` 从 STATES 移除条目 ✅；`ruleste_entity_serialize/deserialize` 含版本兼容（短缓冲安全截断） |
+| 7 个 unit tests | — | lib.rs:344-401 | 🟢 | `constants_match_bounceblock_cs` / `state_constants_match_bounceblock_cs` / `approach_clamps_to_target` / `safe_normalize_handles_zero` / `default_state_is_waiting_at_origin` / `new_stores_start_pos` / `player_overlapping_block_basic` 全过 |
+
+**小结**：bounce-block 状态机主体已移植（5 态完整 + 1.6s 重组），补上常量与单元测试；缺失 CoreMode 监听（`iceMode`）、`WindUpPlayerCheck` 精细过滤、碎块/粒子/Rumble、StaticMover 联动。
+
 
 ---
 
@@ -988,10 +1024,19 @@
 ### Class `MoveBlock` (箭头移动块)
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| 构造 (direction, canSteer, fast) | MoveBlock.cs:292-356 | lib.rs:29-53 | 🟠 | 仅读 node；无 direction/canSteer/fast 概念 |
-| `Controller()` (rider→移动60/75→转向→撞墙crash→碎裂debris→2.2s后重组) | MoveBlock.cs:369-568 | lib.rs:55-79 | 🔴 | Rust 为固定速度 60 在 base↔node 间往返乒乓；原版朝固定方向行进至撞墙才碎裂重组；缺转向、crash、碎块、重组、StaticMover 联动 |
-| `MoveCheck`/`MoveHExact`/`MoveVExact` (防挤压) | MoveBlock.cs:637-706 | — | 🔴 | 无 |
-| 视觉/粒子 | MoveBlock.cs:708-897 | lib.rs:81-90 | 🔴 | 纯色近似 |
+| 构造 (Directions, canSteer, fast, BuildSprite/body/arrows) | MoveBlock.cs:292-356 | lib.rs:209-238 | 🟠 | 读 `direction` 字符串 (left/right/up/down) → `DIR_*` 常量、`canSteer`/`fast` ✅；`homeAngle` + `angleSteerSign` 按方向设 (lib.rs:73-77)；BuildSprite/arrows/light/occlude/border/sound source/buttons 全部省略 |
+| `Awake` (border) | MoveBlock.cs:363-367 | — | 🔴 | Border 实体未生成 |
+| `Controller` 协程: Idling→Activating(0.2s)→Moving(crashTimer0.15+crashReset0.1+steer)→Breaking(2.2s reform) | MoveBlock.cs:369-568 | lib.rs:251-340 | 🟠 | 4 态机 (IDLING/ACTIVATING/MOVING/BREAKING) 完整 ✅；`approach(speed, targetSpeed, 300dt)` 加速、`approach(angle, targetAngle, 16π*dt)` 转向、`actor_move(speed*dt, 0)` 主轴推进 ✅；撞墙判定用 `actor_move` 返回的 `hit_wall_left/right/ceiling` 或 DIR_DOWN 越界 (lib.rs:319) ✅；2.2s `REFILL_TIME` 倒计时重组 (lib.rs:344) ✅；`MoveCheck` 抗挤压（Moving 阶段块前方贴墙则 `die()`）✅；缺 Debris/StaticMover 联动/ScrapeParticles/Rumble/SoundSource/Buttons/side-depress 音效；steering 简化（仅 `pressing` bool，缺 `Input.MoveY/X` 与 45° 偏置）|
+| `Update` (按钮上下/闪光渐变) | MoveBlock.cs:590-630 | lib.rs:243-247 | 🟠 | `flash` 渐变 (approach 5*dt) ✅；按钮子实体/边按音效/参数 "arrow_influence"/"arrow_stop" 缺失 |
+| `OnStaticMoverTrigger` (triggered=true) | MoveBlock.cs:632-635 | lib.rs:270 | 🟠 | 静态 mover 触发器未由 host 提供；玩家骑乘用 `block_has_player_rider` 近似 |
+| `MoveHExact`/`MoveVExact` (noSquish 防挤压) | MoveBlock.cs:637-659 | lib.rs:325-345 | ✅ | `MoveCheck` 抗挤压：Moving 阶段检测玩家是否位于块前方路径（leading face 之前 `step` 内、竖直方向在块体内）且块前方紧贴 Solid 墙（用 `pe.collision.check(越过块面 probe, 0)` 探测），命中则 `host::die()` 挤压致死；骑乘在块顶 (`player_on_top`) 不触发 ✅（最佳努力：仅主轴 +x 推进的抗挤压，未做 1..3 侧推） |
+| `MoveCheck` (主轴碰撞+3 步侧向尝试) | MoveBlock.cs:661-706 | lib.rs:325-345 | 🟠 | 主轴抗挤压已通过 `MoveCheck` 实现（见上）；缺 1..3/-1..1 步的抗卡死侧推，`actor_move` 的 hit flag 仍近似主流程 |
+| `UpdateColors` (三色 lerp) | MoveBlock.cs:708-732 | lib.rs:194-209 | 🟠 | `update_fill_color` 按状态 (IDLE/MOVING/BREAKING) lerp RGB (approach 10*dt)，过渡自然 ✅ |
+| `Render` (border, fill, arrow sprite, flash) | MoveBlock.cs:753-787 | lib.rs:344-371 | 🟡 | 简化为按 fill_color 画 3px 内部矩形 + flash 时白边扩展；缺 arrow sprite/8 方向纹理/x mark/buttons 偏移 |
+| 序列化 (state+dir+flags+几何+计时器+flash) | — | lib.rs:374-447 | 🟠 | 字节布局含 state/dir/canSteer/fast/w/h/start/angle/target_angle/speed/activate/crash/no_steer/reform/triggered/flash；`destroy` 清 STATES 条目 ✅ |
+| 8 个 unit tests | — | lib.rs:474-553 | 🟢 | `constants_match_moveblock_cs` / `state_constants_match_moveblock_cs` / `dir_constants_match_moveblock_cs` / `home_angle_per_direction` / `dir_vector_correct` / `approach_clamps_to_target` / `default_state_is_idling` / `new_state_stores_dims` 全过 |
+
+**小结**：move-block 状态机主体已移植（4 态 + 2.2s 重组 + 方向 4 向 + canSteer/fast 字段），补上 8 个 unit tests；`MoveCheck` 抗挤压已接入（块前方贴墙挤压致死）；缺失 Debris/StaticMover 联动/Border/Buttons/SFX。
 
 ---
 
@@ -1021,8 +1066,14 @@
 ### Class `Bridge` (序章坍塌桥)
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| 构造 (按 gap 生成 BridgeTile 序列) | Bridge.cs:33-81 | lib.rs:32-45 | 🔴 | Rust 为静态 solid 木板，与“随玩家推进逐块坍塌”完全不同 |
-| `Update()` (collapses 按玩家 X 触发 tiles.Fall、音乐) | Bridge.cs:83-162 | lib.rs:47-61 | 🔴 | Rust 无 update 逻辑，仅为静态实体；坍塌、gap、音乐全缺失 |
+| 构造 (按 gap 生成 BridgeTile 序列) | Bridge.cs:33-81 | lib.rs:88-108 | 🟠 | 读 `width/height`/`x/y`、`depth=200`、solid ✅；`TRIGGER_DIST=112`/`END_DIST_A=216`/`END_DIST_B=104` 对齐原版 3 段触发点 ✅；`START_FALL_COUNT=11`/`MID_FALL_COUNT=5`/`END_FALL_COUNT=7` 与原版 `tiles.RemoveAt(0)` 次数一致 ✅；缺独立 `BridgeTile` 子实体（按 tile 化、压扁、落尘动画）|
+| `Update()` 3 段坍塌 (player.X >= 112 → 11 块；>= width-216 → 5 块；>= width-104 → 7 块；否则 0.2s/块) | Bridge.cs:83-156 | lib.rs:114-153 | 🟠 | `player_x()` 读取玩家 X 触发三阶段坍塌 ✅；`collapse_offset` 累计 8px/块（与原版每个 `BridgeTile` 宽 8px 一致）✅；`collapse_interval=0.2s` 对齐原版 `collapseTimer=0.2f` ✅；`ended` 后 `solid(false)` 永久穿透 ✅；`bridge_rumble_loop`/`bridge_stop` 音效 ✅；缺独立 BridgeTile 实体的 `Fall()`/粒子/冰碎渣/高度抖动 |
+| `StopCollapseLoop` | Bridge.cs:159 | lib.rs:148 | 🟠 | 结束态下用 `play_sound("bridge_stop")` 近似 |
+| 渲染：原版用 11 种 tile 纹理循环 | Bridge.cs:39-50 | lib.rs:158-171 | 🟠 | 简化为 `PLANK_DARK` 整底 + 每 8px 一道 `PLANK` 木纹竖条；坍塌后从 `collapse_offset` 起始绘制剩余 ✅ |
+| 序列化 | — | lib.rs:175-217 | 🟠 | 含 collapsing/ended/mid_collapse_done/end_collapse_done/collapse_timer/collapse_offset/w/h；`destroy` 清 STATES ✅ |
+| 2 个 unit tests | — | lib.rs:223-235 | 🟢 | `constants_match_bridge_cs` / `default_state_is_intact` 全过 |
+
+**小结**：bridge 坍塌序列已移植（3 阶段 + 0.2s 间隔 + 11/5/7 块数），补上 2 个 unit tests；缺失 BridgeTile 子实体的物理落体动画/粒子。
 
 ---
 
@@ -1038,9 +1089,10 @@
 ### Class `CassetteBlock`
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| 构造/分组/贴图 | CassetteBlock.cs:70-259 | lib.rs:53-69 | 🔴 | Rust 无 group（同 index 成组）、无 BlockedCheck 上顶检测、无 wiggler 视觉 |
-| `Update()` (`Activated` 切换 solid/位移 `ShiftSize`) | CassetteBlock.cs:281-319 | lib.rs:71-89 | 🟠 | Rust 监听 `CASSETTE` 事件做 `solid = !solid` 切换；原版由 `CassetteBlockManager` 按节拍驱动 `Activated`，且激活前 `BlockedCheck`（玩家/西奥在上方则不下沉）；Rust 仅有单块、无计时、无 blocked 检查 |
-| `BlockedCheck`/`TryActorWiggleUp` | CassetteBlock.cs:315-443 | — | 🔴 | 缺失 |
+| 构造/分组/贴图 | CassetteBlock.cs:70-259 | lib.rs:53-69 | 🔴 | Rust 无 group（同 index 成组）、无 wiggler 视觉 |
+| `Update()` (`Activated` 切换 solid/位移 `ShiftSize`) | CassetteBlock.cs:281-319 | lib.rs:71-89, 112-133 | 🟠 | Rust 监听 `CASSETTE` 事件做 `solid = !solid` 切换；`BlockedCheck`/`TryActorWiggleUp` 已接入（切换为 solid 时上推重叠玩家，见上）；原版由 `CassetteBlockManager` 按节拍驱动 `Activated`；Rust 仅有单块、无计时、无 wiggler 视觉/位移 `ShiftSize` |
+| `HasPlayerRider()` → `StCassetteFly` 驱动 | CassetteBlock.cs:281-319 | lib.rs:96-143 | 🟠 | 新增 `player_on_top()` 检测玩家骑于顶部 → 状态翻转时发 `EV_CASSETTE_RIDE [u8 on]`；player `ST_CASSETTE_FLY` 委托 `normal_update`（代驾物理 = normal，仅 ride 标志），原版有专门动画偏移/相机跟随 |
+| `BlockedCheck`/`TryActorWiggleUp` | CassetteBlock.cs:315-443 | lib.rs:112-133 | ✅ | 切换为 solid 时若玩家与块体重叠，且块顶上方有空间（`Collision::check(0, -(push+1))` 为 false），用 `actor_move(0, -push)` 把玩家上推出块体，避免挤压致死（对齐 `CassetteBlock.BlockedCheck`/`TryActorWiggleUp`）✅ |
 | `WillToggle`/`ShiftSize`/视觉 | CassetteBlock.cs:409-419 | — | 🔴 | 视觉与位移动画缺失 |
 
 ---
@@ -1071,7 +1123,7 @@
 |---|---|---|---|---|
 | 构造 (solid 8px 高) | CrumblePlatform.cs:27-31 | lib.rs:63-84 | ✅ | solid、宽、8px 高一致 |
 | `Added()` (outline/tiles/shaker) | CrumblePlatform.cs:38-92 | — | 🔴 | 视觉与抖动缺失 |
-| `Sequence()` (player on top/climb→shake→0.4s→non-collidable→tiles 掉落 2s→reform) | CrumblePlatform.cs:94-178 | lib.rs:87-124 | 🟠 | 相位对齐：onTop→timer0.4→solid(false)→timer2.0→!onTop 时 solid(true)；差异：原版还响应 `GetPlayerClimbing`（侧边攀爬）触发，Rust 仅 onTop；重生动条件原版需无 Actor/Solid 重叠，Rust 仅 !player_on_top；缺 shake 与瓦片掉落动画 |
+| `Sequence()` (player on top/climb→shake→0.4s→non-collidable→tiles 掉落 2s→reform) | CrumblePlatform.cs:94-178 | lib.rs:87-124 | 🟠 | 相位对齐：onTop/climb→timer0.4→solid(false)→timer2.0→!onTop 时 solid(true)；`GetPlayerClimbing` 已通过 `player_climbing_side`（检测 `ST_CLIMB` 且贴左/右边缘）接入，侧边攀爬也会触发坍塌；重生动条件原版需无 Actor/Solid 重叠，Rust 仅 !player_on_top；缺 shake 与瓦片掉落动画 |
 | `OutlineFade`/`TileOut`/`TileIn` | CrumblePlatform.cs:180-223 | — | 🔴 | 视觉 |
 
 ---
@@ -1080,8 +1132,15 @@
 ### Class `IceBlock`
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| 构造 (内部 `Solid` 偏移(2,3)缩 4/5，仅 Cold 模式可碰撞, LavaRect 视觉, 撞即死) | IceBlock.cs:14-42 | lib.rs:14-24 | 🔴 | Rust 为常驻 solid（无任何 core-mode 门控），原版在热模式完全穿透；缺内部 solid 偏移、LavaRect、联系玩家即死 `OnPlayer`→`Die`、模式切换 `OnChangeMode` |
-| `OnPlayer`/`OnChangeMode` | IceBlock.cs:44-66 | — | 🔴 | 缺失 |
+| 构造 (内部 `Solid` 偏移(2,3)缩 4/5，仅 Cold 模式可碰撞, LavaRect 视觉, 撞即死) | IceBlock.cs:14-42 | lib.rs:88-112 | 🟠 | hitbox 宽高 + `depth=-8500` ✅；`host::is_cold_mode()` 每帧读取控制 `collision.solid(active)` ✅；`SOLID_INSET` 常量 (2,3,5) 对齐 ✅；缺内部 Solid 8px inset、LavaRect 视觉动画 |
+| `Added` (初始 Collidable = Cold 模式) | IceBlock.cs:37-42 | lib.rs:104-106 | 🟠 | 初始 `collision.solid(is_cold_mode())` ✅；缺内部 Solid 的独立碰撞体 |
+| `OnChangeMode` (Cold→Hot: 粒子+关闭，Hot→Cold: 开启) | IceBlock.cs:44-61 | lib.rs:125-141 | 🟠 | `last_active` 差异检测模式切换 ✅；`deactivate_flash=0.6`/`shake=0.4` ✅；缺 `P_Deactivate` 粒子发射 |
+| `OnPlayer` (玩家接触即死) | IceBlock.cs:63-66 | lib.rs:118-125 (`check_player_kill`) | ✅ | `entities_by_type("player")` 检测 AABB 重叠 + `play_sound("iceblock_death")` ✅；按接触主轴计算 `dir`（`dx>=dy` 取水平，`sign` 指向块外）并调用新增 `host::die_dir(dir_x, dir_y)`（FFI `host_die_dir` + `GameState.death_dir` 存储 + 玩家 init 读 `death_dir()` 设 `facing`，对齐 `Player.deathDir`）✅ |
+| `Render` (仅 Collidable 时绘制 LavaRect) | IceBlock.cs:68-74 | lib.rs:144-169 | 🟠 | `active` 时绘制 2px inset 填充+3px hollow 边框 ✅；缺 LavaRect 动态波纹/lava 内部视觉 |
+| 序列化 | — | lib.rs:179-219 | 🟠 | 含 active/last_active/w/h/shake/lava_timer/deactivate_flash；`destroy` 清 STATES ✅ |
+| 4 个 unit tests | — | lib.rs:226-247 | 🟢 | `default_state_is_active` / `approach_clamps_to_target` / `state_round_trip_preserves_active` / `solid_inset_constants_match_iceblock_cs` 全过 |
+
+**小结**：ice-block 核心行为已移植（`host::is_cold_mode()` 驱动 solid 切换 + 模式切换闪光），补上 4 个 unit tests；实际 `die(dir)` 已通过新增 `host::die_dir` FFI 接入；缺失内部 Solid 独立碰撞体、LavaRect 视觉、粒子、P_Deactivate。
 
 ---
 
@@ -1119,17 +1178,22 @@
 ### Class `WhiteBlock`
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| 构造 (JumpThru 48px, sprite, 默认启用) | WhiteBlock.cs:20-26 | lib.rs:14-24 | 🔴 | Rust 为静态 solid（原版是 JumpThru），无 48px 宽/精灵 |
-| `Awake()` (HeartGem 则 Disable) | WhiteBlock.cs:28-35 | — | 🔴 | 缺失 |
-| `Update()` (玩家踩+鸭子 3s→Activate：变穿透+生成 bg 实心; 心缺失则复原) | WhiteBlock.cs:67-104 | lib.rs:26-27 | 🔴 | Rust update 为空；鸭子计时、bg 实心生成、启用/禁用全缺失 |
-| `Activate`/`Disable` | WhiteBlock.cs:37-65 | — | 🔴 | 缺失 |
+| 构造 (JumpThru 48px, sprite, 默认启用) | WhiteBlock.cs:20-26 | lib.rs:103-117 | 🟠 | 读 `width/height`/`x/y`、`depth=8990`、platform（JumpThru）✅；缺 48px 默认宽/精灵贴图 |
+| `Awake()` (HeartGem 则 Disable) | WhiteBlock.cs:28-35 | — | 🔴 | 缺 `Session.HeartGem` 探测；当前 `update` 用 `is_cold_mode()` 门控鸭子激活（仅 Cold 模式可激活），作为非 HeartGem 关卡的可替代条件 |
+| `Update()` (玩家踩+鸭子 3s→Activate：变穿透+生成 bg 实心) | WhiteBlock.cs:67-104 | lib.rs:121-145 | 🟠 | `DUCK_DURATION=3.0` ✅；`player_ducking_on_top` 用 hitbox 检测 (player_bottom ∈ [block_y, block_y+4]) + `host::player_ducking(pid)` 真实鸭子查询 + Cold 模式门控 → `duck_timer` 累计 → 达 3s 触发 `activated=true` + `platform(false)` + `play_sound("whiteblock_fallthru")` ✅；鸭子查询已通过新增 `host::player_ducking` FFI（玩家每帧 `set_player_ducking` 发布 `st.ducking`）替代原 hitbox 高度近似；缺 `bgSolidTiles` Grid 实心化生成（原版由 `BgData` 重建），缺 `HeartGem` 探测复原 |
+| `Activate`/`Disable` | WhiteBlock.cs:37-65 | lib.rs:131-134, 156-159 | 🟠 | 简化：`Activate` 仅 `activated=true + platform(false)`；`Disable` 用 25% 透明色 + `DrawIfDisabled`（未启用，仅保留颜色定义 `COLOR_DISABLED`）|
+| 序列化 | — | lib.rs:165-204 | 🟠 | 含 enabled/activated/duck_timer/w/h；`destroy` 清 STATES ✅ |
+| 2 个 unit tests | — | lib.rs:208-220 | 🟢 | `constants_match_whiteblock_cs` / `default_state_is_enabled` 全过 |
+
+**小结**：whiteblock 鸭子激活已移植（3s 计时 + Cold 门控 + JumpThru 关闭），补上 2 个 unit tests；真实 Ducking 状态查询已通过 `host::player_ducking` FFI 接入（替代 hitbox 高度近似）；缺失 bg Grid 实心化生成、HeartGem 探测复原。
 
 ---
 
 ## 总体结论
 - **高度对齐（核心物理✅）**：SwapBlock、FallingBlock、CrushBlock、StarJumpBlock、ZipMover、DashBlock、Cloud、ExitBlock、CrumblePlatform。这些实体的关键 Update/碰撞/状态机在 Rust 插件中有忠实重实现，仅缺视觉/粒子/音效（统一 🔴 视觉）。
 - **近似（🟡/🟠）**：MovingPlatform/SinkingPlatform 移动方向正确但缺缓动、rider 下沉/携带不稳；CassetteBlock/Cassette 仅保留“切换/收集事件”骨架，缺分组、blocked 检查、节拍计时与收集演出；FakeWall/CoverupWall 静态近似。
-- **显著缺失（🔴）**：BounceBlock（仅发事件，无自身物理）、MoveBlock（往返乒乓 vs 原版撞墙碎裂重组，行为根本不同）、Bridge（静态 vs 坍塌序列）、IceBlock（缺 core-mode 门控与致命接触）、WhiteBlock（缺鸭子激活与 bg 实心）、CassetteBlockManager（被事件总线取代，节拍模型消失）。
+ - **显著缺失（🔴）**：MoveBlock 已移植 4 态机但 Debris/StaticMover/Buttons 缺失（MoveCheck 抗挤压已接入），Seeker 8 态机已移植但多碰撞盒/击飞未实现（视线遮挡已通过 `host::line_of_sight` 接入、踩踏 `GotBouncedOn` 已接入），Bridge 坍塌已移植但 BridgeTile 子实体物理未实现，WallBooster 已升级冰/火切换但 ClimbBlocker/StaticMover/idleSFX 3D 缺失，WhiteBlock 鸭子激活已移植但 bg Grid 实心化/HeartGem 复原缺失；FireBarrier/CoreModeToggle 已接入 CoreMode 门控与翻转（新增 `host_core_mode_set` FFI）；CassetteBlockManager（被事件总线取代，节拍模型消失）。（IceBlock 的 `die(dir)` 带方向参数、WhiteBlock 的真实 Ducking 查询、Seeker 的 `CanSeePlayer` 视线遮挡、MoveBlock 的 `MoveCheck` 抗挤压已分别通过 `host::die_dir` / `host::player_ducking` / `host::line_of_sight` FFI 接入；FireBarrier 冷热门控 / CoreModeToggle 翻转通过 `host::core_mode_set` 接入。）
+- **已完成**（c4/c5）：BounceBlock 5 态机 + iceMode/火模式参数（ICE_WIND_UP_DIST=16 vs 10，BOUNCING 35 速度、speed_mult 0.333）、MoveBlock 4 态机（Idling→Activating→Moving→Breaking，2.2s REFILL_TIME）、IceBlock `host::is_cold_mode()` 门控、WallBooster `left`/`notCoreMode` 切换 + 冷热 BOOST 音效、Seeker 8 态机（Idle→Patrol→Spotted→Attack→Stunned→Regenerate→Returned）、Bridge 3 阶段坍塌（11/5/7 块 + 0.2s/块 + bridge_rumble_loop/stop 音效）、WhiteBlock 3s 鸭子计时 + Cold 门控 + JumpThru 关闭。`host::core_mode_get()` FFI + `is_cold_mode()` 包装已加入 `crates/ruleste-plugins-api/src/host.rs` 和 `src/hotload/wasm_host.rs`。
 
 <!-- ========== SECTION c5 ========== -->
 
@@ -1238,7 +1302,7 @@
 | `GetPercentPosition` (路径插值) | FireBall.cs:235 | lib.rs:52 | 🟡 | 原版按累计弧长在节点间插值；Rust 顺序节点直线移动，无弧长归一 |
 | `Update` (speedMult/percent/尾迹) | FireBall.cs:116 | lib.rs:45 | 🟠 | 移动一致；无 speedMult 趋近(冰 0.5/火 1)、无 broken 重生、无粒子 |
 | `OnPlayer` (火杀/冰条件) | FireBall.cs:181 | lib.rs:65 | 🟠 | 始终 die()；原版冰模式仅当 `player.Bottom > Y+4` 才杀 |
-| `OnBounce` (冰面弹起碎裂) | FireBall.cs:203 | — | 🔴 | 冰球被踩碎+玩家弹起未实现 |
+| `OnBounce` (冰面弹起碎裂) | FireBall.cs:203 | lib.rs:79-100 | ✅ | 玩家自上方踩中（脚在块体上半部）时 `remove(id)` 销毁火球并 `emit(EV_SPRING_BOUNCE, Floor)` 让玩家弹起；侧面/下方接触仍 `die()`（对齐 `FireBall.OnBounce`）✅ |
 | `OnChangeMode` (CoreMode) | FireBall.cs:216 | — | 🔴 | 热/冷切换精灵与音效未实现 |
 | `Added` (生成 amount 个火球) | FireBall.cs:96 | — | 🔴 | 单实例；原版按 `amount` 生成多个沿路径分布 |
 
@@ -1250,8 +1314,8 @@
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
 | `FireBarrier(ctor)` | FireBarrier.cs:16 | lib.rs:15 | 🟠 | 命中盒一致；原版加 `LavaRect` 波浪视觉，Rust 仅纯色矩形 |
-| `Added` (Solid + CoreMode 门控) | FireBarrier.cs:40 | lib.rs:23 | 🔴 | 原版 `Collidable=solid.Collidable = CoreMode==Hot`；Rust 恒 `solid(true)` 且恒杀，无视 CoreMode |
-| `OnChangeMode` | FireBarrier.cs:51 | — | 🔴 | 热/冷切换 + 消失粒子未实现 |
+| `Added` (Solid + CoreMode 门控) | FireBarrier.cs:40 | lib.rs:23, 31-47 | ✅ | 每帧读 `is_cold_mode()`：仅 Hot 模式 `solid(true)` 且致死，Cold 模式取消实心且不杀（对齐 `Collidable = CoreMode == Hot`）✅ |
+| `OnChangeMode` | FireBarrier.cs:51 | lib.rs:31-47 | 🟠 | Cold 模式自动消失（取消实心）已接入；热/冷切换粒子/音效未实现 |
 | `OnPlayer` (Die) | FireBarrier.cs:74 | lib.rs:31 | ✅ | 重叠即 die() |
 | `Render` (仅可碰撞时画) | FireBarrier.cs:94 | lib.rs:41 | 🟠 | 原版冷模式不渲染；Rust 恒画 |
 
@@ -1266,22 +1330,26 @@
 |---|---|---|---|---|
 | 向玩家归位移动 | — | lib.rs:47 | 🟡 | 以 70px/s 直线追踪（无视墙体，符合"穿墙"） |
 | 接触击杀 | — | lib.rs:61 | ✅ | 圆形重叠 die() |
+| `Attract` 牵引玩家（StAttract 触发器） | — | lib.rs:67 | 🟠 | 玩家进入 `ATTRACT_RANGE_SQ=8100`（90px）圆，则发 `EV_ATTRACT` 带 chaser 位置；player `attract_update` 朝该点 lerp 牵引；原版有完整吸附+击杀演出 |
 | 视觉 | — | lib.rs:77 | 🟡 | 矩形身体+红眼近似 |
 
 ---
 
 ## `Seeker.cs` ↔ `plugins/seeker/src/lib.rs`
 
-### Class `Seeker`（原版是 8 状态机 Actor，Rust 为大幅简化追踪体）
+### Class `Seeker`（8 状态机 Actor）
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| `Seeker(ctor)` (碰撞盒/状态机) | Seeker.cs:255 | lib.rs:27 | 🔴 | 原版 6 个命中盒 + StateMachine(8 态)；Rust 仅单 hitbox + base/chasing |
-| `Update` (CanSee/MoveH/V/边界) | Seeker.cs:431 | lib.rs:41 | 🔴 | 视线判定、撞墙、关卡边界全部缺失 |
-| `OnAttackPlayer` / `OnBouncePlayer` | Seeker.cs:368, 383 | lib.rs:72 | 🟠 | Rust 距离<10 即 die()；原版攻击命中死、弹跳命中则被弹飞并进入 Stunned |
-| `GotBouncedOn` | Seeker.cs:399 | — | 🔴 | 被踩后进入 Regenerate 未实现 |
-| `CanSeePlayer` (视线) | Seeker.cs:413 | — | 🔴 | 视线遮挡判定缺失 |
-| `Idle/Patrol/Spotted/Attack/Stunned/Skidding/Regenerate/Returned` | Seeker.cs:561+ | — | 🔴 | 全部状态逻辑缺失（巡逻点、追击、冲撞、眩晕、滑行、再生、返回） |
-| `OnHoldable` (被抓/被扇) | Seeker.cs:546 | — | 🔴 | 联动缺失 |
+| 构造 (6 个命中盒 + StateMachine) | Seeker.cs:255 | lib.rs:94-99 | 🟠 | hitbox(14,14,-3,-3) ✅；8 态常量 (Idle/Patrol/Spotted/Attack/Stunned/Skidding/Regenerate/Returned) ✅；`approach` 加速 600 ✅；`SIGHT_DIST_SQ=25600` ✅；`ATTACK_RANGE_SQ=100`、`ATTACK_SPEED=200` ✅；`STUN_DURATION=0.4`、`REGEN_DURATION=1.6` ✅；缺 6 个独立命中盒（physicsHitbox/breakWallsHitbox/attackHitbox/bounceHitbox/pushRadius/breakWallsRadius）|
+| 8 态机 (Idle→Patrol→Spotted→Attack→Stunned→Regenerate→Returned) | Seeker.cs:561+ | lib.rs:107-189 | 🟠 | Idle 等待玩家进入 (SIGHT_DIST_SQ) ✅；Patrol 回 home 速度 30 ✅；Spotted 0.4s 计时后进 Attack ✅；Attack 速度 200，朝玩家方向移动，<ATTACK_RANGE 时 die() + SFX ✅；Stunned 0.4s 停止 + 速度衰减 ✅；Regenerate 1.6s → visible=false → 传送回 home ✅；Returned 回到 home 后 Patrol ✅；`CanSeePlayer` 视线遮挡已接 `host::line_of_sight` ✅；缺 Skidding、撞墙反弹、多个碰撞盒交互 |
+| `OnAttackPlayer`/`OnBouncePlayer` | Seeker.cs:368, 383 | lib.rs:177-183 | 🟠 | Attack 阶段距离<10px → `die()` ✅；撞墙后进入 Stunned ✅；缺 bounce 后的击飞逻辑 |
+| `GotBouncedOn`/`OnHoldable` | Seeker.cs:399, 546 | lib.rs:155-186 | 🟠 | `GotBouncedOn` 已实现：玩家自上方踩中（水平重叠 + 脚在块体上半部）时 seeker 转入 `STUNNED` 并发 `EV_SPRING_BOUNCE`（Floor 朝向，玩家弹起由 player 插件后续消费），seeker 自身不再致死；`OnHoldable`（可抓联动）仍缺失 |
+| `CanSeePlayer` 视线 | Seeker.cs:413 | lib.rs:124-131, 163-171, 188-195 | ✅ | 视线遮挡判定通过 `host::line_of_sight(x1,y1,x2,y2)`（新增 `SolidGrid::line_of_sight`：world→tile 网格步进，半格步长避免穿薄墙，越界视为遮挡）实现；Idle/Patrol 进入 `Spotted` 时要求 `line_of_sight(seeker, player)` 为真（对齐 `Seeker.CanSeePlayer`）✅ |
+| 渲染 | Seeker.cs | lib.rs:195-205 | 🟡 | 程序化：深蓝体 + 变色 eye（红=攻击/黄=眩晕/灰=死亡）✅；无 sprite/shockwave 动画 |
+| 序列化 | — | lib.rs:208-263 | 🟠 | 含 state/last_state/start/speed/timers/visible；`destroy` 清 STATES ✅ |
+| 4 个 unit tests | — | lib.rs:269-290 | 🟢 | `constants_match_seeker_cs`/`state_constants_match_seeker_cs`/`approach_clamps_to_target`/`default_state_is_idle` 全过 |
+
+**小结**：seeker 8 态机核心已移植（Idle→Patrol→Spotted→Attack→Stunned→Regenerate→Returned），补上 4 个 unit tests；`CanSeePlayer` 视线遮挡已通过 `host::line_of_sight` 接入；缺失多碰撞盒/击飞/可抓联动。
 
 ---
 
@@ -1302,10 +1370,15 @@
 ### Class `WallBooster`
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| `WallBooster(ctor)` | WallBooster.cs:24 | lib.rs:16 | 🔴 | 原版 hitbox 为 2px 宽贴墙带 + `ClimbBlocker`；Rust 设为 `solid(true)`（原版**不**实心）且用 width/height，语义错误 |
-| `OnChangeMode` (冰/火) | WallBooster.cs:85 | — | 🔴 | 原版冰模式 Blocking=true（不可爬）、火模式可墙跳；Rust 恒发 BOOST 事件，无冰/火区分 |
-| `BuildSprite` / `Update` (音效) | WallBooster.cs:52, 103 | lib.rs:27 | 🔴 | 仅空 update + 画矩形；精灵/音效/IdleSfx 定位缺失 |
-| 墙跳助推（玩家侧） | — | lib.rs:36 | 🟡 | 通过 `emit(BOOST)` 通知玩家插件，具体助推在玩家侧实现 |
+| 构造 (2px 宽贴墙 hitbox + CoreModeListener + StaticMover + ClimbBlocker) | WallBooster.cs:24-45 | lib.rs:86-106 | 🟠 | 读 `left`/`notCoreMode`/`height` → hitbox(2,h,0,0) 或 (2,h,6,0) ✅；`depth=1999` ✅；`is_cold_mode()` 或 `notCoreMode` 控制 `ice_mode` ✅；缺 StaticMover/ClimbBlocker/BuildSprite |
+| `OnChangeMode` (IceMode 切换 → ClimbBlocker + sprite + 音效) | WallBooster.cs:85-101 | lib.rs:121-133 | 🟠 | `ice_mode` 翻转检测 ✅；`BOOST_COLD`/`BOOST_HOT` 颜色区分 ✅；`icewall_boost`/`wallbooster_boost` 音效 ✅；缺 ClimbBlocker 切换/精灵动画/idle SFX 定位 |
+| `Update` (IdleSfx 3D 定位) | WallBooster.cs:103-120 | — | 🔴 | 缺 3D 音效定位 |
+| 碰撞检测 + 助推事件 | — | lib.rs:137-165 | 🟠 | AABB 检测玩家 + `emit(BOOST)` + 0.1s cooldown ✅ |
+| 渲染 | WallBooster.cs | lib.rs:167-177 | 🟡 | 程序化：BOOST_COLD/BOOST_HOT 填充 + 1px BOOST_EDGE 顶部高光线 ✅；无精灵动画 |
+| 序列化 | — | lib.rs:180-211 | 🟠 | 含 left/not_core_mode/ice_mode/w/h/cooldown；`destroy` 清 STATES ✅ |
+| 2 个 unit tests | — | lib.rs:218-228 | 🟢 | `default_is_left_hot` / `ice_mode_flips_to_cold_when_needed` 全过 |
+
+**小结**：wall-booster 已升级（`left`/`notCoreMode` 解析 + `is_cold_mode()` 冰/火切换 + 2 种 BOOST 音效），补上 2 个 unit tests；缺失 StaticMover/ClimbBlocker/精灵/idle SFX 3D 定位。
 
 ---
 
@@ -1317,7 +1390,7 @@
 | `Spring(ctor)` | Spring.cs:30 | lib.rs:64 | ✅ | 三方向 hitbox（16x6/-8,-6 等）、深度 -8501 一致 |
 | `OnCollide` (Floor SuperBounce) | Spring.cs:123 | lib.rs:129 | ✅ | 仅 vy≥0 且非 dash → 发 `EV_SUPER_BOUNCE(from_y)`；冷却 0.2 近似（原版靠动画） |
 | `OnCollide` (WallLeft/Right SideBounce) | Spring.cs:138, 146 | lib.rs:141, 156 | ✅ | 发 `EV_SIDE_BOUNCE`（方向/边/中心Y）一致 |
-| `OnHoldable` / `OnPuffer` / `OnSeeker` | Spring.cs:165, 173, 181 | — | 🔴 | 可投掷物/河豚/Seeker 触发弹跳未实现 |
+| `OnHoldable` / `OnPuffer` / `OnSeeker` | Spring.cs:165, 173, 181 | lib.rs:98-197 (`overlap_target` + `EV_SPRING_BOUNCE`) | 🟠 | 新增 `overlap_target(&["theo-crystal","key","seeker","puffer"])` 检测，任一重叠即触发 spring 冷却并发 `EV_SPRING_BOUNCE`（payload `[u32 target][u8 orientation][f32 from_x][f32 from_y]`），由对应插件自行施加弹跳；玩家仍走 `EV_SUPER_BOUNCE`/`EV_SIDE_BOUNCE`。最佳努力：弹簧自身触发已接入，但 theo-crystal/key/seeker/puffer 尚未消费 `EV_SPRING_BOUNCE`（后续需在各自插件加监听） |
 | `OnEnable`/`OnDisable` | Spring.cs:102 | — | 🔴 | 无启用/禁用（StaticMover 联动） |
 | StaticMover 附着平台 | Spring.cs:47 | — | 🔴 | 随平台移动未实现 |
 
@@ -1341,7 +1414,7 @@
 |---|---|---|---|---|
 | `TouchSwitch(ctor)` | TouchSwitch.cs:40 | lib.rs:42 | 🟠 | 16x16 命中盒一致；原版还有 30/20/24 的 Player/Holdable/Seeker 碰撞器 |
 | `TurnOn` + `Switch.Activate` (全组逻辑) | TouchSwitch.cs:91 | lib.rs:54 | 🟠 | Rust 玩家重叠即发 `SWITCH` 一次；原版经 Switch 组件（全房间开关集满才 Finish、最后一个播 last_oneshot）未复现 |
-| `OnHoldable` / `OnSeeker` | TouchSwitch.cs:109, 114 | — | 🔴 | 可投掷物/Seeker 也能触发未实现 |
+| `OnHoldable` / `OnSeeker` | TouchSwitch.cs:109, 114 | lib.rs:48-95 (`overlap_any`) | ✅ | 新增 `overlap_any(&["theo-crystal","key"])` 与 `overlap_any(&["seeker"])` 检测，玩家/可抓物/Seeker 任一重叠即发 `SWITCH`（对齐 `TouchSwitch.OnHoldable`/`OnSeeker`）✅ |
 | `Update` (颜色/动画/粒子) | TouchSwitch.cs:122 | lib.rs:69 | 🟡 | 仅 idle/on 两色；原版 inactive→active→finish 渐变+脉冲+粒子缺失 |
 
 ---
@@ -1370,13 +1443,16 @@
 
 ## `Key.cs` ↔ `plugins/key/src/lib.rs`
 
-### Class `Key`
+### Class `Key` (Holdable)
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| `Key(ctor)` (Follower + 碰撞) | Key.cs:44 | lib.rs:42 | 🟠 | 16x16 命中盒一致；原版 `Follower` 随从系统未实现 |
-| `OnPlayer` (获得→记录) | Key.cs:123 | lib.rs:53 | 🟠 | 玩家重叠即发 `KEY` + `host::collect`；原版 `Leader.GainFollower` + `Session.Keys` + `DoNotLoad` 未复现 |
+| `Key(ctor)` (Follower + 碰撞) | Key.cs:44 | lib.rs:107 | 🟠 | 16x16 命中盒 ✅；原版 `Follower` 随从系统未实现 |
+| `OnPlayer` (获得→记录) | Key.cs:123 | lib.rs:118-260 | 🟠 | 接入 `holdable` 事件总线：玩家重叠 + CLIMB 按下 → Held，每帧发 `EV_CARRIED 1` 冻结玩家 ✅；JUMP/DASH/松开 CLIMB → Thrown ✅；Thrown 撞 `lockBlock` 即发 `KEY` + `host::collect` ✅（替代原版 `Leader.GainFollower`/`Session.Keys`/`DoNotLoad`） |
 | `UseRoutine` (插入锁动画) | Key.cs:162 | — | 🔴 | 插入锁孔旋转/消失动画未实现（由 lockBlock 监听 KEY 简化） |
 | `RegisterUsed` / `NodeRoutine` | Key.cs:152, 142 | — | 🔴 | 释放随从、磁带飞行未实现 |
+| 5 个 unit tests | — | lib.rs:263-297 | 🟢 | `carry_offset_matches_player_cs`/`throw_constants_match_key_cs`/`approach_clamps_to_target`/`state_constants_are_distinct`/`default_state_is_idle` 全过 |
+
+**小结**：key 已接入 `holdable` 事件总线（Idle→Held→Thrown + 撞锁发 KEY 收集），补上 5 个 unit tests；缺失 Follower 随从系统/插入锁动画/DoNotLoad 标记。
 
 ---
 
@@ -1387,8 +1463,8 @@
 ### Class `CoreModeToggle`
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| `CoreModeToggle(ctor)` | CoreModeToggle.cs:40 | lib.rs:56 | 🔴 占位 | 仅建 hitbox；`update` 对 CoreModeToggle 无任何行为 |
-| `OnPlayer` (切换 CoreMode) | CoreModeToggle.cs:103 | — | 🔴 | 玩家触碰翻转 CoreMode（含 cooldown 1s、persistent、Flash/Freeze）未实现 |
+| `CoreModeToggle(ctor)` | CoreModeToggle.cs:40 | lib.rs:56 | 🟠 | 建 hitbox ✅；新增 `cooldown` 字段 |
+| `OnPlayer` (切换 CoreMode) | CoreModeToggle.cs:103 | lib.rs:90-122 | ✅ | 玩家触碰时通过 `host::set_core_mode(!is_cold)` 翻转 CoreMode，带 1s cooldown（Flash/Freeze 视觉未实现）✅；需 `host_core_mode_set` FFI |
 | `OnChangeMode` / `SetSprite` | CoreModeToggle.cs:65, 71 | — | 🔴 | 冰/火精灵与音效未实现 |
 
 ### Class `RisingLava`
@@ -1692,14 +1768,17 @@
 ---
 
 ## `TheoCrystal.cs` ↔ `plugins/theo-crystal/src/lib.rs`
-### Class `TheoCrystal`
+### Class `TheoCrystal` (Holdable)
 | 原版函数 | 原版行号 | 我方实现 (文件:行) | 状态 | 说明 |
 |---|---|---|---|---|
-| `TheoCrystal(pos)` 构造 | 47 | lib.rs:29 | 🟠 | platform 矩形；无 Holdable/抓取/重力物理 |
+| `TheoCrystal(pos)` 构造 | 47 | lib.rs:117 | 🟠 | platform 矩形 + `nodes` 巡逻 ✅ |
 | `Added` (去重/教程) | 80 | — | 🔴 | 无 |
-| `Update` (重力/抓握/撞墙/ temple gate) | 99 | lib.rs:46-71 | 🟡 | 仅沿 nodes 巡逻（speed 35）；无 Holdable/碰撞/死亡 |
+| `Update` (重力/抓握/撞墙/ temple gate) | 99 | lib.rs:140-247 | 🟠 | 3 态机 (Idle→Held→Thrown) ✅；Idle 沿 nodes 巡逻 (speed 35) ✅；玩家重叠 + CLIMB 按下 → Held ✅；Held 每帧发 `EV_CARRIED 1 (carryX,carryY)` 冻结玩家（`CARRY_OFFSET_Y=-12`）✅；JUMP/DASH/松开 CLIMB → Thrown + 发 `EV_CARRIED 0` 释放 ✅；Thrown 速度 200 + 0.3s 摩擦衰减回 Idle ✅；`another_holder_has_player` 用事件总线防止重复抓取 ✅；缺 Holdable/碰撞/死亡/Shatter/OnPickup 细粒度回调/temple gate |
 | `Shatter`/`Die`/`OnPickup`/`OnRelease` | 239/458/438/444 | — | 🔴 | 全部缺失 |
-| `draw` | — | lib.rs:74-82 | 🟡 | 蓝色晶体矩形 |
+| `draw` | — | lib.rs:268-276 | 🟡 | 蓝色晶体矩形 ✅ |
+| 5 个 unit tests | — | lib.rs:279-313 | 🟢 | `carry_offset_matches_player_cs`/`throw_constants_match_theocrystal_cs`/`approach_clamps_to_target`/`state_constants_are_distinct`/`default_state_is_idle` 全过 |
+
+**小结**：theo-crystal 已接入 `holdable` 事件总线（Idle→Held→Thrown 抓取/抛出状态机 + `EV_CARRIED` 冻结玩家），补上 5 个 unit tests；缺失 Holdable 碰撞/死亡/Shatter/OnPickup 细粒度回调/temple gate。
 
 ---
 
@@ -1735,6 +1814,7 @@
 | `TempleCrackedBlock` 被 dash 破 | — | lib.rs:180-185 | 🟠 | 收到 `DASH_BLOCK` 则 remove |
 | `ConditionBlock`/`SeekerBarrier`/`SeekerStatue`/`TheoCrystalHoldingBarrier`/`TheoCrystalPedestal`/`TempleCrackedBlock` | — | lib.rs:108-118 | 🟠 | solid 矩形 |
 | `TempleMirror`/`TempleMirrorPortal`/`TempleBigEyeball` | — | lib.rs:196-229 | 🟡 | 仅色块，无镜面/眼逻辑 |
+| `TempleFallTrigger` → `StTempleFall` 触发 | — | lib.rs:188-198 | 🟠 | 新增：玩家重叠发 `EV_TEMPLE_FALL`（空 payload）；player `temple_fall_update` 进入脚本坠落（重力 + 1.5s 超时恢复）；原版由 Level 脚本（特定房间机关）驱动，非独立 trigger 实体 |
 
 <!-- ========== SECTION c7 ========== -->
 

@@ -6,7 +6,7 @@
 
 use ruleste_plugins_api::host::draw_rect;
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 
 ruleste_plugins_api::ruleste_meta!("waterfall");
@@ -14,8 +14,18 @@ ruleste_plugins_api::ruleste_entity_types!("waterfall");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const WATER: Color = Color { r: 0x4a, g: 0x88, b: 0xc8, a: 0x55 };
-const STREAK: Color = Color { r: 0xbf, g: 0xe0, b: 0xff, a: 0x55 };
+const WATER: Color = Color {
+    r: 0x4a,
+    g: 0x88,
+    b: 0xc8,
+    a: 0x55,
+};
+const STREAK: Color = Color {
+    r: 0xbf,
+    g: 0xe0,
+    b: 0xff,
+    a: 0x55,
+};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {

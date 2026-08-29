@@ -1,7 +1,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 use ruleste_plugins_api::host::draw_rect;
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 
 ruleste_plugins_api::ruleste_meta!("cliffside_flag");
@@ -9,8 +9,18 @@ ruleste_plugins_api::ruleste_entity_types!("cliffside_flag");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const FLAG: Color = Color { r: 0xff, g: 0xff, b: 0xff, a: 0xff };
-const POLE: Color = Color { r: 0x99, g: 0x99, b: 0x99, a: 0xff };
+const FLAG: Color = Color {
+    r: 0xff,
+    g: 0xff,
+    b: 0xff,
+    a: 0xff,
+};
+const POLE: Color = Color {
+    r: 0x99,
+    g: 0x99,
+    b: 0x99,
+    a: 0xff,
+};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {

@@ -1,8 +1,8 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
-use ruleste_plugins_api::host::{draw_rect, drain_events};
 use ruleste_plugins_api::event;
+use ruleste_plugins_api::host::{drain_events, draw_rect};
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 use std::cell::RefCell;
 
@@ -11,8 +11,18 @@ ruleste_plugins_api::ruleste_entity_types!("ridgeGate");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const SHUT: Color = Color { r: 0xaa, g: 0x44, b: 0x44, a: 0xff };
-const OPEN: Color = Color { r: 0x55, g: 0x55, b: 0x55, a: 0x55 };
+const SHUT: Color = Color {
+    r: 0xaa,
+    g: 0x44,
+    b: 0x44,
+    a: 0xff,
+};
+const OPEN: Color = Color {
+    r: 0x55,
+    g: 0x55,
+    b: 0x55,
+    a: 0x55,
+};
 
 #[derive(Copy, Clone)]
 struct State {
@@ -45,7 +55,9 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(id: EntityId, _dt: f32) {
     let e = Entity::new(id);
-    let opened = drain_events().iter().any(|(_src, t, _)| *t == event::SWITCH);
+    let opened = drain_events()
+        .iter()
+        .any(|(_src, t, _)| *t == event::SWITCH);
     let mut st = match STATES.with(|s| s.borrow_mut().get_mut(&id).copied()) {
         Some(st) => st,
         None => return,

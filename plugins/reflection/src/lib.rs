@@ -1,7 +1,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 use ruleste_plugins_api::host::draw_rect;
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 use std::cell::RefCell;
 
@@ -17,11 +17,36 @@ ruleste_plugins_api::ruleste_entity_types!(
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const WATER: Color = Color { r: 0x44, g: 0x99, b: 0xcc, a: 0x88 };
-const BOSS: Color = Color { r: 0x44, g: 0x22, b: 0x44, a: 0xff };
-const BLOCK: Color = Color { r: 0x88, g: 0x88, b: 0x88, a: 0xff };
-const STATUE: Color = Color { r: 0x77, g: 0x77, b: 0x66, a: 0xff };
-const TENT: Color = Color { r: 0x66, g: 0x33, b: 0x66, a: 0xff };
+const WATER: Color = Color {
+    r: 0x44,
+    g: 0x99,
+    b: 0xcc,
+    a: 0x88,
+};
+const BOSS: Color = Color {
+    r: 0x44,
+    g: 0x22,
+    b: 0x44,
+    a: 0xff,
+};
+const BLOCK: Color = Color {
+    r: 0x88,
+    g: 0x88,
+    b: 0x88,
+    a: 0xff,
+};
+const STATUE: Color = Color {
+    r: 0x77,
+    g: 0x77,
+    b: 0x66,
+    a: 0xff,
+};
+const TENT: Color = Color {
+    r: 0x66,
+    g: 0x33,
+    b: 0x66,
+    a: 0xff,
+};
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Kind {
@@ -60,7 +85,8 @@ thread_local! {
 }
 
 fn spawn_type(data: *const u8, len: u32) -> String {
-    spawn_data(unsafe { std::slice::from_raw_parts(data, len as usize) }).get_str("_entity_type", "")
+    spawn_data(unsafe { std::slice::from_raw_parts(data, len as usize) })
+        .get_str("_entity_type", "")
 }
 
 #[unsafe(no_mangle)]
@@ -83,7 +109,16 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     e.collision.solid(solid);
     let nodes: Vec<(f32, f32)> = spawn.nodes().iter().map(|n| (n.x, n.y)).collect();
     STATES.with(|s| {
-        s.borrow_mut().insert(id, State { kind, w, h, nodes, idx: 0 });
+        s.borrow_mut().insert(
+            id,
+            State {
+                kind,
+                w,
+                h,
+                nodes,
+                idx: 0,
+            },
+        );
     });
 }
 
@@ -105,7 +140,8 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             e.position.set_xy(dest.0, dest.1);
             st.idx = (st.idx + 1) % st.nodes.len();
         } else {
-            e.position.set_xy(p.x + dx / dist * speed * dt, p.y + dy / dist * speed * dt);
+            e.position
+                .set_xy(p.x + dx / dist * speed * dt, p.y + dy / dist * speed * dt);
         }
         STATES.with(|s| {
             if let Some(st_ref) = s.borrow_mut().get_mut(&id) {

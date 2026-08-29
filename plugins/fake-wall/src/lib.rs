@@ -7,7 +7,7 @@
 
 use ruleste_plugins_api::host::{self, draw_rect, entities_by_type};
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity, Hitbox, Position};
+use ruleste_plugins_api::plugin::{Entity, Hitbox, Position, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 
 use std::cell::RefCell;
@@ -17,7 +17,12 @@ ruleste_plugins_api::ruleste_entity_types!("fakeWall");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const WALL: Color = Color { r: 0x4a, g: 0x4a, b: 0x55, a: 0xff };
+const WALL: Color = Color {
+    r: 0x4a,
+    g: 0x4a,
+    b: 0x55,
+    a: 0xff,
+};
 
 #[derive(Clone, Copy)]
 struct State {
@@ -38,6 +43,7 @@ fn player_rect() -> Option<(f32, f32, f32, f32)> {
     Some((pp.x + pox, pp.y + poy, pw, ph))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn overlap(ax: f32, ay: f32, aw: f32, ah: f32, bx: f32, by: f32, bw: f32, bh: f32) -> bool {
     ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
 }
@@ -63,9 +69,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, _dt: f32) {
         None => return,
     };
     let p = Entity::new(id).position.get();
-    if player_rect()
-        .is_some_and(|(px, py, pw, ph)| overlap(px, py, pw, ph, p.x, p.y, st.w, st.h))
-    {
+    if player_rect().is_some_and(|(px, py, pw, ph)| overlap(px, py, pw, ph, p.x, p.y, st.w, st.h)) {
         Entity::new(id).collision.solid(false);
         host::set_visible(id, false);
         host::remove(id);

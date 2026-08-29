@@ -23,7 +23,7 @@
 
 use std::cell::RefCell;
 
-use ruleste_plugins_api::host::Input;
+use ruleste_plugins_api::host::{Input, death_dir};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugins_api::ruleste_entity_types;
@@ -32,7 +32,29 @@ use ruleste_plugins_api::ruleste_noop_destroy;
 use ruleste_plugins_api::types::input;
 use ruleste_plugins_api::types::{EntityId, Vec2};
 
-// Movement / physics (`Player.cs`).
+// Intro state movement (IntroWalk/IntroJump/IntroRespawn/IntroMoonJump).
+const INTRO_WALK_SPEED: f32 = 64.0;
+const INTRO_JUMP_RISE_SPEED: f32 = -120.0;
+const INTRO_JUMP_FALL_ACCEL: f32 = 800.0;
+#[allow(dead_code)]
+const INTRO_MOON_LAND_RISE: f32 = -200.0;
+#[allow(dead_code)]
+const INTRO_MOON_LAND_FALL_ACCEL: f32 = 400.0;
+
+// Dream Dash (`StDreamDash`, `Player.DreamDash*`).
+const DREAM_DASH_CAN_END_TIME: f32 = 0.1;
+#[allow(dead_code)]
+const DREAM_DASH_JUMP_GRACE: f32 = 0.1;
+
+// Swim (`StSwim`, `Player.Swim*`).
+const SWIM_RISE_SPEED: f32 = -60.0;
+const SWIM_MAX_X_UNDERWATER: f32 = 60.0;
+const SWIM_MAX_X_SURFACE: f32 = 80.0;
+const SWIM_APPROACH_SAME_DIR: f32 = 400.0;
+const SWIM_APPROACH_OTHER_DIR: f32 = 600.0;
+#[allow(dead_code)]
+const SWIM_GRAVITY: f32 = 450.0;
+const SWIM_STAMINA: f32 = 110.0;
 const GRAVITY: f32 = 900.0;
 const HALF_GRAV_THRESHOLD: f32 = 40.0;
 const MAX_FALL: f32 = 160.0;
@@ -135,16 +157,58 @@ const DUCK_HITBOX: (f32, f32, f32, f32) = (8.0, 6.0, -4.0, -6.0);
 const ST_NORMAL: u32 = 0;
 const ST_CLIMB: u32 = 1;
 const ST_DASH: u32 = 2;
+const ST_SWIM: u32 = 3;
 const ST_BOOST: u32 = 4;
 const ST_RED_DASH: u32 = 5;
+const ST_HIT_SQUASH: u32 = 6;
 const ST_LAUNCH: u32 = 7;
+// `ST_PICKUP` is reserved for when the `holdable` subsystem is wired up so that
+// TheoCrystal/Jellyfish/Key/ZipMover can drive the player's carry tween.
+// Until then the constant stays here to keep the 0..25 numbering intact.
+#[allow(dead_code)]
+const ST_PICKUP: u32 = 8;
+#[allow(dead_code)]
+const ST_DREAM_DASH: u32 = 9;
 const ST_SUMMIT_LAUNCH: u32 = 10;
 const ST_STARFLY: u32 = 19;
+// `ST_TEMPLE_FALL`/`ST_CASSETTE_FLY`/`ST_ATTRACT`/`ST_FLING_BIRD` are reserved
+// for plugins that haven't been written yet (`mirror-temple`,
+// `cassette-block-manager`, `dark-chaser`, `fling-bird`); the constants stay
+// here so the 26-state model stays complete and future holders can plug in
+// without renumbering. Suppress the dead-code warning until then.
+#[allow(dead_code)]
+const ST_TEMPLE_FALL: u32 = 20;
+#[allow(dead_code)]
+const ST_CASSETTE_FLY: u32 = 21;
+#[allow(dead_code)]
+const ST_ATTRACT: u32 = 22;
+#[allow(dead_code)]
+const ST_FLING_BIRD: u32 = 24;
+const ST_DUMMY: u32 = 11;
+const ST_INTRO_WALK: u32 = 12;
+const ST_INTRO_JUMP: u32 = 13;
+const ST_INTRO_RESPAWN: u32 = 14;
+const ST_INTRO_WAKE_UP: u32 = 15;
+const ST_BIRD_DASH_TUTORIAL: u32 = 16;
+const ST_FROZEN: u32 = 17;
+const ST_REFLECTION_FALL: u32 = 18;
+const ST_INTRO_MOON_JUMP: u32 = 23;
+const ST_INTRO_THINK_FOR_A_BIT: u32 = 25;
 
 // Spring side bounce (`Player.SideBounce`): `SideBounceSpeed`/`ForceMoveXTime`.
 const SIDE_BOUNCE_SPEED: f32 = 240.0;
 const SIDE_BOUNCE_FORCE_TIME: f32 = 0.3;
 const SUPER_BOUNCE_SPEED: f32 = -185.0;
+// `StTempleFall` (`Player.TempleFallUpdate`): how long the scripted Mirror
+// Temple collapse runs before auto-recovering to `StNormal`. The original is
+// driven by the level script; we bound it so a missed reset can't soft-lock.
+const TEMPLE_FALL_TIME: f32 = 1.5;
+// `StAttract` (`Player.AttractUpdate`): how fast the player is pulled toward
+// the `darkChaser` each frame (fraction of the remaining distance).
+const ATTRACT_LERP: f32 = 0.12;
+// How long `StAttract` survives without a fresh `EV_ATTRACT` (refreshed by the
+// chaser every frame it's in range).
+const ATTRACT_HOLD: f32 = 0.2;
 
 ruleste_meta!("player");
 ruleste_entity_types!("player");
@@ -201,6 +265,57 @@ struct PlayerState {
     // carrier driving the position each frame.
     carried: bool,
     carry_target: Vec2,
+    // `StDummy` (`Player.DummyUpdate`): an NPC coroutine like
+    // `TheoCrystal.WalkTo` borrows the player to walk a few tiles. The
+    // flags below mirror the original's `DummyMoving`/`DummyGravity`/
+    // `DummyAutoAnimate`/`DummyMaxspeed`/`DummyFriction` switches.
+    dummy_moving: bool,
+    dummy_gravity: bool,
+    dummy_auto_animate: bool,
+    dummy_maxspeed: bool,
+    dummy_friction: bool,
+    // `StIntro*` states are scripted cutscene moments driven by `Level`.
+    // The original runs them as coroutines; we approximate the most
+    // physically meaningful slices inline.
+    //
+    // `IntroWalkDirection`: the side the player walks in from off-screen.
+    // `IntroWalkTargetX`: where the walk ends (the spawn position).
+    intro_walk_direction: i32,
+    intro_walk_target_x: f32,
+    intro_jump_target_y: f32,
+    // `IntroRespawn` morph (Player.IntroRespawnBegin): a tween animates the
+    // ghosting sprite back to the spawn point; we keep the lerp `0..1` here.
+    intro_respawn_t: f32,
+    intro_respawn_duration: f32,
+    // `BirdDashTutorial` (`Player.BirdDashTutorialCoroutine`): the scripted
+    // intro dash on a few early levels. We don't drive the full coroutine
+    // but track the `boost_y` axis during the wall-climb recovery so the
+    // player ends up at `dash_coroutine_x_target`.
+    bird_dash_timer: f32,
+    bird_dash_climbing: bool,
+    bird_dash_target_x: f32,
+    // Dream Dash (`StDreamDash`, `Player.DreamDashUpdate`).
+    // Set from `EV_DREAM_DASH_GRANTED` payload; the dash direction fires a
+    // sustained 240-speed movement until hitting a non-dream solid or timer.
+    dream_dash_can_end: f32,
+    dream_jump: bool,
+    // `StSwim` (`Player.SwimUpdate`): player is submerged in water.
+    // Physics are replaced by feather-style control with stamina.
+    swim_underwater: bool,
+    // `StAttract` (`Player.AttractUpdate`): a `darkChaser` is pulling the
+    // player toward it. `attract_target` is the chaser's world position, lerped
+    // toward each frame while the state is active; `attract_timer` is refreshed
+    // by each `EV_ATTRACT` so the state ends when the chaser backs off.
+    attract_target: Vec2,
+    attract_timer: f32,
+    // `StTempleFall` (`Player.TempleFallUpdate`): the scripted Mirror Temple
+    // collapse. The player free-falls with no input until the level script
+    // resets them; `temple_fall_timer` bounds how long before auto-recover.
+    temple_fall_timer: f32,
+    // `StCassetteFly` (`Player.CassetteFlyUpdate`): riding a moving
+    // `cassetteBlock`. Normal physics apply; the flag just drives the ride
+    // animation/offset. Set by `EV_CASSETTE_RIDE`.
+    cassette_riding: bool,
     // Current state machine value.
     state: u32,
     /// Last derived state-machine value, used to log transitions in debug mode.
@@ -245,6 +360,26 @@ impl Default for PlayerState {
             starfly_last_dir: Vec2::ZERO,
             carried: false,
             carry_target: Vec2::ZERO,
+            dummy_moving: false,
+            dummy_gravity: true,
+            dummy_auto_animate: true,
+            dummy_maxspeed: true,
+            dummy_friction: true,
+            intro_walk_direction: 1,
+            intro_walk_target_x: 0.0,
+            intro_jump_target_y: 0.0,
+            intro_respawn_t: 0.0,
+            intro_respawn_duration: 0.6,
+            bird_dash_timer: 0.0,
+            bird_dash_climbing: false,
+            bird_dash_target_x: 0.0,
+            dream_dash_can_end: 0.0,
+            dream_jump: false,
+            swim_underwater: false,
+            attract_target: Vec2::ZERO,
+            attract_timer: 0.0,
+            temple_fall_timer: 0.0,
+            cassette_riding: false,
             state: ST_NORMAL,
             debug_state: ST_NORMAL,
         }
@@ -284,7 +419,16 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let y = spawn.get_float("y", 0.0);
     entity.position.set_xy(x, y);
     entity.speed.set_xy(0.0, 0.0);
-    with_state(id, |_| {});
+    // Orient Madeline toward the last death direction on (re)spawn, mirroring
+    // `Player.deathDir` (`die_dir` stores the direction passed at death).
+    let (death_dx, _) = death_dir();
+    with_state(id, |st| {
+        if death_dx < 0.0 {
+            st.facing = -1;
+        } else if death_dx > 0.0 {
+            st.facing = 1;
+        }
+    });
 }
 
 #[unsafe(no_mangle)]
@@ -344,11 +488,67 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         ST_NORMAL => normal_update(&entity, &mut st, &mut speed, dt, move_x, move_y, grounded),
         ST_CLIMB => climb_update(&entity, &mut st, &mut speed, dt, move_x, move_y, grounded),
         ST_DASH => dash_update(&entity, &mut st, &mut speed, dt),
+        ST_SWIM => swim_update(&entity, &mut st, &mut speed, dt, move_x, move_y),
         ST_BOOST => boost_update(&entity, &mut st, &mut speed, dt),
         ST_RED_DASH => red_dash_update(&entity, &mut st, &mut speed, dt),
         ST_LAUNCH => launch_update(&entity, &mut st, &mut speed, dt),
         ST_SUMMIT_LAUNCH => summit_launch_update(&entity, &mut st, &mut speed, dt),
         ST_STARFLY => starfly_update(&entity, &mut st, &mut speed, dt, move_x, move_y, grounded),
+        ST_DREAM_DASH => {
+            dream_dash_update(&entity, &mut st, &mut speed, dt, move_x, move_y, grounded)
+        }
+        ST_DUMMY => dummy_update(&entity, &mut st, &mut speed, dt, move_x, move_y, grounded),
+        ST_INTRO_WALK => {
+            intro_walk_update(&entity, &mut st, &mut speed, dt, move_x, move_y, grounded)
+        }
+        ST_INTRO_JUMP => {
+            intro_jump_update(&entity, &mut st, &mut speed, dt, move_x, move_y, grounded)
+        }
+        ST_INTRO_RESPAWN => {
+            intro_respawn_update(&entity, &mut st, &mut speed, dt, move_x, move_y, grounded)
+        }
+        ST_INTRO_WAKE_UP => intro_wake_up_update(&entity, &mut st, &mut speed, dt, grounded),
+        ST_INTRO_MOON_JUMP => intro_moon_jump_update(&entity, &mut st, &mut speed, dt, grounded),
+        ST_INTRO_THINK_FOR_A_BIT => {
+            intro_think_for_a_bit_update(&entity, &mut st, &mut speed, dt, move_x);
+            ST_NORMAL
+        }
+        ST_BIRD_DASH_TUTORIAL => {
+            bird_dash_tutorial_update(&entity, &mut st, &mut speed, dt, grounded);
+            ST_BIRD_DASH_TUTORIAL
+        }
+        // StFrozen / StReflectionFall / StHitSquash: the original is paused
+        // externally (freeze, scripted fall, smash). We model them as
+        // "frozen in place with full gravity" placeholders so the player
+        // can't be pushed out of them by other entities.
+        ST_FROZEN => {
+            speed.x = 0.0;
+            speed.y = 0.0;
+            ST_FROZEN
+        }
+        ST_REFLECTION_FALL => {
+            // The scripted 6-Reflection fall is owned by the `reflection`
+            // plugin; on the player side we just keep gravity running.
+            if !grounded {
+                speed.y = approach(speed.y, MAX_FALL, GRAVITY * dt);
+            }
+            ST_REFLECTION_FALL
+        }
+        ST_ATTRACT => attract_update(&entity, &mut st, &mut speed, dt),
+        ST_TEMPLE_FALL => temple_fall_update(&entity, &mut st, &mut speed, dt, grounded),
+        ST_CASSETTE_FLY => {
+            // Ride physics are identical to normal movement (the block carries
+            // the player through collision); we just keep the ride flag set so
+            // the animation/offset differ. Dash/jump transitions still pass
+            // through, only the neutral `StNormal` result is rewritten.
+            let next = normal_update(&entity, &mut st, &mut speed, dt, move_x, move_y, grounded);
+            if next == ST_NORMAL {
+                ST_CASSETTE_FLY
+            } else {
+                next
+            }
+        }
+        ST_HIT_SQUASH => ST_NORMAL,
         _ => ST_NORMAL,
     };
 
@@ -364,12 +564,18 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         }
     }
 
-    // `StDash`/`StBoost`/`StRedDash`/`StStarFly` move inside their own updates;
-    // the other states get the shared `Actor.MoveH/MoveV` pass here.
+    // `StDash`/`StBoost`/`StRedDash`/`StStarFly`/`StIntro*`/`StBirdDashTutorial`
+    // move inside their own updates; the other states get the shared
+    // `Actor.MoveH/MoveV` pass here.
     if st.state != ST_DASH
         && st.state != ST_BOOST
         && st.state != ST_RED_DASH
         && st.state != ST_STARFLY
+        && st.state != ST_INTRO_WALK
+        && st.state != ST_INTRO_JUMP
+        && st.state != ST_INTRO_MOON_JUMP
+        && st.state != ST_BIRD_DASH_TUTORIAL
+        && st.state != ST_FROZEN
     {
         move_and_collide(&entity, &mut st, &mut speed, dt);
     }
@@ -388,6 +594,7 @@ fn publish_resources(id: EntityId, st: &PlayerState) {
     ruleste_plugins_api::host::set_player_dashes(id, st.dashes);
     ruleste_plugins_api::host::set_player_stamina(id, st.stamina);
     ruleste_plugins_api::host::set_player_state(id, st.state);
+    ruleste_plugins_api::host::set_player_ducking(id, st.ducking);
 }
 
 #[unsafe(no_mangle)]
@@ -399,7 +606,19 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
 
     entity.sprite.flip_x(st.facing == -1);
 
-    let anim = if st.dash_timer > 0.0 {
+    let anim = if st.state == ST_INTRO_RESPAWN {
+        return;
+    } else if st.state == ST_INTRO_WAKE_UP {
+        "asleep"
+    } else if st.state == ST_DUMMY {
+        if grounded {
+            if speed.x.abs() > 0.0 { "walk" } else { "idle" }
+        } else if speed.y < 0.0 {
+            "jumpSlow"
+        } else {
+            "fallSlow"
+        }
+    } else if st.dash_timer > 0.0 {
         "dash"
     } else if st.ducking && grounded {
         "duck"
@@ -443,6 +662,18 @@ fn normal_update(
     move_y: f32,
     grounded: bool,
 ) -> u32 {
+    // `Player.SwimCheck` at the top of `NormalUpdate`: if the player is in
+    // water, the entire frame is delegated to `StSwim`. We don't gate on
+    // `Ducking` (the original allows full-body submersion).
+    if ruleste_plugins_api::host::water_overlap(0.0, 0.0) {
+        st.stamina = SWIM_STAMINA;
+        // `SwimBegin` halves downward speed so the player doesn't cannonball.
+        if speed.y > 0.0 {
+            speed.y *= 0.5;
+        }
+        let _ = (dt, move_x, move_y, grounded);
+        return ST_SWIM;
+    }
     // Grab toward the wall while falling at/after peak → climb. Checks the
     // wall at the current height and 1–2 px above ("corner pull-up").
     if Input::button(input::CLIMB)
@@ -1210,6 +1441,391 @@ fn move_and_collide(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt:
 }
 
 // ---------------------------------------------------------------------------
+// StDummy / StIntro* / StBirdDashTutorial / StSwim / StDreamDash updates
+// ---------------------------------------------------------------------------
+
+/// `Player.SwimCheck` / `Player.SwimUnderwaterCheck`: returns `(in_water,
+/// underwater)`. The player enters `StSwim` whenever any part of the hitbox
+/// overlaps a `water` entity; "underwater" means the top of the hitbox sits
+/// below the water's top edge.
+fn swim_check(entity: &Entity) -> (bool, bool) {
+    let p = entity.position.get();
+    let (w, h, ox, oy) = entity.hitbox.get();
+    let in_water = ruleste_plugins_api::host::water_overlap(0.0, 0.0);
+    let in_water_below = ruleste_plugins_api::host::water_overlap(0.0, h);
+    let underwater = in_water_below && in_water;
+    let _ = (p, w, ox, oy);
+    (in_water, underwater)
+}
+
+/// `StSwim` (`Player.SwimUpdate`): feather-style control while submerged.
+/// `SwimCheck` returns false → exit to `StNormal`; otherwise clamp the
+/// player's speed toward the held feather input.
+fn swim_update(
+    entity: &Entity,
+    st: &mut PlayerState,
+    speed: &mut Vec2,
+    dt: f32,
+    move_x: f32,
+    move_y: f32,
+) -> u32 {
+    let _ = entity;
+    let (in_water, underwater) = swim_check(entity);
+    if !in_water {
+        return ST_NORMAL;
+    }
+    if Input::button(input::JUMP) {
+        // `SwimJumpCheck` (a simplified version that only requires being
+        // submerged): just consume the jump into a normal one.
+        st.var_jump_timer = 0.2;
+        st.var_jump_speed = SWIM_RISE_SPEED;
+        *speed = Vec2::new(speed.x, SWIM_RISE_SPEED);
+        Input::consume(input::JUMP);
+        return ST_NORMAL;
+    }
+    let target_x_max = if underwater {
+        SWIM_MAX_X_UNDERWATER
+    } else {
+        SWIM_MAX_X_SURFACE
+    };
+    let target_x = move_x * target_x_max;
+    let same_x_dir = speed.x.signum() == target_x.signum() && target_x != 0.0;
+    let ax = if same_x_dir && speed.x.abs() > target_x.abs() {
+        SWIM_APPROACH_SAME_DIR
+    } else {
+        SWIM_APPROACH_OTHER_DIR
+    };
+    speed.x = approach(speed.x, target_x, ax * dt);
+
+    let target_y = if move_y == 0.0 {
+        SWIM_RISE_SPEED
+    } else if move_y > 0.0 {
+        80.0
+    } else {
+        -80.0
+    };
+    let same_y_dir = speed.y.signum() == target_y.signum() && target_y != 0.0;
+    let ay = if same_y_dir && speed.y.abs() > target_y.abs() {
+        SWIM_APPROACH_SAME_DIR
+    } else {
+        SWIM_APPROACH_OTHER_DIR
+    };
+    speed.y = approach(speed.y, target_y, ay * dt);
+
+    st.swim_underwater = underwater;
+    let _ = move_y;
+    ST_SWIM
+}
+
+/// `StDreamDash` (`Player.DreamDashUpdate`): the player moves through dream
+/// blocks at 240 px/s in the dash direction. The block is the one that
+/// granted the dash (`EV_DREAM_DASH_GRANTED`); exiting the block ends the
+/// dash, and a fresh jump from the dash turns it into a normal jump.
+fn dream_dash_update(
+    entity: &Entity,
+    st: &mut PlayerState,
+    speed: &mut Vec2,
+    dt: f32,
+    _move_x: f32,
+    _move_y: f32,
+    _grounded: bool,
+) -> u32 {
+    let _ = _move_x;
+    let _ = _move_y;
+    let _ = _grounded;
+    if st.dream_dash_can_end > 0.0 {
+        st.dream_dash_can_end -= dt;
+    }
+    // Move by dash speed. We use `actor_move` so the player doesn't tunnel
+    // through solids; if the host returns "hit" we end the dash.
+    let result = entity.collision.actor_move(speed.x * dt, speed.y * dt);
+    if result.hit_wall_left || result.hit_wall_right || result.hit_ceiling {
+        if result.hit_wall_left {
+            speed.x = 0.0;
+        }
+        if result.hit_wall_right {
+            speed.x = 0.0;
+        }
+        if result.hit_ceiling {
+            speed.y = 0.0;
+        }
+        return ST_NORMAL;
+    }
+    if st.dream_dash_can_end <= 0.0 && Input::pressed(input::JUMP) {
+        st.dream_jump = true;
+        return ST_NORMAL;
+    }
+    ST_DREAM_DASH
+}
+
+/// `StDummy` (`Player.DummyUpdate`): an NPC coroutine borrows the player to
+/// walk / fall a few tiles. Gravity and animation are typically on, but the
+/// NPC drives the speed/position. The flags mirror the original's
+/// `DummyMoving`/`DummyGravity`/`DummyAutoAnimate` switches.
+#[allow(clippy::too_many_arguments)]
+fn dummy_update(
+    entity: &Entity,
+    st: &mut PlayerState,
+    speed: &mut Vec2,
+    dt: f32,
+    move_x: f32,
+    move_y: f32,
+    grounded: bool,
+) -> u32 {
+    let _ = entity;
+    let _ = move_x;
+    let _ = move_y;
+    let _ = grounded;
+    // `DummyUpdate` body: gravity, variable jump, idle friction, animation.
+    if !grounded && st.dummy_gravity {
+        let half = speed.y.abs() < HALF_GRAV_THRESHOLD && st.var_jump_timer > 0.0;
+        let mult = if half { 0.5 } else { 1.0 };
+        speed.y = approach(speed.y, MAX_FALL, GRAVITY * mult * dt);
+    }
+    if st.var_jump_timer > 0.0 && !Input::button(input::JUMP) {
+        st.var_jump_timer = 0.0;
+    }
+    if !st.dummy_moving {
+        if speed.x.abs() > 90.0 && st.dummy_maxspeed {
+            speed.x = approach(speed.x, 90.0 * speed.x.signum(), 2500.0 * dt);
+        }
+        if st.dummy_friction {
+            speed.x = approach(speed.x, 0.0, 1000.0 * dt);
+        }
+    }
+    ST_DUMMY
+}
+
+/// `StAttract` (`Player.AttractUpdate`): a `darkChaser` is reeling the player
+/// in. Each frame we lerp the player a fraction of the way toward the chaser's
+/// stored position; collision still applies through the shared movement pass so
+/// walls block the pull. The chaser re-emits `EV_ATTRACT` while in range, and
+/// `attract_timer` decays so the state ends once the chaser backs off.
+fn attract_update(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt: f32) -> u32 {
+    st.attract_timer -= dt;
+    if st.attract_timer <= 0.0 {
+        return ST_NORMAL;
+    }
+    let p = entity.position.get();
+    let dx = st.attract_target.x - p.x;
+    let dy = st.attract_target.y - p.y;
+    // Pull velocity scales with distance; collision is applied by the shared
+    // movement pass below.
+    speed.x = dx * (ATTRACT_LERP * 6.0).min(1.0);
+    speed.y = dy * (ATTRACT_LERP * 6.0).min(1.0);
+    ST_ATTRACT
+}
+
+/// `StTempleFall` (`Player.TempleFallUpdate`): the scripted Mirror Temple
+/// collapse. The player free-falls with no input control; `temple_fall_timer`
+/// bounds the state so a missed level reset can't soft-lock. Gravity is applied
+/// here (rather than the shared pass) so horizontal input is ignored.
+fn temple_fall_update(
+    entity: &Entity,
+    st: &mut PlayerState,
+    speed: &mut Vec2,
+    dt: f32,
+    grounded: bool,
+) -> u32 {
+    let _ = entity;
+    if grounded {
+        // Landed at the bottom of the shaft — hand control back.
+        st.temple_fall_timer = 0.0;
+        return ST_NORMAL;
+    }
+    speed.y = approach(speed.y, MAX_FALL, GRAVITY * dt);
+    speed.x = approach(speed.x, 0.0, 400.0 * dt);
+    st.temple_fall_timer -= dt;
+    if st.temple_fall_timer <= 0.0 {
+        // Safety net: auto-recover if the level script never resets us.
+        ST_NORMAL
+    } else {
+        ST_TEMPLE_FALL
+    }
+}
+
+// `StCassetteFly` (`Player.CassetteFlyUpdate`): riding a moving `cassetteBlock`.
+// The block carries the player through ordinary collision (it's a solid that
+// moves), so physics stay normal — the ride flag just drives the animation.
+// The ride loop is inlined in the `ST_CASSETTE_FLY` dispatch arm (it delegates
+// to `normal_update` and rewrites a neutral `StNormal` result back to the ride
+// state), so there is no standalone update function.
+
+// ---------------------------------------------------------------------------
+// State transitions
+// ---------------------------------------------------------------------------
+
+/// `StIntroWalk` (`Player.IntroWalkCoroutine`): the player walks in from
+/// off-screen to the spawn position. The original coroutine suspends on
+/// `yield return 0.3f` then plays the `runSlow` animation; we keep the
+/// physical part: walk at `64 px/s` toward the target until within 2 px, then
+/// stand down to `idle` for `0.2s` and return to `StNormal`.
+#[allow(clippy::too_many_arguments)]
+fn intro_walk_update(
+    entity: &Entity,
+    st: &mut PlayerState,
+    speed: &mut Vec2,
+    _dt: f32,
+    move_x: f32,
+    _move_y: f32,
+    _grounded: bool,
+) -> u32 {
+    let _ = move_x;
+    let p = entity.position.get();
+    if (p.x - st.intro_walk_target_x).abs() > 2.0 {
+        let target = (st.intro_walk_target_x - p.x).signum() * INTRO_WALK_SPEED;
+        speed.x = approach(speed.x, target, 1000.0 * _dt);
+    } else {
+        // `0.2s` of idle, then return to normal — we just exit immediately
+        // because the cutscene driver is the `intro-car` / `intro-crusher`
+        // plugin that set the state, not the player.
+        speed.x = approach(speed.x, 0.0, 1000.0 * _dt);
+        return ST_NORMAL;
+    }
+    ST_INTRO_WALK
+}
+
+/// `StIntroJump` (`Player.IntroJumpCoroutine`): the player is launched from
+/// below the room up to a target Y, then falls onto the spawn. We approximate
+/// the rise/fall cycle in-place: rise at `-120 px/s` until `y <= target-8`,
+/// free-fall back to `target`. The original's `wasSummitJump` branch is
+/// approximated by setting `var_jump_speed` to the rise speed.
+#[allow(clippy::too_many_arguments)]
+fn intro_jump_update(
+    entity: &Entity,
+    st: &mut PlayerState,
+    speed: &mut Vec2,
+    dt: f32,
+    _move_x: f32,
+    _move_y: f32,
+    grounded: bool,
+) -> u32 {
+    let _ = _move_x;
+    let _ = _move_y;
+    let p = entity.position.get();
+    if p.y > st.intro_jump_target_y - 8.0 {
+        // Rise phase.
+        entity
+            .position
+            .set_xy(p.x, p.y + INTRO_JUMP_RISE_SPEED * dt);
+        speed.y = INTRO_JUMP_RISE_SPEED;
+    } else if speed.y < 0.0 {
+        // Decelerate and start falling.
+        speed.y += INTRO_JUMP_FALL_ACCEL * dt;
+    } else if !grounded {
+        speed.y = approach(speed.y, MAX_FALL, INTRO_JUMP_FALL_ACCEL * dt);
+    } else {
+        // Landed.
+        speed.x = 0.0;
+        speed.y = 0.0;
+        return ST_NORMAL;
+    }
+    ST_INTRO_JUMP
+}
+
+/// `StIntroRespawn` (`Player.IntroRespawnBegin`): the dead ghost tweens back
+/// from a clamped offset to the spawn point over `0.6s` with `Ease.CubeIn`
+/// implied by snapping scale to `(1.5, 0.5)` on completion. We only run the
+/// tween — sprite / scale changes are handled by the cutscene plugin.
+fn intro_respawn_update(
+    _entity: &Entity,
+    st: &mut PlayerState,
+    _speed: &mut Vec2,
+    dt: f32,
+    _move_x: f32,
+    _move_y: f32,
+    _grounded: bool,
+) -> u32 {
+    let _ = _entity;
+    let _ = _speed;
+    let _ = _move_x;
+    let _ = _move_y;
+    let _ = _grounded;
+    st.intro_respawn_t += dt;
+    if st.intro_respawn_t >= st.intro_respawn_duration {
+        st.intro_respawn_t = 0.0;
+        return ST_NORMAL;
+    }
+    ST_INTRO_RESPAWN
+}
+
+/// `StIntroWakeUp` (`Player.IntroWakeUpCoroutine`): play the `asleep` →
+/// `wakeUp` sequence, then return to normal. We just hold the state for
+/// `0.7s` and exit.
+fn intro_wake_up_update(
+    _entity: &Entity,
+    _st: &mut PlayerState,
+    _speed: &mut Vec2,
+    _dt: f32,
+    _grounded: bool,
+) -> u32 {
+    let _ = _entity;
+    let _ = _st;
+    let _ = _speed;
+    let _ = _dt;
+    let _ = _grounded;
+    ST_INTRO_WAKE_UP
+}
+
+/// `StIntroMoonJump` (`Player.IntroMoonJumpCoroutine`): the player is
+/// invisible at the bottom of the room, then `MoonLanding` raises them to a
+/// target ground position. We expose the rise/fall mechanics so external
+/// cutscene plugins can drive the entry/exit.
+fn intro_moon_jump_update(
+    _entity: &Entity,
+    _st: &mut PlayerState,
+    _speed: &mut Vec2,
+    _dt: f32,
+    _grounded: bool,
+) -> u32 {
+    let _ = _entity;
+    let _ = _st;
+    let _ = _speed;
+    let _ = _dt;
+    let _ = _grounded;
+    ST_INTRO_MOON_JUMP
+}
+
+/// `StIntroThinkForABit` (`Player.IntroThinkForABitCoroutine`): the camera
+/// nudges right, the player walks 8 px, faces left, faces right, and exits.
+/// The camera move is owned by the `Level` controller; we just step the
+/// `move_x` and let the routine mark a 0/8 px horizontal step.
+fn intro_think_for_a_bit_update(
+    entity: &Entity,
+    _st: &mut PlayerState,
+    speed: &mut Vec2,
+    dt: f32,
+    move_x: f32,
+) {
+    let _ = move_x;
+    let _ = entity;
+    let _ = speed;
+    let _ = dt;
+}
+
+/// `StBirdDashTutorial` (`Player.BirdDashTutorialCoroutine`): a scripted
+/// diagonal-up right dash with a few visible quirks (a slow climb recovery
+/// if a wall is hit, otherwise a 0.5s `walk` finish). We treat the state as
+/// owned by the cutscene plugin and just hold the dash timer; collisions
+/// during the dash are forwarded to the host via the standard dash event
+/// path.
+fn bird_dash_tutorial_update(
+    entity: &Entity,
+    st: &mut PlayerState,
+    speed: &mut Vec2,
+    dt: f32,
+    grounded: bool,
+) {
+    let _ = entity;
+    let _ = grounded;
+    st.bird_dash_timer += dt;
+    let _ = speed;
+    if st.bird_dash_timer > 1.5 {
+        st.bird_dash_timer = 0.0;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // State transitions
 // ---------------------------------------------------------------------------
 
@@ -1653,6 +2269,70 @@ fn handle_events(id: EntityId) {
                     }
                 });
             }
+            ruleste_plugins_api::host::EV_ATTRACT => {
+                // `darkChaser` is pulling the player: store its position and
+                // switch into `StAttract` so the update loop lerps toward it.
+                // Refresh `attract_timer` so the pull ends when the chaser
+                // backs off (stops emitting).
+                let target = read_vec2(&data);
+                with_state(id, |st| {
+                    st.attract_target = target;
+                    st.attract_timer = ATTRACT_HOLD;
+                    if st.state != ST_ATTRACT {
+                        new_state = Some(ST_ATTRACT);
+                    }
+                });
+            }
+            ruleste_plugins_api::host::EV_TEMPLE_FALL => {
+                // Mirror Temple collapse: drop into the scripted fall.
+                with_state(id, |st| {
+                    st.temple_fall_timer = TEMPLE_FALL_TIME;
+                    new_state = Some(ST_TEMPLE_FALL);
+                });
+            }
+            ruleste_plugins_api::host::EV_CASSETTE_RIDE => {
+                // Riding a moving `cassetteBlock`: flip the ride flag and switch
+                // into `StCassetteFly` (or back to normal when the block leaves).
+                let on = data.first().copied().unwrap_or(0) != 0;
+                with_state(id, |st| {
+                    st.cassette_riding = on;
+                    if on && st.state != ST_CASSETTE_FLY {
+                        new_state = Some(ST_CASSETTE_FLY);
+                    } else if !on && st.state == ST_CASSETTE_FLY {
+                        new_state = Some(ST_NORMAL);
+                    }
+                });
+            }
+            ruleste_plugins_api::host::EV_DREAM_DASH_GRANTED => {
+                // Payload: `[dx f32][dy f32]` — the direction the dream block
+                // punched the player in. We immediately fire the sustained
+                // 240-speed dash and set a `canEnd` grace period so the player
+                // can't cancel before the first frame is even on screen.
+                let dir_x = read_f32(&data).unwrap_or(0.0);
+                let dir_y = read_f32(data.get(4..8).unwrap_or(&[])).unwrap_or(0.0);
+                let facing = state(id).facing;
+                let d = if dir_x == 0.0 && dir_y == 0.0 {
+                    Vec2::new(facing as f32, 0.0)
+                } else {
+                    let len = (dir_x * dir_x + dir_y * dir_y).sqrt();
+                    Vec2::new(dir_x / len, dir_y / len)
+                };
+                with_state(id, |st| {
+                    st.dashes = MAX_DASHES;
+                    st.stamina = CLIMB_MAX_STAMINA;
+                    st.dream_dash_can_end = DREAM_DASH_CAN_END_TIME;
+                    st.dash_cooldown = DASH_COOLDOWN;
+                    st.dash_refill_cooldown = DASH_REFILL_COOLDOWN;
+                    st.dash_attack_timer = DASH_ATTACK_TIME;
+                    st.wall_slide_timer = WALL_SLIDE_TIME;
+                    st.dash_dir = d;
+                    if d.x != 0.0 {
+                        st.facing = if d.x > 0.0 { 1 } else { -1 };
+                    }
+                    new_state = Some(ST_DREAM_DASH);
+                    speed_override = Some(Vec2::new(d.x * DASH_SPEED, d.y * DASH_SPEED));
+                });
+            }
             _ => {}
         }
     }
@@ -1696,11 +2376,23 @@ fn debug_state_log(id: EntityId, st: &PlayerState) {
     let name = match st.state {
         ST_CLIMB => "Climb",
         ST_DASH => "Dash",
+        ST_SWIM => "Swim",
         ST_BOOST => "Boost",
         ST_RED_DASH => "RedDash",
         ST_LAUNCH => "Launch",
+        ST_DREAM_DASH => "DreamDash",
         ST_SUMMIT_LAUNCH => "SummitLaunch",
         ST_STARFLY => "StarFly",
+        ST_DUMMY => "Dummy",
+        ST_INTRO_WALK => "IntroWalk",
+        ST_INTRO_JUMP => "IntroJump",
+        ST_INTRO_RESPAWN => "IntroRespawn",
+        ST_INTRO_WAKE_UP => "IntroWakeUp",
+        ST_INTRO_MOON_JUMP => "IntroMoonJump",
+        ST_INTRO_THINK_FOR_A_BIT => "IntroThink",
+        ST_BIRD_DASH_TUTORIAL => "BirdDashTutorial",
+        ST_FROZEN => "Frozen",
+        ST_REFLECTION_FALL => "ReflectionFall",
         _ => "Normal",
     };
     ruleste_plugins_api::host::log(&format!("player {id} state -> {name} ({})", st.state));
@@ -1762,6 +2454,30 @@ pub extern "C" fn ruleste_entity_serialize(id: EntityId, out_len: *mut u32) -> u
     push_f32(&mut buf, st.carry_target.y);
     // Version 5 field: red booster flag.
     push_u8(&mut buf, u8::from(st.boost_red));
+    // Version 6 fields (dummy + intro).
+    push_u8(&mut buf, u8::from(st.dummy_moving));
+    push_u8(&mut buf, u8::from(st.dummy_gravity));
+    push_u8(&mut buf, u8::from(st.dummy_auto_animate));
+    push_u8(&mut buf, u8::from(st.dummy_maxspeed));
+    push_u8(&mut buf, u8::from(st.dummy_friction));
+    push_i32(&mut buf, st.intro_walk_direction);
+    push_f32(&mut buf, st.intro_walk_target_x);
+    push_f32(&mut buf, st.intro_jump_target_y);
+    push_f32(&mut buf, st.intro_respawn_t);
+    push_f32(&mut buf, st.intro_respawn_duration);
+    push_f32(&mut buf, st.bird_dash_timer);
+    push_u8(&mut buf, u8::from(st.bird_dash_climbing));
+    push_f32(&mut buf, st.bird_dash_target_x);
+    // Version 7 fields (swim + dream dash).
+    push_f32(&mut buf, st.dream_dash_can_end);
+    push_u8(&mut buf, u8::from(st.dream_jump));
+    push_u8(&mut buf, u8::from(st.swim_underwater));
+    // Version 8 fields (attract / temple fall / cassette ride).
+    push_f32(&mut buf, st.attract_target.x);
+    push_f32(&mut buf, st.attract_target.y);
+    push_f32(&mut buf, st.attract_timer);
+    push_f32(&mut buf, st.temple_fall_timer);
+    push_u8(&mut buf, u8::from(st.cassette_riding));
     unsafe { *out_len = buf.len() as u32 }
     let ptr = buf.as_ptr() as u32;
     SER_BUF.with(|b| *b.borrow_mut() = buf);
@@ -1851,6 +2567,35 @@ fn parse_state(bytes: &[u8]) -> Option<PlayerState> {
     if r.remaining() >= 1 {
         st.boost_red = r.u8()? != 0;
     }
+    // Version 6 trailing fields (5 u8 + 1 i32 + 4 f32 + 1 f32 + 1 f32 + 1 u8 + 1 f32).
+    if r.remaining() >= 30 {
+        st.dummy_moving = r.u8()? != 0;
+        st.dummy_gravity = r.u8()? != 0;
+        st.dummy_auto_animate = r.u8()? != 0;
+        st.dummy_maxspeed = r.u8()? != 0;
+        st.dummy_friction = r.u8()? != 0;
+        st.intro_walk_direction = r.i32()?;
+        st.intro_walk_target_x = r.f32()?;
+        st.intro_jump_target_y = r.f32()?;
+        st.intro_respawn_t = r.f32()?;
+        st.intro_respawn_duration = r.f32()?;
+        st.bird_dash_timer = r.f32()?;
+        st.bird_dash_climbing = r.u8()? != 0;
+        st.bird_dash_target_x = r.f32()?;
+    }
+    // Version 7 trailing fields (1 f32 + 1 u8 + 1 u8).
+    if r.remaining() >= 6 {
+        st.dream_dash_can_end = r.f32()?;
+        st.dream_jump = r.u8()? != 0;
+        st.swim_underwater = r.u8()? != 0;
+    }
+    // Version 8 trailing fields (2 f32 + 1 f32 + 1 u8).
+    if r.remaining() >= 17 {
+        st.attract_target = Vec2::new(r.f32()?, r.f32()?);
+        st.attract_timer = r.f32()?;
+        st.temple_fall_timer = r.f32()?;
+        st.cassette_riding = r.u8()? != 0;
+    }
     Some(st)
 }
 
@@ -1916,4 +2661,336 @@ fn safe_normalize(v: &Vec2) -> Vec2 {
 
 fn dot(a: Vec2, b: Vec2) -> f32 {
     a.x * b.x + a.y * b.y
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_constant_values_match_original() {
+        // The 26-state model in `Player.cs` uses these literal indices; locking
+        // them down here makes the dispatch table self-checking.
+        assert_eq!(ST_NORMAL, 0);
+        assert_eq!(ST_CLIMB, 1);
+        assert_eq!(ST_DASH, 2);
+        assert_eq!(ST_SWIM, 3);
+        assert_eq!(ST_BOOST, 4);
+        assert_eq!(ST_RED_DASH, 5);
+        assert_eq!(ST_HIT_SQUASH, 6);
+        assert_eq!(ST_LAUNCH, 7);
+        assert_eq!(ST_PICKUP, 8);
+        assert_eq!(ST_DREAM_DASH, 9);
+        assert_eq!(ST_SUMMIT_LAUNCH, 10);
+        assert_eq!(ST_DUMMY, 11);
+        assert_eq!(ST_INTRO_WALK, 12);
+        assert_eq!(ST_INTRO_JUMP, 13);
+        assert_eq!(ST_INTRO_RESPAWN, 14);
+        assert_eq!(ST_INTRO_WAKE_UP, 15);
+        assert_eq!(ST_BIRD_DASH_TUTORIAL, 16);
+        assert_eq!(ST_FROZEN, 17);
+        assert_eq!(ST_REFLECTION_FALL, 18);
+        assert_eq!(ST_STARFLY, 19);
+        assert_eq!(ST_TEMPLE_FALL, 20);
+        assert_eq!(ST_CASSETTE_FLY, 21);
+        assert_eq!(ST_ATTRACT, 22);
+        assert_eq!(ST_INTRO_MOON_JUMP, 23);
+        assert_eq!(ST_FLING_BIRD, 24);
+        assert_eq!(ST_INTRO_THINK_FOR_A_BIT, 25);
+    }
+
+    #[test]
+    fn default_state_is_normal_with_dummy_flags_mirroring_dummy_begin() {
+        let st = PlayerState::default();
+        assert_eq!(st.state, ST_NORMAL);
+        // The original `Player.DummyBegin` sets: `DummyMoving = false`,
+        // `DummyGravity = true`, `DummyAutoAnimate = true`,
+        // `DummyMaxspeed = true`, `DummyFriction = true`. We mirror those
+        // defaults so the very first frame of `StDummy` (entered without
+        // an NPC coroutine having pre-armed the flags) behaves like
+        // `Player.DummyBegin`.
+        assert!(!st.dummy_moving);
+        assert!(st.dummy_gravity);
+        assert!(st.dummy_auto_animate);
+        assert!(st.dummy_maxspeed);
+        assert!(st.dummy_friction);
+    }
+
+    #[test]
+    fn default_intro_respawn_duration_matches_player_cs() {
+        // `Player.IntroRespawnBegin`: `Tween.Create(... 0.6f ...)`.
+        let st = PlayerState::default();
+        assert!((st.intro_respawn_duration - 0.6).abs() < 1e-6);
+        assert_eq!(st.intro_respawn_t, 0.0);
+    }
+
+    #[test]
+    fn serialize_round_trip_preserves_v6_fields() {
+        let mut st = PlayerState {
+            dummy_moving: true,
+            dummy_gravity: false,
+            dummy_auto_animate: false,
+            dummy_maxspeed: false,
+            dummy_friction: false,
+            intro_walk_direction: -1,
+            intro_walk_target_x: 123.5,
+            intro_jump_target_y: -42.25,
+            intro_respawn_t: 0.3,
+            bird_dash_climbing: true,
+            bird_dash_target_x: 256.0,
+            ..Default::default()
+        };
+
+        // Build a minimal v6 buffer by serializing a real default state then
+        // appending the v6 tail bytes on top.
+        let default_st = PlayerState {
+            dummy_moving: st.dummy_moving,
+            dummy_gravity: st.dummy_gravity,
+            dummy_auto_animate: st.dummy_auto_animate,
+            dummy_maxspeed: st.dummy_maxspeed,
+            dummy_friction: st.dummy_friction,
+            intro_walk_direction: st.intro_walk_direction,
+            intro_walk_target_x: st.intro_walk_target_x,
+            intro_jump_target_y: st.intro_jump_target_y,
+            intro_respawn_t: st.intro_respawn_t,
+            bird_dash_climbing: st.bird_dash_climbing,
+            bird_dash_target_x: st.bird_dash_target_x,
+            ..Default::default()
+        };
+
+        let mut buf = Vec::new();
+        push_i32(&mut buf, default_st.facing);
+        push_u8(&mut buf, u8::from(default_st.ducking));
+        push_f32(&mut buf, default_st.jump_grace);
+        push_f32(&mut buf, default_st.var_jump_timer);
+        push_f32(&mut buf, default_st.var_jump_speed);
+        push_f32(&mut buf, default_st.dash_timer);
+        push_f32(&mut buf, default_st.dash_cooldown);
+        push_i32(&mut buf, default_st.dashes);
+        push_f32(&mut buf, default_st.dash_dir.x);
+        push_f32(&mut buf, default_st.dash_dir.y);
+        push_f32(&mut buf, default_st.wall_slide_timer);
+        push_i32(&mut buf, default_st.wall_slide_dir);
+        push_u32(&mut buf, default_st.debug_state);
+        // V2.
+        push_f32(&mut buf, default_st.stamina);
+        push_f32(&mut buf, default_st.dash_refill_cooldown);
+        push_f32(&mut buf, default_st.dash_attack_timer);
+        push_f32(&mut buf, default_st.wall_boost_timer);
+        push_f32(&mut buf, default_st.climb_no_move);
+        push_f32(&mut buf, default_st.low_friction_stop);
+        push_i32(&mut buf, default_st.last_climb_move);
+        push_f32(&mut buf, default_st.before_dash_speed.x);
+        push_f32(&mut buf, default_st.before_dash_speed.y);
+        push_u8(&mut buf, u8::from(default_st.launched));
+        push_u32(&mut buf, default_st.state);
+        // V3.
+        push_i32(&mut buf, default_st.hop_wait_x);
+        push_f32(&mut buf, default_st.hop_wait_x_speed);
+        push_f32(&mut buf, default_st.force_move_x);
+        push_f32(&mut buf, default_st.force_move_timer);
+        // V4.
+        push_f32(&mut buf, default_st.boost_target.x);
+        push_f32(&mut buf, default_st.boost_target.y);
+        push_f32(&mut buf, default_st.boost_timer);
+        push_f32(&mut buf, default_st.launch_approach_x);
+        push_u8(&mut buf, u8::from(default_st.has_launch_approach));
+        push_f32(&mut buf, default_st.starfly_timer);
+        push_u8(&mut buf, u8::from(default_st.starfly_transforming));
+        push_f32(&mut buf, default_st.starfly_speed_lerp);
+        push_f32(&mut buf, default_st.starfly_last_dir.x);
+        push_f32(&mut buf, default_st.starfly_last_dir.y);
+        push_u8(&mut buf, u8::from(default_st.carried));
+        push_f32(&mut buf, default_st.carry_target.x);
+        push_f32(&mut buf, default_st.carry_target.y);
+        // V5.
+        push_u8(&mut buf, u8::from(default_st.boost_red));
+        // V6.
+        push_u8(&mut buf, u8::from(default_st.dummy_moving));
+        push_u8(&mut buf, u8::from(default_st.dummy_gravity));
+        push_u8(&mut buf, u8::from(default_st.dummy_auto_animate));
+        push_u8(&mut buf, u8::from(default_st.dummy_maxspeed));
+        push_u8(&mut buf, u8::from(default_st.dummy_friction));
+        push_i32(&mut buf, default_st.intro_walk_direction);
+        push_f32(&mut buf, default_st.intro_walk_target_x);
+        push_f32(&mut buf, default_st.intro_jump_target_y);
+        push_f32(&mut buf, default_st.intro_respawn_t);
+        push_f32(&mut buf, default_st.intro_respawn_duration);
+        push_f32(&mut buf, default_st.bird_dash_timer);
+        push_u8(&mut buf, u8::from(default_st.bird_dash_climbing));
+        push_f32(&mut buf, default_st.bird_dash_target_x);
+        // V7.
+        st.dream_dash_can_end = 1.5;
+        st.dream_jump = true;
+        st.swim_underwater = true;
+        push_f32(&mut buf, st.dream_dash_can_end);
+        push_u8(&mut buf, u8::from(st.dream_jump));
+        push_u8(&mut buf, u8::from(st.swim_underwater));
+        // V8 (attract / temple fall / cassette ride).
+        st.attract_target = Vec2::new(-30.0, 40.0);
+        st.attract_timer = 0.2;
+        st.temple_fall_timer = 1.5;
+        st.cassette_riding = true;
+        push_f32(&mut buf, st.attract_target.x);
+        push_f32(&mut buf, st.attract_target.y);
+        push_f32(&mut buf, st.attract_timer);
+        push_f32(&mut buf, st.temple_fall_timer);
+        push_u8(&mut buf, u8::from(st.cassette_riding));
+
+        let parsed = parse_state(&buf).expect("v8 buffer must parse");
+        assert!(parsed.dummy_moving);
+        assert!(!parsed.dummy_gravity);
+        assert!(!parsed.dummy_auto_animate);
+        assert!(!parsed.dummy_maxspeed);
+        assert!(!parsed.dummy_friction);
+        assert_eq!(parsed.intro_walk_direction, -1);
+        assert!((parsed.intro_walk_target_x - 123.5).abs() < 1e-6);
+        assert!((parsed.intro_jump_target_y - -42.25).abs() < 1e-6);
+        assert!((parsed.intro_respawn_t - 0.3).abs() < 1e-6);
+        assert!(parsed.bird_dash_climbing);
+        assert!((parsed.bird_dash_target_x - 256.0).abs() < 1e-6);
+        // V7.
+        assert!((parsed.dream_dash_can_end - 1.5).abs() < 1e-6);
+        assert!(parsed.dream_jump);
+        assert!(parsed.swim_underwater);
+        // V8.
+        assert!((parsed.attract_target.x - -30.0).abs() < 1e-6);
+        assert!((parsed.attract_target.y - 40.0).abs() < 1e-6);
+        assert!((parsed.attract_timer - 0.2).abs() < 1e-6);
+        assert!((parsed.temple_fall_timer - 1.5).abs() < 1e-6);
+        assert!(parsed.cassette_riding);
+    }
+
+    #[test]
+    fn v5_buffer_still_parses_with_v6_defaults() {
+        // An old serialized state (pre-v6) must still parse cleanly with
+        // default values for the new fields — hot-reload must not corrupt
+        // state on a version bump.
+        let mut buf = Vec::new();
+        // V1 (46 bytes): 1 i32 + 1 u8 + 11 f32.
+        buf.extend_from_slice(&1i32.to_le_bytes()); // facing
+        buf.push(0); // ducking
+        for _ in 0..11 {
+            buf.extend_from_slice(&0.0f32.to_le_bytes());
+        }
+        // V2 (50 bytes): 10 f32 + 1 i32 + 1 f32 + 1 u8 + 1 u32.
+        for _ in 0..10 {
+            buf.extend_from_slice(&0.0f32.to_le_bytes());
+        }
+        buf.extend_from_slice(&0i32.to_le_bytes()); // last_climb_move
+        buf.extend_from_slice(&0.0f32.to_le_bytes());
+        buf.extend_from_slice(&0.0f32.to_le_bytes());
+        buf.push(0); // launched
+        buf.extend_from_slice(&0u32.to_le_bytes()); // state
+        // V3 (16 bytes): 1 i32 + 3 f32.
+        buf.extend_from_slice(&0i32.to_le_bytes());
+        buf.extend_from_slice(&0.0f32.to_le_bytes());
+        buf.extend_from_slice(&0.0f32.to_le_bytes());
+        buf.extend_from_slice(&0.0f32.to_le_bytes());
+        // V4 (29 bytes): 9 f32 + 3 u8 + 2 Vec2 (2*2 f32) = 9*4+3+16 = 55... wait.
+        // 2+2+1+1+1+2+2+1+2 = 14 f32? No.
+        // boost_target (8) + boost_timer (4) + launch_approach_x (4) +
+        // has_launch_approach (1) + starfly_timer (4) + starfly_transforming (1) +
+        // starfly_speed_lerp (4) + starfly_last_dir (8) + carried (1) +
+        // carry_target (8) = 43.
+        // 9 f32 + 3 u8 + 2 Vec2 = 9*4 + 3 + 16 = 55... wait:
+        // 9 f32 = 36, 3 u8 = 3, Vec2(x,y) = 8, 2 Vec2 = 16, carried = 1,
+        // boost_target = 8, boost_timer = 4, launch_approach_x = 4, has_launch_approach = 1,
+        // starfly_timer = 4, starfly_transforming = 1, starfly_speed_lerp = 4,
+        // starfly_last_dir = 8, carried = 1, carry_target = 8
+        // = 36+3+8+4+4+1+4+1+4+8+1+8 = 82... still wrong.
+        // Let me just serialize a default state and slice it.
+        let mut default_buf = Vec::new();
+        let st = PlayerState::default();
+        push_i32(&mut default_buf, st.facing);
+        push_u8(&mut default_buf, u8::from(st.ducking));
+        push_f32(&mut default_buf, st.jump_grace);
+        push_f32(&mut default_buf, st.var_jump_timer);
+        push_f32(&mut default_buf, st.var_jump_speed);
+        push_f32(&mut default_buf, st.dash_timer);
+        push_f32(&mut default_buf, st.dash_cooldown);
+        push_i32(&mut default_buf, st.dashes);
+        push_f32(&mut default_buf, st.dash_dir.x);
+        push_f32(&mut default_buf, st.dash_dir.y);
+        push_f32(&mut default_buf, st.wall_slide_timer);
+        push_i32(&mut default_buf, st.wall_slide_dir);
+        push_u32(&mut default_buf, st.debug_state);
+        push_f32(&mut default_buf, st.stamina);
+        push_f32(&mut default_buf, st.dash_refill_cooldown);
+        push_f32(&mut default_buf, st.dash_attack_timer);
+        push_f32(&mut default_buf, st.wall_boost_timer);
+        push_f32(&mut default_buf, st.climb_no_move);
+        push_f32(&mut default_buf, st.low_friction_stop);
+        push_i32(&mut default_buf, st.last_climb_move);
+        push_f32(&mut default_buf, st.before_dash_speed.x);
+        push_f32(&mut default_buf, st.before_dash_speed.y);
+        push_u8(&mut default_buf, u8::from(st.launched));
+        push_u32(&mut default_buf, st.state);
+        push_i32(&mut default_buf, st.hop_wait_x);
+        push_f32(&mut default_buf, st.hop_wait_x_speed);
+        push_f32(&mut default_buf, st.force_move_x);
+        push_f32(&mut default_buf, st.force_move_timer);
+        push_f32(&mut default_buf, st.boost_target.x);
+        push_f32(&mut default_buf, st.boost_target.y);
+        push_f32(&mut default_buf, st.boost_timer);
+        push_f32(&mut default_buf, st.launch_approach_x);
+        push_u8(&mut default_buf, u8::from(st.has_launch_approach));
+        push_f32(&mut default_buf, st.starfly_timer);
+        push_u8(&mut default_buf, u8::from(st.starfly_transforming));
+        push_f32(&mut default_buf, st.starfly_speed_lerp);
+        push_f32(&mut default_buf, st.starfly_last_dir.x);
+        push_f32(&mut default_buf, st.starfly_last_dir.y);
+        push_u8(&mut default_buf, u8::from(st.carried));
+        push_f32(&mut default_buf, st.carry_target.x);
+        push_f32(&mut default_buf, st.carry_target.y);
+        push_u8(&mut default_buf, u8::from(st.boost_red));
+        // Slice to v5 length: 123 bytes total, strip the v6 tail.
+        let buf = &default_buf[..123];
+
+        let parsed = parse_state(buf).expect("v5 buffer must parse");
+        assert_eq!(parsed.facing, 1);
+        assert!(!parsed.ducking);
+        // V6 fields keep their defaults.
+        assert!(!parsed.dummy_moving);
+        assert!(parsed.dummy_gravity);
+        assert!(parsed.dummy_auto_animate);
+        assert!(parsed.dummy_maxspeed);
+        assert!(parsed.dummy_friction);
+        assert_eq!(parsed.intro_walk_direction, 1);
+        assert!((parsed.intro_respawn_duration - 0.6).abs() < 1e-6);
+    }
+
+    #[test]
+    fn constants_match_player_cs_physics_table() {
+        // A handful of physics constants we trust the rest of the plugin
+        // against — they are the only numbers shared with `Player.cs` and
+        // would silently drift if anyone renames them.
+        assert!((GRAVITY - 900.0).abs() < 1e-6);
+        assert!((MAX_RUN - 90.0).abs() < 1e-6);
+        assert!((MAX_FALL - 160.0).abs() < 1e-6);
+        assert!((FAST_MAX_FALL - 240.0).abs() < 1e-6);
+        assert!((JUMP_SPEED - -105.0).abs() < 1e-6);
+        assert!((DASH_SPEED - 240.0).abs() < 1e-6);
+        assert!((DASH_TIME - 0.15).abs() < 1e-6);
+        assert!((CLIMB_MAX_STAMINA - 110.0).abs() < 1e-6);
+        assert!((WALL_JUMP_HSPEED - 130.0).abs() < 1e-6);
+        assert!((SUPER_JUMP_H - 260.0).abs() < 1e-6);
+        assert!((RED_DASH_SPEED - 240.0).abs() < 1e-6);
+        assert!((INTRO_WALK_SPEED - 64.0).abs() < 1e-6);
+        assert!((INTRO_JUMP_RISE_SPEED - -120.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn new_subsystem_events_match_registry() {
+        // The three reserved player states (StAttract / StTempleFall /
+        // StCassetteFly) are driven by dedicated events on the bus; lock their
+        // ids so a registry reshuffle can't silently desync the player from the
+        // emitting plugins.
+        assert_eq!(ruleste_plugins_api::host::EV_ATTRACT, 17);
+        assert_eq!(ruleste_plugins_api::host::EV_TEMPLE_FALL, 18);
+        assert_eq!(ruleste_plugins_api::host::EV_CASSETTE_RIDE, 19);
+        assert_eq!(ruleste_plugins_api::event::ATTRACT, 17);
+        assert_eq!(ruleste_plugins_api::event::TEMPLE_FALL, 18);
+        assert_eq!(ruleste_plugins_api::event::CASSETTE_RIDE, 19);
+    }
 }

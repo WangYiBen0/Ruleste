@@ -1,8 +1,10 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
-use ruleste_plugins_api::host::{draw_rect, drain_events, entities_by_type, die, emit, remove};
 use ruleste_plugins_api::event;
+use ruleste_plugins_api::host::{
+    EV_TEMPLE_FALL, die, drain_events, draw_rect, emit, entities_by_type, remove,
+};
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 use std::cell::RefCell;
 
@@ -21,20 +23,66 @@ ruleste_plugins_api::ruleste_entity_types!(
     "templeMirror",
     "templeMirrorPortal",
     "theoCrystalHoldingBarrier",
-    "theoCrystalPedestal"
+    "theoCrystalPedestal",
+    "templeFallTrigger"
 );
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const SOLID: Color = Color { r: 0x88, g: 0x88, b: 0x88, a: 0xff };
-const BARRIER: Color = Color { r: 0x66, g: 0x33, b: 0x99, a: 0xff };
-const GATE: Color = Color { r: 0xaa, g: 0x44, b: 0x44, a: 0xff };
-const GATE_OPEN: Color = Color { r: 0x55, g: 0x55, b: 0x55, a: 0x55 };
-const SWITCH: Color = Color { r: 0x44, g: 0xaa, b: 0xff, a: 0xff };
-const HAZARD: Color = Color { r: 0x33, g: 0x22, b: 0x44, a: 0xff };
-const EYE: Color = Color { r: 0xff, g: 0x55, b: 0x55, a: 0xff };
-const MIRROR: Color = Color { r: 0xcc, g: 0xee, b: 0xff, a: 0x88 };
-const STATUE: Color = Color { r: 0x77, g: 0x77, b: 0x66, a: 0xff };
+const SOLID: Color = Color {
+    r: 0x88,
+    g: 0x88,
+    b: 0x88,
+    a: 0xff,
+};
+const BARRIER: Color = Color {
+    r: 0x66,
+    g: 0x33,
+    b: 0x99,
+    a: 0xff,
+};
+const GATE: Color = Color {
+    r: 0xaa,
+    g: 0x44,
+    b: 0x44,
+    a: 0xff,
+};
+const GATE_OPEN: Color = Color {
+    r: 0x55,
+    g: 0x55,
+    b: 0x55,
+    a: 0x55,
+};
+const SWITCH: Color = Color {
+    r: 0x44,
+    g: 0xaa,
+    b: 0xff,
+    a: 0xff,
+};
+const HAZARD: Color = Color {
+    r: 0x33,
+    g: 0x22,
+    b: 0x44,
+    a: 0xff,
+};
+const EYE: Color = Color {
+    r: 0xff,
+    g: 0x55,
+    b: 0x55,
+    a: 0xff,
+};
+const MIRROR: Color = Color {
+    r: 0xcc,
+    g: 0xee,
+    b: 0xff,
+    a: 0x88,
+};
+const STATUE: Color = Color {
+    r: 0x77,
+    g: 0x77,
+    b: 0x66,
+    a: 0xff,
+};
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Kind {
@@ -52,6 +100,7 @@ enum Kind {
     TempleMirrorPortal,
     TheoCrystalHoldingBarrier,
     TheoCrystalPedestal,
+    TempleFallTrigger,
 }
 
 fn kind_for(t: &str) -> Option<Kind> {
@@ -70,6 +119,7 @@ fn kind_for(t: &str) -> Option<Kind> {
         "templeMirrorPortal" => Kind::TempleMirrorPortal,
         "theoCrystalHoldingBarrier" => Kind::TheoCrystalHoldingBarrier,
         "theoCrystalPedestal" => Kind::TheoCrystalPedestal,
+        "templeFallTrigger" => Kind::TempleFallTrigger,
         _ => return None,
     })
 }
@@ -120,20 +170,26 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
         e.hitbox.set(14.0, 14.0, -3.0, -3.0);
     }
     STATES.with(|s| {
-        s.borrow_mut()
-            .insert(id, State { kind, w, h, open: false });
+        s.borrow_mut().insert(
+            id,
+            State {
+                kind,
+                w,
+                h,
+                open: false,
+            },
+        );
     });
 }
 
 fn player_rect() -> Option<(f32, f32, f32, f32)> {
-    for pid in entities_by_type("player") {
-        let p = Entity::new(pid).position.get();
-        let (w, h, _, _) = Entity::new(pid).hitbox.get();
-        return Some((p.x, p.y, w, h));
-    }
-    None
+    let pid = *entities_by_type("player").first()?;
+    let p = Entity::new(pid).position.get();
+    let (w, h, _, _) = Entity::new(pid).hitbox.get();
+    Some((p.x, p.y, w, h))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn overlap(ax: f32, ay: f32, aw: f32, ah: f32, bx: f32, by: f32, bw: f32, bh: f32) -> bool {
     ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
 }
@@ -152,12 +208,14 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                 let dx = (px + pw * 0.5) - p.x;
                 let dy = (py + ph * 0.5) - p.y;
                 let dist = (dx * dx + dy * dy).sqrt();
-                let speed = if st.kind == Kind::TempleEye { 70.0 } else { 50.0 };
+                let speed = if st.kind == Kind::TempleEye {
+                    70.0
+                } else {
+                    50.0
+                };
                 if dist > 1.0 {
-                    e.position.set_xy(
-                        p.x + dx / dist * speed * dt,
-                        p.y + dy / dist * speed * dt,
-                    );
+                    e.position
+                        .set_xy(p.x + dx / dist * speed * dt, p.y + dy / dist * speed * dt);
                 }
                 if overlap(p.x - 7.0, p.y - 7.0, 14.0, 14.0, px, py, pw, ph) {
                     die();
@@ -165,10 +223,10 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             }
         }
         Kind::DashSwitchH | Kind::DashSwitchV => {
-            if let Some((px, py, pw, ph)) = player_rect() {
-                if overlap(p.x, p.y, st.w, st.h, px, py, pw, ph) {
-                    emit(id, event::DASH_BLOCK, &[]);
-                }
+            if let Some((px, py, pw, ph)) = player_rect()
+                && overlap(p.x, p.y, st.w, st.h, px, py, pw, ph)
+            {
+                emit(id, event::DASH_BLOCK, &[]);
             }
         }
         Kind::TempleGate => {
@@ -178,9 +236,22 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             e.collision.solid(!st.open);
         }
         Kind::TempleCrackedBlock => {
-            if drain_events().iter().any(|(_, t, _)| *t == event::DASH_BLOCK) {
+            if drain_events()
+                .iter()
+                .any(|(_, t, _)| *t == event::DASH_BLOCK)
+            {
                 remove(id);
                 return;
+            }
+        }
+        Kind::TempleFallTrigger => {
+            // The scripted Mirror Temple collapse: when the player steps onto
+            // the trigger, start the fall. Emitting each frame is harmless —
+            // the player's handler just refreshes the fall timer.
+            if let Some((px, py, pw, ph)) = player_rect()
+                && overlap(p.x, p.y, st.w, st.h, px, py, pw, ph)
+            {
+                emit(id, EV_TEMPLE_FALL, &[]);
             }
         }
         _ => {}
@@ -217,6 +288,7 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         Kind::SeekerStatue => STATUE,
         Kind::TheoCrystalPedestal => STATUE,
         Kind::TempleMirror | Kind::TempleMirrorPortal => MIRROR,
+        Kind::TempleFallTrigger => SOLID,
     };
     let (w, h) = if st.kind == Kind::PlayerSeeker || st.kind == Kind::TempleEye {
         (14.0, 14.0)

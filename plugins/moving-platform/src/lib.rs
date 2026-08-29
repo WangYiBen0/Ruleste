@@ -7,7 +7,7 @@
 
 use ruleste_plugins_api::host::draw_rect;
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId, Vec2};
 
 use std::cell::RefCell;
@@ -17,7 +17,12 @@ ruleste_plugins_api::ruleste_entity_types!("movingPlatform");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const PLAT: Color = Color { r: 0x7a, g: 0x7a, b: 0x88, a: 0xff };
+const PLAT: Color = Color {
+    r: 0x7a,
+    g: 0x7a,
+    b: 0x88,
+    a: 0xff,
+};
 
 const SPEED: f32 = 40.0;
 
@@ -48,7 +53,18 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     e.collision.platform(true);
     e.depth.set(200);
     let node = spawn.get_node(0).unwrap_or(Vec2::new(x, y));
-    STATES.with(|s| s.borrow_mut().insert(id, State { w, h, start: Vec2::new(x, y), node, to_node: true }));
+    STATES.with(|s| {
+        s.borrow_mut().insert(
+            id,
+            State {
+                w,
+                h,
+                start: Vec2::new(x, y),
+                node,
+                to_node: true,
+            },
+        )
+    });
 }
 
 #[unsafe(no_mangle)]
@@ -67,7 +83,8 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         e.position.set_xy(target.x, target.y);
         st.to_node = !st.to_node;
     } else {
-        e.position.set_xy(p.x + dx / d * SPEED * dt, p.y + dy / d * SPEED * dt);
+        e.position
+            .set_xy(p.x + dx / d * SPEED * dt, p.y + dy / d * SPEED * dt);
     }
     STATES.with(|s| {
         if let Some(st_ref) = s.borrow_mut().get_mut(id) {

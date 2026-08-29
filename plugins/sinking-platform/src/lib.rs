@@ -7,7 +7,7 @@
 
 use ruleste_plugins_api::host::{draw_rect, entities_by_type};
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity, Hitbox, Position};
+use ruleste_plugins_api::plugin::{Entity, Hitbox, Position, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 
 use std::cell::RefCell;
@@ -17,7 +17,12 @@ ruleste_plugins_api::ruleste_entity_types!("sinkingPlatform");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const PLAT: Color = Color { r: 0x7a, g: 0x7a, b: 0x88, a: 0xff };
+const PLAT: Color = Color {
+    r: 0x7a,
+    g: 0x7a,
+    b: 0x88,
+    a: 0xff,
+};
 
 const SINK_SPEED: f32 = 22.0;
 const MAX_SINK: f32 = 40.0;
@@ -41,7 +46,10 @@ fn player_on_top(bx: f32, by: f32, bw: f32) -> bool {
     let pp = Position::new(p).get();
     let (pw, ph, pox, poy) = Hitbox::new(p).get();
     let bottom = pp.y + poy + ph;
-    bottom >= by - 3.0 && bottom <= by + 5.0 && pp.x + pox + pw > bx + 1.0 && pp.x + pox < bx + bw - 1.0
+    bottom >= by - 3.0
+        && bottom <= by + 5.0
+        && pp.x + pox + pw > bx + 1.0
+        && pp.x + pox < bx + bw - 1.0
 }
 
 #[unsafe(no_mangle)]

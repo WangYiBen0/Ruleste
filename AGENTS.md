@@ -55,6 +55,7 @@ cargo run
 7. **SDL3 像素格式（本构建的坑）**：软件渲染器下，`SDL_PIXELFORMAT_RGBA8888` 纹理的内存字节序实际是 `A,B,G,R`（与标准 SDL 约定相反）。上传 `(r,g,b,a)` 字节序数据（如 `atlas.rs` 解码的 `page.rgba`）时，纹理必须声明为 `ABGR8888` 才会正确渲染；声明 `RGBA8888` 会导致颜色经变换错乱（如泥土色 (143,86,59) 显示成 (143,33,48)）。此外 `SDL_RenderReadPixels` 返回 `ARGB8888`（内存字节序 `B,G,R,A`）表面，直接按 RGB 读取会得到 R/B 互换的错误颜色。新增像素相关功能时用 `RULESTE_DUMP_FRAME`（PPM dump）验证。
 8. **窗口关闭**：`Input::pump` 只处理按键，不消费 `Quit`/`Escape`；主循环先 poll 事件检查退出，再把其余事件喂给 `Input`。
 9. **窗口尺寸**：渲染固定于内部 320×180 逻辑分辨率，通过 `set_logical_size(..., LETTERBOX)` 交给 SDL 缩放，窗口必须 `resizable()`。原因：Niri 等平铺合成器会把"固定尺寸"窗口自动浮动；可缩放窗口才会被平铺（已验证：tile 936×1144，内容 16:9 letterbox 居中，`RULESTE_DUMP_FRAME` dump 尺寸随窗口变化）。不要在 core 里手动 `set_scale` 后调整窗口大小，应由 SDL 逻辑呈现处理。
+10. **碰撞箱调试**：`--show-hitboxes` CLI 参数开启 wireframe 碰撞箱渲染，每个活动实体画一个空心矩形：红色=普通实体，黄色=`solid_platform`（踩踏平台），绿色=`solid_entity`（完全实体块）。位置 = `position + hitbox_offset`，尺寸 = `hitbox`；由 `Renderer::draw_hitboxes` 在所有实体精灵画完后叠加。
 
 ## AI 代理职责
 本仓库期望 AI 协助以下工作：

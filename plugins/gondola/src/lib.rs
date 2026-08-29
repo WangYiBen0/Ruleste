@@ -1,7 +1,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 use ruleste_plugins_api::host::draw_rect;
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 use std::cell::RefCell;
 
@@ -10,7 +10,12 @@ ruleste_plugins_api::ruleste_entity_types!("gondola");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const CAR: Color = Color { r: 0xa0, g: 0x80, b: 0x50, a: 0xff };
+const CAR: Color = Color {
+    r: 0xa0,
+    g: 0x80,
+    b: 0x50,
+    a: 0xff,
+};
 
 #[derive(Clone)]
 struct State {
@@ -38,7 +43,15 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     e.collision.platform(true);
     let nodes: Vec<(f32, f32)> = spawn.nodes().iter().map(|n| (n.x, n.y)).collect();
     STATES.with(|s| {
-        s.borrow_mut().insert(id, State { w, h, nodes, idx: 0 });
+        s.borrow_mut().insert(
+            id,
+            State {
+                w,
+                h,
+                nodes,
+                idx: 0,
+            },
+        );
     });
 }
 
@@ -60,7 +73,8 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             e.position.set_xy(dest.0, dest.1);
             st.idx = (st.idx + 1) % st.nodes.len();
         } else {
-            e.position.set_xy(p.x + dx / dist * speed * dt, p.y + dy / dist * speed * dt);
+            e.position
+                .set_xy(p.x + dx / dist * speed * dt, p.y + dy / dist * speed * dt);
         }
     }
     STATES.with(|s| {

@@ -5,7 +5,7 @@
 //! for ~2s before respawning. Mirrors `CrumblePlatform` in
 //! `references/source/Celeste/Celeste/CrumblePlatform.cs`.
 
-use ruleste_plugins_api::host::{draw_rect, entities_by_type};
+use ruleste_plugins_api::host::{draw_rect, entities_by_type, player_state};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, Hitbox, Position, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
@@ -60,6 +60,29 @@ fn player_on_top(bx: f32, by: f32, bw: f32) -> bool {
     }
 }
 
+/// `GetPlayerClimbing`: the original crumble block also triggers while the
+/// player is climbing one of its sides. We detect `ST_CLIMB` (1) with the
+/// player's hitbox flush against the block's left/right edge.
+fn player_climbing_side(bx: f32, by: f32, bw: f32) -> bool {
+    let players = entities_by_type("player");
+    let pid = match players.first() {
+        Some(p) => *p,
+        None => return false,
+    };
+    if player_state(pid) != 1 {
+        return false;
+    }
+    match player_rect() {
+        Some((px, py, pw, ph)) => {
+            let v_overlap = py + ph > by && py < by + 8.0;
+            let left_touch = (px + pw) >= bx - 3.0 && (px + pw) <= bx + 3.0;
+            let right_touch = px <= bx + bw + 3.0 && px >= bx + bw - 3.0;
+            v_overlap && (left_touch || right_touch)
+        }
+        None => false,
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let spawn: MapData = spawn_data(unsafe { std::slice::from_raw_parts(data, len as usize) });
@@ -94,7 +117,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     let (bx, by) = (p.x, p.y);
     match st.phase {
         0 => {
-            if player_on_top(bx, by, st.w) {
+            if player_on_top(bx, by, st.w) || player_climbing_side(bx, by, st.w) {
                 st.phase = 1;
                 st.timer = 0.4;
             }

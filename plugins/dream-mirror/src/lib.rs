@@ -9,7 +9,7 @@
 
 use ruleste_plugins_api::host::draw_rect;
 use ruleste_plugins_api::map::MapData;
-use ruleste_plugins_api::plugin::{spawn_data, Entity};
+use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
 
 ruleste_plugins_api::ruleste_meta!("dream-mirror");
@@ -17,8 +17,18 @@ ruleste_plugins_api::ruleste_entity_types!("dreammirror");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const FRAME: Color = Color { r: 0xb0, g: 0xc4, b: 0xde, a: 0xff };
-const GLASS: Color = Color { r: 0x6a, g: 0x8c, b: 0xb0, a: 0x55 };
+const FRAME: Color = Color {
+    r: 0xb0,
+    g: 0xc4,
+    b: 0xde,
+    a: 0xff,
+};
+const GLASS: Color = Color {
+    r: 0x6a,
+    g: 0x8c,
+    b: 0xb0,
+    a: 0x55,
+};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
