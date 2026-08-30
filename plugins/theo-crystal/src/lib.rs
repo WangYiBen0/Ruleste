@@ -11,11 +11,11 @@
 //! When not held the crystal follows its `nodes` path (the `added`/`_onShake`
 //! patrol behavior is approximated by linear node interpolation).
 
-use ruleste_plugins_api::host::{self, Hitbox, Input, Position, draw_rect, emit, entities_by_type};
+use ruleste_plugins_api::host::{self, Hitbox, Input, Position, emit, entities_by_type};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::input;
-use ruleste_plugins_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::types::{EntityId, Vec2};
 
 use std::cell::RefCell;
 
@@ -23,13 +23,6 @@ ruleste_plugins_api::ruleste_meta!("theoCrystal");
 ruleste_plugins_api::ruleste_entity_types!("theoCrystal");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const CRYSTAL: Color = Color {
-    r: 0x66,
-    g: 0x99,
-    b: 0xff,
-    a: 0xff,
-};
 
 /// Idle / patrolling between `nodes`.
 const STATE_IDLE: u8 = 0;
@@ -122,6 +115,8 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let h = spawn.get_float("height", 12.0);
     e.hitbox.set(w, h, 0.0, 0.0);
     e.collision.platform(true);
+    e.sprite.set_bank("theo_crystal");
+    e.sprite.play("idle");
     let st = State {
         w,
         h,
@@ -240,15 +235,8 @@ fn another_holder_has_player(self_id: EntityId) -> bool {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ruleste_entity_draw(id: EntityId) {
-    let e = Entity::new(id);
-    let p = e.position.get();
-    let st = STATES.with(|s| s.borrow().get(&id).cloned());
-    let (w, h) = match st {
-        Some(st) => (st.w, st.h),
-        None => (12.0, 12.0),
-    };
-    draw_rect(p.x, p.y, w, h, CRYSTAL);
+pub extern "C" fn ruleste_entity_draw(_id: EntityId) {
+    // Visual is drawn by the host via the SpriteBank ("theo_crystal" sprite).
 }
 
 #[cfg(test)]

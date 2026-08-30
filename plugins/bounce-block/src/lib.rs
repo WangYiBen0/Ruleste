@@ -1,7 +1,9 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 use std::cell::RefCell;
 
-use ruleste_plugins_api::host::{draw_rect, entities_by_type, is_cold_mode, play_sound};
+use ruleste_plugins_api::host::{
+    draw_image, draw_rect, entities_by_type, is_cold_mode, play_sound,
+};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
@@ -22,19 +24,6 @@ const STATE_BOUNCING: u8 = 2;
 const STATE_BOUNCE_END: u8 = 3;
 const STATE_BROKEN: u8 = 4;
 
-const COLOR_FIRE: Color = Color {
-    r: 0xdd,
-    g: 0x66,
-    b: 0x88,
-    a: 0xff,
-};
-#[allow(dead_code)]
-const COLOR_ICE: Color = Color {
-    r: 0x88,
-    g: 0xcc,
-    b: 0xff,
-    a: 0xff,
-};
 const COLOR_FLASH: Color = Color {
     r: 0xff,
     g: 0xff,
@@ -57,6 +46,7 @@ struct BounceState {
     reappear_flash: f32,
     ice_mode: bool,
     last_cold: bool,
+    anim_time: f32,
 }
 
 impl BounceState {
@@ -75,6 +65,7 @@ impl BounceState {
             reappear_flash: 0.0,
             ice_mode: false,
             last_cold: false,
+            anim_time: 0.0,
         }
     }
 }
@@ -172,6 +163,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
 
     with_state(id, |st| {
         st.reappear_flash = approach(st.reappear_flash, 0.0, dt * 8.0);
+        st.anim_time += dt;
 
         let now_cold = is_cold_mode();
         if now_cold != st.last_cold {
@@ -338,8 +330,43 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
             _ => (0.0, 0.0),
         };
 
-        let color = if st.ice_mode { COLOR_ICE } else { COLOR_FIRE };
-        draw_rect(p.x + dx, p.y + dy, w, h, color);
+        let bx = p.x + dx;
+        let by = p.y + dy;
+        let scale = w / 64.0; // fire_bg / Ice00 are 64x64
+
+        // Body (solid block): fire or ice variant.
+        let body = if st.ice_mode {
+            "objects/BumpBlock/Ice00"
+        } else {
+            "objects/BumpBlock/fire_bg"
+        };
+        draw_image(body, bx, by, 0.0, scale, scale);
+
+        // Flames (fire mode only).
+        if !st.ice_mode {
+            let fi = (st.anim_time * 12.0) as usize % 8;
+            let fid = format!("objects/BumpBlock/Fire{:02}", fi);
+            draw_image(
+                &fid,
+                bx + (w - 58.0 * scale) / 2.0,
+                by + (h - 60.0 * scale) / 2.0,
+                0.0,
+                scale,
+                scale,
+            );
+        }
+
+        // Animated bumper core (center00..25 loop).
+        let ci = (st.anim_time * 20.0) as usize % 26;
+        let cid = format!("objects/BumpBlock/center{:02}", ci);
+        draw_image(
+            &cid,
+            bx + (w - 9.0 * scale) / 2.0,
+            by + (h - 9.0 * scale) / 2.0,
+            0.0,
+            scale,
+            scale,
+        );
 
         if st.reappear_flash > 0.01 {
             let pad = 2.0;

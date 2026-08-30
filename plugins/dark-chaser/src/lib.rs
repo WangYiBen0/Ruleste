@@ -5,28 +5,15 @@
 //! Badeline "chaser" that appears in B-side reflection rooms). Phases through
 //! walls like the original.
 
-use ruleste_plugins_api::host::{self, draw_rect, entities_by_type};
+use ruleste_plugins_api::host::{self, entities_by_type};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, Hitbox, Position, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::types::{EntityId, Vec2};
 
 ruleste_plugins_api::ruleste_meta!("dark-chaser");
 ruleste_plugins_api::ruleste_entity_types!("darkChaser");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const BODY: Color = Color {
-    r: 0x14,
-    g: 0x10,
-    b: 0x1c,
-    a: 0xff,
-};
-const EYE: Color = Color {
-    r: 0xff,
-    g: 0x40,
-    b: 0x40,
-    a: 0xff,
-};
 
 const SPEED: f32 = 70.0;
 const R: f32 = 7.0;
@@ -54,6 +41,9 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
         .set_xy(spawn.get_float("x", 0.0), spawn.get_float("y", 0.0));
     e.hitbox.set(R * 2.0, R * 2.0, -R, -R);
     e.depth.set(9000);
+    // The chaser is the dark Badeline — render the real `badeline` sprite.
+    e.sprite.set_bank("badeline");
+    e.sprite.play("idle");
 }
 
 #[unsafe(no_mangle)]
@@ -101,9 +91,6 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     }
 }
 
+// The dark chaser is drawn by the host SpriteBank renderer via `entity.sprite`.
 #[unsafe(no_mangle)]
-pub extern "C" fn ruleste_entity_draw(id: EntityId) {
-    let p = Entity::new(id).position.get();
-    draw_rect(p.x - R, p.y - R, R * 2.0, R * 2.0, BODY);
-    draw_rect(p.x - 2.0, p.y - 3.0, 4.0, 4.0, EYE);
-}
+pub extern "C" fn ruleste_entity_draw(_id: EntityId) {}

@@ -6,28 +6,15 @@
 //! is 96 wide), with `SurfaceSoundIndex = 23`. Level styling
 //! (`Plateau.Level`) only picks the palette; the base stone stays.
 
-use ruleste_plugins_api::host::draw_rect;
+use ruleste_plugins_api::host::draw_image;
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
+use ruleste_plugins_api::types::EntityId;
 
 ruleste_plugins_api::ruleste_meta!("plateau");
 ruleste_plugins_api::ruleste_entity_types!("plateau");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const STONE: Color = Color {
-    r: 0x50,
-    g: 0x56,
-    b: 0x60,
-    a: 0xff,
-};
-const MOSS: Color = Color {
-    r: 0x6a,
-    g: 0x78,
-    b: 0x5a,
-    a: 0xff,
-};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
@@ -50,6 +37,7 @@ pub extern "C" fn ruleste_entity_update(_id: EntityId, _dt: f32) {}
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let p = Entity::new(id).position.get();
-    draw_rect(p.x, p.y, 104.0, 1.0, MOSS);
-    draw_rect(p.x, p.y + 1.0, 104.0, 3.0, STONE);
+    // Real weathered plateau slab (scenery/fallplateau, 120x16) at the entity
+    // position; the 104x4 hitbox (offset +8) is the standable collider.
+    draw_image("scenery/fallplateau", p.x, p.y, 0.0, 1.0, 1.0);
 }

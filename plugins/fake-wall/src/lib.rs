@@ -5,10 +5,10 @@
 //! revealed by contact). Mirrors `FakeWall` in
 //! `references/source/Celeste/Celeste/FakeWall.cs`.
 
-use ruleste_plugins_api::host::{self, draw_rect, entities_by_type};
+use ruleste_plugins_api::host::{self, draw_tile_box, entities_by_type};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, Hitbox, Position, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
+use ruleste_plugins_api::types::EntityId;
 
 use std::cell::RefCell;
 
@@ -16,13 +16,6 @@ ruleste_plugins_api::ruleste_meta!("fake-wall");
 ruleste_plugins_api::ruleste_entity_types!("fakeWall");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const WALL: Color = Color {
-    r: 0x4a,
-    g: 0x4a,
-    b: 0x55,
-    a: 0xff,
-};
 
 #[derive(Clone, Copy)]
 struct State {
@@ -84,5 +77,5 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         None => return,
     };
     let p = Entity::new(id).position.get();
-    draw_rect(p.x, p.y, st.w, st.h, WALL);
+    draw_tile_box('3', p.x, p.y, (st.w / 8.0) as u32, (st.h / 8.0) as u32);
 }

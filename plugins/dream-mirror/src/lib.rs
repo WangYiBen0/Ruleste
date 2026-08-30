@@ -7,28 +7,15 @@
 //! with no collision. Mirrors `DreamMirror` in
 //! `references/source/Celeste/Celeste/DreamMirror.cs` (visual portions only).
 
-use ruleste_plugins_api::host::draw_rect;
+use ruleste_plugins_api::host::draw_image;
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
+use ruleste_plugins_api::types::EntityId;
 
 ruleste_plugins_api::ruleste_meta!("dream-mirror");
 ruleste_plugins_api::ruleste_entity_types!("dreammirror");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const FRAME: Color = Color {
-    r: 0xb0,
-    g: 0xc4,
-    b: 0xde,
-    a: 0xff,
-};
-const GLASS: Color = Color {
-    r: 0x6a,
-    g: 0x8c,
-    b: 0xb0,
-    a: 0x55,
-};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
@@ -48,10 +35,16 @@ pub extern "C" fn ruleste_entity_update(_id: EntityId, _dt: f32) {}
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let p = Entity::new(id).position.get();
-    let (w, h, _, _) = Entity::new(id).hitbox.get();
-    draw_rect(p.x, p.y, w, h, GLASS);
-    draw_rect(p.x, p.y, w, 2.0, FRAME);
-    draw_rect(p.x, p.y + h - 2.0, w, 2.0, FRAME);
-    draw_rect(p.x, p.y, 2.0, h, FRAME);
-    draw_rect(p.x + w - 2.0, p.y, 2.0, h, FRAME);
+    // Real dream-mirror: a 62x37 frame with a 54x29 glass inset by 4px. The
+    // original renders a live reflection via a render target, which this clone
+    // cannot, so we draw the framed glass panel only.
+    draw_image("objects/mirror/frame", p.x, p.y, 0.0, 1.0, 1.0);
+    draw_image(
+        "objects/mirror/glassbg",
+        p.x + 4.0,
+        p.y + 4.0,
+        0.0,
+        1.0,
+        1.0,
+    );
 }

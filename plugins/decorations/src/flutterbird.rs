@@ -7,29 +7,15 @@
 //! (`objects/birds/flutBirdXX`) are used when present, falling back to a
 //! drawn wing pair.
 
-use ruleste_plugins_api::host::draw_rect;
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::types::{EntityId, Vec2};
 
 /// Horizontal weave amplitude / period; vertical bob felt like the original's.
 const SWAY_AMP: f32 = 24.0;
 const SWAY_SPEED: f32 = 1.4;
 const BOB_AMP: f32 = 8.0;
 const BOB_SPEED: f32 = 2.2;
-
-const BODY: Color = Color {
-    r: 0x3a,
-    g: 0x42,
-    b: 0x8a,
-    a: 0xff,
-};
-const WING: Color = Color {
-    r: 0x90,
-    g: 0xa0,
-    b: 0xd8,
-    a: 0xff,
-};
 
 #[derive(Debug, Default)]
 struct FlutterState {
@@ -59,6 +45,10 @@ pub fn init(id: EntityId, data: *const u8, len: u32) {
     let entity = Entity::new(id);
     entity.position.set_xy(x, y);
     entity.depth.set(-10000);
+    // The `flutterBird` SpriteBank sprite (note the capital B — the entity type is
+    // lowercased) renders the flapping body; the host draws it each frame.
+    entity.sprite.set_bank("flutterBird");
+    entity.sprite.play("fly");
     with_state(id, |st| {
         st.origin = Vec2::new(x, y);
     });
@@ -73,16 +63,5 @@ pub fn update(id: EntityId, dt: f32) {
     });
 }
 
-pub fn draw(id: EntityId) {
-    with_state(id, |st| {
-        let p = Entity::new(id).position.get();
-        // Body.
-        draw_rect(p.x - 2.0, p.y - 2.0, 4.0, 4.0, BODY);
-        // Wing-flap: wings swept at ±20° on a wingbeat cycle.
-        let flap = (st.timer * 14.0).sin();
-        let sweep_up = 2.0 + flap * 1.5;
-        let sweep_down = 2.0 - flap * 1.5;
-        draw_rect(p.x - 5.0, p.y - sweep_up, 3.0, 3.0, WING);
-        draw_rect(p.x + 2.0, p.y - sweep_down, 3.0, 3.0, WING);
-    });
-}
+// The flutterbird is drawn by the host SpriteBank renderer via `entity.sprite`.
+pub fn draw(_id: EntityId) {}

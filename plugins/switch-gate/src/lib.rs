@@ -8,7 +8,7 @@
 //! its own plugin crate (the host keeps one event cursor per crate).
 
 use ruleste_plugins_api::event;
-use ruleste_plugins_api::host::{drain_events, draw_rect};
+use ruleste_plugins_api::host::{drain_events, draw_image, draw_image_color};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId, Vec2};
@@ -19,19 +19,6 @@ ruleste_plugins_api::ruleste_meta!("switch-gate");
 ruleste_plugins_api::ruleste_entity_types!("switchGate");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const GATE: Color = Color {
-    r: 0x5f,
-    g: 0xcd,
-    b: 0xe4,
-    a: 0xcc,
-};
-const GATE_OPEN: Color = Color {
-    r: 0x5f,
-    g: 0xcd,
-    b: 0xe4,
-    a: 0x30,
-};
 
 #[derive(Clone, Copy)]
 struct State {
@@ -123,6 +110,14 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         None => return,
     };
     let p = Entity::new(id).position.get();
-    let c = if st.open { GATE_OPEN } else { GATE };
-    draw_rect(p.x, p.y, st.w, st.h, c);
+    // The real switch-gate texture (a 24x24 frame) drawn centred on the gate.
+    // Closed = opaque; open = faint so the player can see it is passable.
+    let block = "objects/switchgate/block";
+    let ox = p.x + (st.w - 24.0) * 0.5;
+    let oy = p.y + (st.h - 24.0) * 0.5;
+    if st.open {
+        draw_image_color(block, ox, oy, Color::new(0xff, 0xff, 0xff, 0x46));
+    } else {
+        draw_image(block, ox, oy, 0.0, 1.0, 1.0);
+    }
 }

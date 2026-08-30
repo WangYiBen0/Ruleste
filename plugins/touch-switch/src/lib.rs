@@ -7,7 +7,7 @@
 //! drains) the event bus, so it lives in its own crate.
 
 use ruleste_plugins_api::event;
-use ruleste_plugins_api::host::{self, draw_rect, entities_by_type};
+use ruleste_plugins_api::host::{self, draw_image, draw_rect, entities_by_type};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, Hitbox, Position, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
@@ -19,12 +19,6 @@ ruleste_plugins_api::ruleste_entity_types!("touchSwitch");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const SWITCH_IDLE: Color = Color {
-    r: 0x5f,
-    g: 0xcd,
-    b: 0xe4,
-    a: 0xff,
-};
 const SWITCH_ON: Color = Color {
     r: 0xff,
     g: 0xff,
@@ -108,7 +102,16 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, _dt: f32) {
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let triggered = TRIGGERED.with(|s| s.borrow_mut().get(id).copied().unwrap_or(false));
     let p = Entity::new(id).position.get();
-    let c = if triggered { SWITCH_ON } else { SWITCH_IDLE };
-    draw_rect(p.x - 8.0, p.y - 8.0, 16.0, 16.0, c);
-    draw_rect(p.x - 2.0, p.y - 2.0, 4.0, 4.0, SWITCH_ON);
+    // Real touch-switch pad (14x14) centered on the 16x16 hitbox.
+    draw_image(
+        "objects/touchswitch/container",
+        p.x - 8.0,
+        p.y - 8.0,
+        0.0,
+        1.0,
+        1.0,
+    );
+    if triggered {
+        draw_rect(p.x - 2.0, p.y - 2.0, 4.0, 4.0, SWITCH_ON);
+    }
 }

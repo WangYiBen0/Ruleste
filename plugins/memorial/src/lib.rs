@@ -89,8 +89,15 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, _dt: f32) {
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let entity = Entity::new(id);
     let p = entity.position.get();
-    // Prefer the real atlas art when the pack provides it, otherwise the slab.
-    draw_image("objects/memorial/frame/memorial00", p.x, p.y, 0.0, 1.0, 1.0);
+    // Real atlas art (the correct frame id); the slab rects stay as a base.
+    draw_image(
+        "objects/memorial/memorial",
+        p.x - 12.0,
+        p.y - 8.0,
+        0.0,
+        1.0,
+        1.0,
+    );
     // Slab body.
     draw_rect(p.x - 10.0, p.y - 4.0, 20.0, 14.0, STONE);
     draw_rect(p.x - 12.0, p.y - 8.0, 24.0, 5.0, STONE_TOP);

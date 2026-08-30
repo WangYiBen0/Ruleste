@@ -11,7 +11,7 @@
 use ruleste_plugins_api::host;
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::types::{EntityId, Vec2};
 
 ruleste_plugins_api::ruleste_meta!("swap-block");
 ruleste_plugins_api::ruleste_entity_types!("swapBlock");
@@ -33,6 +33,8 @@ struct SwapState {
     return_timer: f32,
     max_forward: f32,
     max_backward: f32,
+    /// Animation phase for the centred swap face (≈12.5 fps, matching the sprite).
+    phase: f32,
 }
 
 thread_local! {
@@ -93,6 +95,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     with_state(id, |st| {
+        st.phase += dt * 12.0;
         // `DashListener.OnDash` fires on every dash: start swapping.
         for (_, kind, _) in host::drain_events() {
             if kind == ruleste_plugins_api::plugin::event::PLAYER_DASH {
@@ -139,13 +142,28 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let entity = Entity::new(id);
     let p = entity.position.get();
     let (w, h, ox, oy) = entity.hitbox.get();
-    // Dashed yellow block: bright fill with a dark dashed outline.
-    host::draw_rect(p.x + ox, p.y + oy, w, h, Color::new(0xd8, 0xc0, 0x3a, 0xff));
-    host::draw_rect(
-        p.x + ox,
-        p.y + oy,
-        w,
-        2.0,
-        Color::new(0x7a, 0x64, 0x18, 0xff),
+    let phase = with_state(id, |st| st.phase);
+
+    // Body: the swap-block tile, repeated every 8px.
+    let mut ty = oy;
+    while ty < h {
+        let mut tx = ox;
+        while tx < w {
+            host::draw_image("objects/swapblock/block", p.x + tx, p.y + ty, 0.0, 1.0, 1.0);
+            tx += 8.0;
+        }
+        ty += 8.0;
+    }
+
+    // Animated swap face (midBlock00..03), centred on the block.
+    let frame = ((phase as i32) % 4 + 4) % 4;
+    let face = format!("objects/swapblock/midBlock{frame:02}");
+    host::draw_image(
+        &face,
+        p.x + ox + w * 0.5 - 8.0,
+        p.y + oy + h * 0.5 - 8.0,
+        0.0,
+        1.0,
+        1.0,
     );
 }

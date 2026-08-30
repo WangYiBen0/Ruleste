@@ -12,11 +12,11 @@
 //! wire `lockBlock` listeners.
 
 use ruleste_plugins_api::event;
-use ruleste_plugins_api::host::{self, Hitbox, Input, Position, draw_rect, emit, entities_by_type};
+use ruleste_plugins_api::host::{self, Hitbox, Input, Position, emit, entities_by_type};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::input;
-use ruleste_plugins_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::types::{EntityId, Vec2};
 
 use std::cell::RefCell;
 
@@ -24,13 +24,6 @@ ruleste_plugins_api::ruleste_meta!("key");
 ruleste_plugins_api::ruleste_entity_types!("key");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const KEYCOL: Color = Color {
-    r: 0xe8,
-    g: 0xc8,
-    b: 0x40,
-    a: 0xff,
-};
 
 /// Waiting to be picked up.
 const STATE_IDLE: u8 = 0;
@@ -116,6 +109,8 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
         .set_xy(spawn.get_float("x", 0.0), spawn.get_float("y", 0.0));
     e.hitbox.set(16.0, 16.0, -8.0, -8.0);
     e.depth.set(200);
+    e.sprite.set_bank("key");
+    e.sprite.play("idle");
     STATES.with(|s| {
         s.borrow_mut().insert(id, State::default());
     });
@@ -225,16 +220,8 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ruleste_entity_draw(id: EntityId) {
-    let st = STATES.with(|s| s.borrow().get(&id).cloned());
-    if let Some(st) = st
-        && st.state == STATE_TAKEN
-    {
-        return;
-    }
-    let p = Entity::new(id).position.get();
-    draw_rect(p.x - 6.0, p.y - 2.0, 12.0, 4.0, KEYCOL);
-    draw_rect(p.x - 2.0, p.y - 8.0, 4.0, 8.0, KEYCOL);
+pub extern "C" fn ruleste_entity_draw(_id: EntityId) {
+    // Visual is drawn by the host via the SpriteBank ("key" sprite).
 }
 
 #[cfg(test)]

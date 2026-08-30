@@ -1,26 +1,13 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
-use ruleste_plugins_api::host::draw_rect;
+use ruleste_plugins_api::host::draw_image;
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
+use ruleste_plugins_api::types::EntityId;
 
 ruleste_plugins_api::ruleste_meta!("cliffside_flag");
 ruleste_plugins_api::ruleste_entity_types!("cliffside_flag");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const FLAG: Color = Color {
-    r: 0xff,
-    g: 0xff,
-    b: 0xff,
-    a: 0xff,
-};
-const POLE: Color = Color {
-    r: 0x99,
-    g: 0x99,
-    b: 0x99,
-    a: 0xff,
-};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
@@ -41,7 +28,6 @@ pub extern "C" fn ruleste_entity_update(_id: EntityId, _dt: f32) {}
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let e = Entity::new(id);
     let p = e.position.get();
-    let (w, h, _, _) = e.hitbox.get();
-    draw_rect(p.x, p.y, w, h, FLAG);
-    draw_rect(p.x + w * 0.5 - 1.0, p.y, 2.0, h, POLE);
+    // Real cliffside flag cloth (28x13) at the entity position.
+    draw_image("scenery/cliffside/flag00", p.x, p.y, 0.0, 1.0, 1.0);
 }

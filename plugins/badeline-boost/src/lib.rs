@@ -12,7 +12,7 @@
 use ruleste_plugins_api::host::{self, entities_by_type};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::types::{EntityId, Vec2};
 
 ruleste_plugins_api::ruleste_meta!("badeline-boost");
 ruleste_plugins_api::ruleste_entity_types!("badelineBoost");
@@ -105,6 +105,8 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     entity.position.set_xy(p.x, p.y);
     entity.hitbox.set(HIT, HIT, HIT_OX, HIT_OY);
     entity.depth.set(-8500);
+    entity.sprite.set_bank("badelineBoost");
+    entity.sprite.play("idle");
     with_state(id, |st| {
         // `data.NodesWithPosition`: the entity position heads the node list.
         st.nodes.push(p);
@@ -259,25 +261,7 @@ fn st_player_id() -> Option<EntityId> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ruleste_entity_draw(id: EntityId) {
-    with_state(id, |st| {
-        let p = Entity::new(id).position.get();
-        let travelling = st.phase == Phase::Travel;
-        let pulse = 1.0 + (st.timer * 6.0).sin() * 0.12;
-        let r = if travelling { 10.0 } else { 7.0 * pulse };
-        let c = Color::new(0x70, 0x60, 0xe0, 0xe6);
-        let mut y = p.y - r;
-        while y <= p.y + r {
-            let half = (r * r - (y - p.y) * (y - p.y)).sqrt();
-            host::draw_rect(p.x - half, y, half * 2.0, 1.0, c);
-            y += 2.0;
-        }
-        host::draw_rect(
-            p.x - 2.0,
-            p.y - 2.0,
-            4.0,
-            4.0,
-            Color::new(0xe0, 0xd0, 0xff, 0xff),
-        );
-    });
+pub extern "C" fn ruleste_entity_draw(_id: EntityId) {
+    // Visual (the badeline orb) is drawn by the host via the SpriteBank
+    // ("badelineBoost" sprite); it is `<Center/>`d on the entity anchor.
 }

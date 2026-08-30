@@ -2,11 +2,11 @@
 use std::cell::RefCell;
 
 use ruleste_plugins_api::host::{
-    EV_SPRING_BOUNCE, die, draw_rect, emit, entities_by_type, line_of_sight, play_sound,
+    EV_SPRING_BOUNCE, die, emit, entities_by_type, line_of_sight, play_sound,
 };
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
+use ruleste_plugins_api::types::EntityId;
 
 ruleste_plugins_api::ruleste_meta!("seeker");
 ruleste_plugins_api::ruleste_entity_types!("seeker");
@@ -41,31 +41,6 @@ const STATE_STUNNED: u8 = 4;
 const STATE_SKIDDING: u8 = 5;
 const STATE_REGENERATE: u8 = 6;
 const STATE_RETURNED: u8 = 7;
-
-const COLOR_BODY: Color = Color {
-    r: 0x22,
-    g: 0x22,
-    b: 0x33,
-    a: 0xff,
-};
-const COLOR_EYE: Color = Color {
-    r: 0xff,
-    g: 0x55,
-    b: 0x55,
-    a: 0xff,
-};
-const COLOR_EYE_STUNNED: Color = Color {
-    r: 0xcc,
-    g: 0xcc,
-    b: 0x33,
-    a: 0xff,
-};
-const COLOR_EYE_DEAD: Color = Color {
-    r: 0x44,
-    g: 0x44,
-    b: 0x44,
-    a: 0xff,
-};
 
 #[derive(Clone, Copy)]
 struct SeekerState {
@@ -140,6 +115,8 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     e.position.set_xy(x, y);
     e.hitbox.set(HITBOX_W, HITBOX_H, -3.0, -3.0);
     e.collision.solid(true);
+    e.sprite.set_bank("seeker");
+    e.sprite.play("idle");
 
     with_state(id, |st| {
         st.start_x = x;
@@ -315,34 +292,31 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         if vx != 0.0 || vy != 0.0 {
             let _ = e.collision.actor_move(vx * dt, vy * dt);
         }
+
+        // Drive the SpriteBank animation from the seeker's current state and
+        // flip the sprite to face horizontal travel, mirroring `Seeker.cs`.
+        let anim = match st.state {
+            STATE_STUNNED => "stunned",
+            STATE_REGENERATE => "recover",
+            STATE_RETURNED => "statue",
+            STATE_SPOTTED | STATE_ATTACK => "spotted",
+            _ => "idle",
+        };
+        if e.sprite.animation() != anim {
+            e.sprite.play(anim);
+        }
+        if vx > 1.0 {
+            e.sprite.flip_x(false);
+        } else if vx < -1.0 {
+            e.sprite.flip_x(true);
+        }
     });
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ruleste_entity_draw(id: EntityId) {
-    let e = Entity::new(id);
-    let p = e.position.get();
-
-    STATES.with(|s| {
-        let states = s.borrow();
-        let st = match states.get(id) {
-            Some(s) => s,
-            None => return,
-        };
-
-        if !st.visible {
-            return;
-        }
-
-        let eye_color = match st.state {
-            STATE_STUNNED => COLOR_EYE_STUNNED,
-            STATE_REGENERATE | STATE_RETURNED => COLOR_EYE_DEAD,
-            _ => COLOR_EYE,
-        };
-
-        draw_rect(p.x - 7.0, p.y - 7.0, HITBOX_W, HITBOX_H, COLOR_BODY);
-        draw_rect(p.x - 3.0, p.y - 3.0, 6.0, 6.0, eye_color);
-    });
+pub extern "C" fn ruleste_entity_draw(_id: EntityId) {
+    // Visual (body + state-dependent eye) is drawn by the host via the
+    // SpriteBank ("seeker" sprite); the animation is driven in update().
 }
 
 #[unsafe(no_mangle)]

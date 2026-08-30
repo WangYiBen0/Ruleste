@@ -11,7 +11,7 @@
 use ruleste_plugins_api::host;
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::types::{EntityId, Vec2};
 
 ruleste_plugins_api::ruleste_meta!("crush-block");
 ruleste_plugins_api::ruleste_entity_types!("crushBlock");
@@ -352,23 +352,13 @@ fn crushes_toward_solid(entity: &Entity, st: &CrushState, dist: f32) -> bool {
         .check(st.crush_dir.x * dist, st.crush_dir.y * dist)
 }
 
-/// Face frame selection: idle when at rest, a `hit_<dir>` loop while crushing.
+/// Face frame selection: idle when at rest, the `hurt` animation while crushing.
+/// Frame ids match the `crushblock_face` SpriteBank entry (`objects/crushblock/…`).
 fn face_frame(st: &CrushState) -> String {
     if st.phase == 0 {
-        "objects/crushblock/idle_face".to_string()
+        "objects/crushblock/idle_face00".to_string()
     } else {
-        let (dx, dy) = (st.crush_dir.x, st.crush_dir.y);
-        let dir = if dx < 0.0 {
-            "left"
-        } else if dx > 0.0 {
-            "right"
-        } else if dy < 0.0 {
-            "up"
-        } else {
-            "down"
-        };
-        let idx = (st.anim * 12.0) as usize % 2;
-        format!("objects/crushblock/hit_{dir}{idx:02}")
+        "objects/crushblock/hurt03".to_string()
     }
 }
 
@@ -380,13 +370,16 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         let (w, h, ox, oy) = entity.hitbox.get();
         let x = p.x + ox;
         let y = p.y + oy;
-        host::draw_rect(
-            x + 2.0,
-            y + 2.0,
-            w - 4.0,
-            h - 4.0,
-            Color::new(98, 34, 43, 255),
+        // The block body is an autotiled solid (CrushBlock : Solid in the original);
+        // the crush-face sprite is layered on top.
+        host::draw_tile_box('3', x, y, (w / 8.0) as u32, (h / 8.0) as u32);
+        host::draw_image(
+            &face_frame(st),
+            x + w * 0.5 - 16.0,
+            y + h * 0.5 - 16.0,
+            0.0,
+            1.0,
+            1.0,
         );
-        host::draw_image(&face_frame(st), x + w * 0.5, y + h * 0.5, 0.0, 1.0, 1.0);
     });
 }

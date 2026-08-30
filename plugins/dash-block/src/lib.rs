@@ -15,7 +15,7 @@
 use ruleste_plugins_api::host;
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
+use ruleste_plugins_api::types::EntityId;
 
 ruleste_plugins_api::ruleste_meta!("dash-block");
 ruleste_plugins_api::ruleste_entity_types!("dashBlock");
@@ -112,7 +112,16 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
             return;
         }
         let p = Entity::new(id).position.get();
-        host::draw_rect(p.x, p.y, st.w, st.h, Color::new(0x32, 0x3a, 0x48, 0xff));
-        host::draw_rect(p.x, p.y, st.w, 2.0, Color::new(0x9a, 0x78, 0x50, 0xff));
+        // Body is an autotiled solid (DashBlock : Solid in the original); the dash
+        // button sprite is layered on top, centred on the block.
+        host::draw_tile_box('3', p.x, p.y, (st.w / 8.0) as u32, (st.h / 8.0) as u32);
+        host::draw_image(
+            "objects/temple/dashButton00",
+            p.x + st.w * 0.5 - 8.0,
+            p.y + st.h * 0.5 - 8.0,
+            0.0,
+            1.0,
+            1.0,
+        );
     });
 }

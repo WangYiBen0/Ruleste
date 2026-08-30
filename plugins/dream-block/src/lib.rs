@@ -559,7 +559,21 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         } else {
             DISABLED_BACK
         };
-        host::draw_rect(x, y, w, h, back_color);
+        // Background fill: real dream-block texture, tiled every 8px.
+        let body = if st.player_has_dream_dash {
+            "objects/dreamblock/active"
+        } else {
+            "objects/dreamblock/disabled"
+        };
+        let mut ty = 0.0;
+        while ty < h {
+            let mut tx = 0.0;
+            while tx < w {
+                host::draw_image(body, x + tx, y + ty, 0.0, 1.0, 1.0);
+                tx += 8.0;
+            }
+            ty += 8.0;
+        }
 
         // White fill during activation
         if st.white_fill > 0.0 {

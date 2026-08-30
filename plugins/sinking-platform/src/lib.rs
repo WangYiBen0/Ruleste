@@ -5,10 +5,10 @@
 //! back when they step off, letting the player descend controlled. Mirrors
 //! `SinkingPlatform` in `references/source/Celeste/Celeste/SinkingPlatform.cs`.
 
-use ruleste_plugins_api::host::{draw_rect, entities_by_type};
+use ruleste_plugins_api::host::{draw_image, entities_by_type};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, Hitbox, Position, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
+use ruleste_plugins_api::types::EntityId;
 
 use std::cell::RefCell;
 
@@ -16,13 +16,6 @@ ruleste_plugins_api::ruleste_meta!("sinking-platform");
 ruleste_plugins_api::ruleste_entity_types!("sinkingPlatform");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const PLAT: Color = Color {
-    r: 0x7a,
-    g: 0x7a,
-    b: 0x88,
-    a: 0xff,
-};
 
 const SINK_SPEED: f32 = 22.0;
 const MAX_SINK: f32 = 40.0;
@@ -96,5 +89,21 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         None => return,
     };
     let p = Entity::new(id).position.get();
-    draw_rect(p.x, p.y, st.w, 8.0, PLAT);
+    // Real wooden platform (32x8 tile) tiled across the body.
+    let mut ty = 0.0;
+    while ty < 8.0 {
+        let mut tx = 0.0;
+        while tx < st.w {
+            draw_image(
+                "objects/woodPlatform/default",
+                p.x + tx,
+                p.y + ty,
+                0.0,
+                1.0,
+                1.0,
+            );
+            tx += 32.0;
+        }
+        ty += 8.0;
+    }
 }

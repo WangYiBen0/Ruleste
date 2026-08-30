@@ -7,7 +7,7 @@
 //! - When counter reaches `requires`, the door unlocks with a flash and sound,
 //!   parting the top half upward by 32px and bottom half downward by 32px.
 
-use ruleste_plugins_api::host::{self, draw_rect};
+use ruleste_plugins_api::host::{self, draw_image, draw_rect};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
@@ -33,18 +33,6 @@ const EDGE: Color = Color {
     r: 0x66,
     g: 0x70,
     b: 0x86,
-    a: 0xff,
-};
-const HEART_ACTIVE: Color = Color {
-    r: 0xd0,
-    g: 0x38,
-    b: 0x60,
-    a: 0xff,
-};
-const HEART_INACTIVE: Color = Color {
-    r: 0x40,
-    g: 0x40,
-    b: 0x50,
     a: 0xff,
 };
 
@@ -181,19 +169,16 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         draw_rect(p.x, bot_y, w, split_h, DOOR_SLAB);
         draw_rect(p.x, bot_y + split_h - 3.0, w, 3.0, EDGE);
 
-        // Heart medallion (rendered if not fully opened)
+        // Heart medallion (rendered if not fully opened) — real sprite.
         if st.open_percent < 0.9 {
             let hx = p.x + w * 0.5;
             let hy = p.y + h * 0.5;
-            let heart_color = if st.opened || st.counter >= st.requires as f32 {
-                HEART_ACTIVE
+            let icon = if st.opened || st.counter >= st.requires as f32 {
+                "objects/heartdoor/icon01"
             } else {
-                HEART_INACTIVE
+                "objects/heartdoor/icon00"
             };
-
-            draw_rect(hx - 6.0, hy - 4.0 - offset, 12.0, 8.0, heart_color);
-            draw_rect(hx - 2.0, hy - 8.0 - offset, 4.0, 4.0, heart_color);
-            draw_rect(hx - 6.0, hy + 4.0 + offset, 12.0, 8.0, heart_color);
+            draw_image(icon, hx - 8.0, hy - 8.0, 0.0, 1.0, 1.0);
         }
     });
 }

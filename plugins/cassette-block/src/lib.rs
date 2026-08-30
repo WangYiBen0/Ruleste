@@ -9,11 +9,12 @@
 
 use ruleste_plugins_api::event;
 use ruleste_plugins_api::host::{
-    Collision, EV_CASSETTE_RIDE, Hitbox, Position, drain_events, draw_rect, emit, entities_by_type,
+    Collision, EV_CASSETTE_RIDE, Hitbox, Position, drain_events, draw_image, draw_tile_box, emit,
+    entities_by_type,
 };
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
+use ruleste_plugins_api::types::EntityId;
 
 use std::cell::RefCell;
 
@@ -21,19 +22,6 @@ ruleste_plugins_api::ruleste_meta!("cassette-block");
 ruleste_plugins_api::ruleste_entity_types!("cassetteBlock");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const GATE: Color = Color {
-    r: 0x5f,
-    g: 0xcd,
-    b: 0xe4,
-    a: 0xcc,
-};
-const GATE_OPEN: Color = Color {
-    r: 0x5f,
-    g: 0xcd,
-    b: 0xe4,
-    a: 0x30,
-};
 
 #[derive(Clone, Copy)]
 struct State {
@@ -159,6 +147,19 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         None => return,
     };
     let p = Entity::new(id).position.get();
-    let c = if st.solid { GATE } else { GATE_OPEN };
-    draw_rect(p.x, p.y, st.w, st.h, c);
+    // Body is the level's solid tile texture; the cassette logo sits centred.
+    draw_tile_box('3', p.x, p.y, (st.w / 8.0) as u32, (st.h / 8.0) as u32);
+    let face = if st.riding {
+        "objects/cassetteblock/pressed00"
+    } else {
+        "objects/cassetteblock/solid"
+    };
+    draw_image(
+        face,
+        p.x + st.w * 0.5 - 16.0,
+        p.y + st.h * 0.5 - 16.0,
+        0.0,
+        1.0,
+        1.0,
+    );
 }

@@ -1,21 +1,14 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
-use ruleste_plugins_api::host::{EV_SPRING_BOUNCE, die, draw_rect, emit, entities_by_type, remove};
+use ruleste_plugins_api::host::{EV_SPRING_BOUNCE, die, emit, entities_by_type, remove};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
+use ruleste_plugins_api::types::EntityId;
 use std::cell::RefCell;
 
 ruleste_plugins_api::ruleste_meta!("fireBall");
 ruleste_plugins_api::ruleste_entity_types!("fireBall");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const FLAME: Color = Color {
-    r: 0xff,
-    g: 0x66,
-    b: 0x22,
-    a: 0xff,
-};
 
 #[derive(Clone)]
 struct State {
@@ -40,6 +33,8 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let w = spawn.get_float("width", 8.0);
     let h = spawn.get_float("height", 8.0);
     e.hitbox.set(w, h, -2.0, -2.0);
+    e.sprite.set_bank("fireball");
+    e.sprite.play("hot");
     let nodes: Vec<(f32, f32)> = spawn.nodes().iter().map(|n| (n.x, n.y)).collect();
     STATES.with(|s| {
         s.borrow_mut().insert(
@@ -112,13 +107,6 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ruleste_entity_draw(id: EntityId) {
-    let e = Entity::new(id);
-    let p = e.position.get();
-    let st = STATES.with(|s| s.borrow().get(&id).cloned());
-    let (w, h) = match st {
-        Some(st) => (st.w, st.h),
-        None => (8.0, 8.0),
-    };
-    draw_rect(p.x - 2.0, p.y - 2.0, w + 4.0, h + 4.0, FLAME);
+pub extern "C" fn ruleste_entity_draw(_id: EntityId) {
+    // Visual is drawn by the host via the SpriteBank ("fireball" sprite).
 }

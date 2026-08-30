@@ -1,7 +1,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 use ruleste_plugins_api::event;
 use ruleste_plugins_api::host::{
-    EV_TEMPLE_FALL, die, drain_events, draw_rect, emit, entities_by_type, remove,
+    EV_TEMPLE_FALL, die, drain_events, draw_image, draw_rect, emit, entities_by_type, remove,
 };
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
@@ -295,6 +295,21 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     } else {
         (st.w, st.h)
     };
+    // The reflective TempleMirror kinds render the real mirror frame + glass
+    // (62x37 / 54x29, glass inset 4px). The other kinds stay as colored rects:
+    // they are temple blocks/gates/eyes/statues without individual sprites.
+    if st.kind == Kind::TempleMirror || st.kind == Kind::TempleMirrorPortal {
+        draw_image("objects/mirror/frame", p.x, p.y, 0.0, 1.0, 1.0);
+        draw_image(
+            "objects/mirror/glassbg",
+            p.x + 4.0,
+            p.y + 4.0,
+            0.0,
+            1.0,
+            1.0,
+        );
+        return;
+    }
     draw_rect(p.x, p.y, w, h, c);
     if st.kind == Kind::TempleEye || st.kind == Kind::PlayerSeeker {
         draw_rect(p.x - 3.0, p.y - 3.0, 6.0, 6.0, EYE);

@@ -1,5 +1,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
-use ruleste_plugins_api::host::{core_mode, die, draw_rect, entities_by_type, set_core_mode};
+use ruleste_plugins_api::host::{
+    core_mode, die, draw_image, draw_rect, entities_by_type, set_core_mode,
+};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
@@ -25,12 +27,6 @@ const MSG: Color = Color {
     r: 0xaa,
     g: 0xaa,
     b: 0xaa,
-    a: 0xff,
-};
-const TOGGLE: Color = Color {
-    r: 0x44,
-    g: 0x88,
-    b: 0xcc,
     a: 0xff,
 };
 
@@ -150,10 +146,27 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     };
     let e = Entity::new(id);
     let p = e.position.get();
-    let c = match st.kind {
-        Kind::RisingLava | Kind::SandwichLava => LAVA,
-        Kind::CoreMessage => MSG,
-        Kind::CoreModeToggle => TOGGLE,
-    };
-    draw_rect(p.x, p.y, st.w, st.h, c);
+    match st.kind {
+        // The core-mode toggle is an airborne capsule shell with a fire/ice orb
+        // showing the mode it will flip to.
+        Kind::CoreModeToggle => {
+            let cx = p.x + st.w * 0.5;
+            let cy = p.y + st.h * 0.5;
+            draw_image("objects/core/capsule_a", cx - 8.0, cy - 8.0, 0.0, 1.0, 1.0);
+            let ball = if core_mode() == 0 {
+                "objects/core/ball_a_ice"
+            } else {
+                "objects/core/ball_a"
+            };
+            draw_image(ball, cx - 8.0, cy - 8.0, 0.0, 1.0, 1.0);
+        }
+        _ => {
+            let c = match st.kind {
+                Kind::RisingLava | Kind::SandwichLava => LAVA,
+                Kind::CoreMessage => MSG,
+                _ => LAVA,
+            };
+            draw_rect(p.x, p.y, st.w, st.h, c);
+        }
+    }
 }

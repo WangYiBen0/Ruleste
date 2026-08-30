@@ -44,6 +44,7 @@ unsafe extern "C" {
     fn host_sprite_play(id: EntityId, name: *const u8, len: u32);
     fn host_sprite_bank_set(id: EntityId, name: *const u8, len: u32);
     fn host_sprite_animation(id: EntityId, out: *mut u8, out_cap: u32) -> u32;
+    fn host_sprite_bank_get(id: EntityId, out: *mut u8, out_cap: u32) -> u32;
     fn host_sprite_frame_get(id: EntityId) -> f32;
     fn host_sprite_frame_set(id: EntityId, frame: f32);
     fn host_sprite_rate_get(id: EntityId) -> f32;
@@ -724,6 +725,19 @@ impl Sprite {
         let mut buf = [0u8; 128];
         unsafe {
             host_sprite_animation(self.id, buf.as_mut_ptr(), buf.len() as u32);
+        }
+        let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        String::from_utf8_lossy(&buf[..len]).into_owned()
+    }
+
+    /// The current SpriteBank sprite name (the host defaults this to the entity
+    /// type). Useful for plugins that own many entity types and must branch on
+    /// which one they are handling.
+    #[must_use]
+    pub fn bank(&self) -> String {
+        let mut buf = [0u8; 128];
+        unsafe {
+            host_sprite_bank_get(self.id, buf.as_mut_ptr(), buf.len() as u32);
         }
         let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
         String::from_utf8_lossy(&buf[..len]).into_owned()

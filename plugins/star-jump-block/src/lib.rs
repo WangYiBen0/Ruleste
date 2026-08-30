@@ -7,7 +7,7 @@
 //! The star-boost itself is powered by the separate `StarJumpController`; the
 //! block only sinks. It is never consumed.
 
-use ruleste_plugins_api::host;
+use ruleste_plugins_api::host::{self, draw_image};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
@@ -24,6 +24,36 @@ const SINK_RATE: f32 = 1.0;
 /// `HasPlayerRider` hold time once the player steps off.
 const SINK_HOLD: f32 = 0.1;
 
+/// StarJumpBlock railings are 7-frame loops; the frame ids carry autotile
+/// suffixes, so list them explicitly rather than generating by index.
+const LEFT_RAIL: [&str; 7] = [
+    "objects/starjumpBlock/leftrailing00",
+    "objects/starjumpBlock/leftrailing01",
+    "objects/starjumpBlock/leftrailing02",
+    "objects/starjumpBlock/leftrailing03",
+    "objects/starjumpBlock/leftrailing04U",
+    "objects/starjumpBlock/leftrailing05",
+    "objects/starjumpBlock/leftrailing06",
+];
+const CENTER_RAIL: [&str; 7] = [
+    "objects/starjumpBlock/railing00M",
+    "objects/starjumpBlock/railing01",
+    "objects/starjumpBlock/railing02s",
+    "objects/starjumpBlock/railing03",
+    "objects/starjumpBlock/railing04W",
+    "objects/starjumpBlock/railing05",
+    "objects/starjumpBlock/railing06",
+];
+const RIGHT_RAIL: [&str; 7] = [
+    "objects/starjumpBlock/rightrailing00M",
+    "objects/starjumpBlock/rightrailing01",
+    "objects/starjumpBlock/rightrailing02",
+    "objects/starjumpBlock/rightrailing03I",
+    "objects/starjumpBlock/rightrailing04",
+    "objects/starjumpBlock/rightrailing05",
+    "objects/starjumpBlock/rightrailing06H",
+];
+
 fn sine_in_out(t: f32) -> f32 {
     ((t * std::f32::consts::PI).cos() * -0.5 + 0.5).clamp(0.0, 1.0)
 }
@@ -34,6 +64,7 @@ struct JumpState {
     start_y: f32,
     y_lerp: f32,
     sink_timer: f32,
+    anim_time: f32,
 }
 
 thread_local! {
@@ -95,6 +126,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
                 start_y: y,
                 y_lerp: 0.0,
                 sink_timer: 0.0,
+                anim_time: 0.0,
             },
         );
     });
@@ -105,6 +137,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     with_state(id, |st| {
         let entity = Entity::new(id);
         let p = entity.position.get();
+        st.anim_time += dt;
 
         // Sink behavior: ride a 12px sine dip while stood on, ease back up.
         if st.sinks {
@@ -130,18 +163,52 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
-    with_state(id, |_st| {
+    with_state(id, |st| {
         let entity = Entity::new(id);
         let (w, h, ox, oy) = entity.hitbox.get();
         let p = entity.position.get();
-        // Star slab: deep purple fill under a starlight cap.
-        host::draw_rect(p.x + ox, p.y + oy, w, h, Color::new(0x60, 0x38, 0xa8, 0xff));
-        host::draw_rect(
-            p.x + ox,
-            p.y + oy,
-            w,
-            2.0,
-            Color::new(0xd0, 0xb0, 0xf8, 0xff),
+        let bx = p.x + ox;
+        let by = p.y + oy;
+        let b = "objects/starjumpBlock/";
+
+        // Body fill (the star slab).
+        host::draw_rect(bx, by, w, h, Color::new(0x60, 0x38, 0xa8, 0xff));
+
+        // Static 1px border from the starjumpBlock set (corners 8x8, edges
+        // 8x1 / 1x8). The corner frames carry the rounded corners; the thin
+        // edges trace the perimeter over the fill.
+        draw_image(&format!("{b}corner00"), bx, by, 0.0, 1.0, 1.0);
+        draw_image(&format!("{b}corner01"), bx + w - 8.0, by, 0.0, 1.0, 1.0);
+        draw_image(&format!("{b}corner02"), bx, by + h - 8.0, 0.0, 1.0, 1.0);
+        draw_image(
+            &format!("{b}corner03"),
+            bx + w - 8.0,
+            by + h - 8.0,
+            0.0,
+            1.0,
+            1.0,
         );
+        let mut x = bx + 8.0;
+        while x < bx + w - 8.0 {
+            draw_image(&format!("{b}edgeH00"), x, by, 0.0, 1.0, 1.0);
+            draw_image(&format!("{b}edgeH02"), x, by + h - 1.0, 0.0, 1.0, 1.0);
+            x += 8.0;
+        }
+        let mut y = by + 8.0;
+        while y < by + h - 8.0 {
+            draw_image(&format!("{b}edgeV00"), bx, y, 0.0, 1.0, 1.0);
+            draw_image(&format!("{b}edgeV02"), bx + w - 1.0, y, 0.0, 1.0, 1.0);
+            y += 8.0;
+        }
+
+        // Animated glowing rail along the top edge (left cap + tiled centre + right cap).
+        let ri = (st.anim_time * 12.0) as usize % 7;
+        draw_image(LEFT_RAIL[ri], bx, by, 0.0, 1.0, 1.0);
+        let mut rx = bx + 8.0;
+        while rx < bx + w - 8.0 {
+            draw_image(CENTER_RAIL[ri], rx, by, 0.0, 1.0, 1.0);
+            rx += 8.0;
+        }
+        draw_image(RIGHT_RAIL[ri], bx + w - 8.0, by, 0.0, 1.0, 1.0);
     });
 }

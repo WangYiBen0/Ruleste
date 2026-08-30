@@ -203,10 +203,13 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let entity = Entity::new(id);
     let p = entity.position.get();
     let (w, h, ox, oy) = entity.hitbox.get();
-    // Solid timber slab.
-    ruleste_plugins_api::host::draw_rect(p.x + ox, p.y + oy, w, h, crate_color());
-}
-
-fn crate_color() -> ruleste_plugins_api::types::Color {
-    ruleste_plugins_api::types::Color::new(0x58, 0x3c, 0x20, 0xff)
+    // The real zip-mover cabin (a 24x24 frame scaled to the platform).
+    ruleste_plugins_api::host::draw_image(
+        "objects/zipmover/block",
+        p.x + ox,
+        p.y + oy,
+        0.0,
+        w / 24.0,
+        h / 24.0,
+    );
 }

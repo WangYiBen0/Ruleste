@@ -1,7 +1,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 use std::cell::RefCell;
 
-use ruleste_plugins_api::host::{die, draw_rect, entities_by_type, play_sound};
+use ruleste_plugins_api::host::{die, draw_rect, draw_tile_box, entities_by_type, play_sound};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
@@ -412,20 +412,8 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
             return;
         }
 
-        let color = Color {
-            r: st.fill_color_r,
-            g: st.fill_color_g,
-            b: st.fill_color_b,
-            a: 0xff,
-        };
-        let pad = 3.0;
-        draw_rect(
-            p.x + pad,
-            p.y + pad,
-            st.w - pad * 2.0,
-            st.h - pad * 2.0,
-            color,
-        );
+        // Body uses the level's solid tile texture (autotiled), not a flat colour.
+        draw_tile_box('3', p.x, p.y, (st.w / 8.0) as u32, (st.h / 8.0) as u32);
 
         if st.flash > 0.01 {
             let f = st.flash.min(1.0);

@@ -5,7 +5,7 @@
 //! for ~2s before respawning. Mirrors `CrumblePlatform` in
 //! `references/source/Celeste/Celeste/CrumblePlatform.cs`.
 
-use ruleste_plugins_api::host::{draw_rect, entities_by_type, player_state};
+use ruleste_plugins_api::host::{draw_rect, draw_tile_box, entities_by_type, player_state};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, Hitbox, Position, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
@@ -17,12 +17,6 @@ ruleste_plugins_api::ruleste_entity_types!("crumbleBlock");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const CRUMBLE: Color = Color {
-    r: 0x9b,
-    g: 0x6a,
-    b: 0x43,
-    a: 0xff,
-};
 const CRUMBLE_FADE: Color = Color {
     r: 0x9b,
     g: 0x6a,
@@ -153,8 +147,8 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         None => return,
     };
     let p = Entity::new(id).position.get();
-    let c = if st.phase == 2 { CRUMBLE_FADE } else { CRUMBLE };
-    draw_rect(p.x, p.y, st.w, 8.0, c);
+    // Body uses the level's solid tile texture; crack separators stay as detail.
+    draw_tile_box('3', p.x, p.y, (st.w / 8.0) as u32, 1);
     let mut x = p.x + 8.0;
     while x < p.x + st.w - 1.0 {
         draw_rect(x - 1.0, p.y, 2.0, 8.0, CRUMBLE_FADE);

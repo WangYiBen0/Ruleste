@@ -6,28 +6,15 @@
 //! procedural body keeps a slow side-to-side idle so the chapter-opening
 //! moments feel alive. Dialogue is a later host feature.
 
-use ruleste_plugins_api::host::draw_rect;
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
-
-const BODY: Color = Color {
-    r: 0x2a,
-    g: 0x2a,
-    b: 0x34,
-    a: 0xff,
-};
-const BELLY: Color = Color {
-    r: 0x50,
-    g: 0x58,
-    b: 0x68,
-    a: 0xff,
-};
+use ruleste_plugins_api::types::{EntityId, Vec2};
 
 #[derive(Debug, Default)]
 struct BirdState {
     timer: f32,
     mode: String,
+    base: Vec2,
 }
 
 thread_local! {
@@ -48,24 +35,22 @@ pub fn init(id: EntityId, data: *const u8, len: u32) {
     let bytes = unsafe { std::slice::from_raw_parts(data, len as usize) };
     let spawn: MapData = spawn_data(bytes);
     let entity = Entity::new(id);
-    entity
-        .position
-        .set_xy(spawn.get_float("x", 0.0), spawn.get_float("y", 0.0));
+    let (x, y) = (spawn.get_float("x", 0.0), spawn.get_float("y", 0.0));
+    entity.position.set_xy(x, y);
     entity.depth.set(-11000);
+    // The `bird` SpriteBank sprite renders the body; the host animates the idle
+    // crow pose each frame.
+    entity.sprite.set_bank("bird");
+    entity.sprite.play("idle");
     with_state(id, |st| {
         st.mode = spawn.get_str("mode", "Idle");
+        st.base = Vec2::new(x, y);
     });
 }
 
 pub fn update(id: EntityId, dt: f32) {
     with_state(id, |st| {
         st.timer += dt;
-    });
-}
-
-pub fn draw(id: EntityId) {
-    with_state(id, |st| {
-        let p = Entity::new(id).position.get();
         // Slow side-to-side idle shift; FlyAway birds add a gentle waft upward.
         let shift = (st.timer * 0.6).sin() * 4.0;
         let waft = if st.mode == "FlyAway" {
@@ -73,18 +58,11 @@ pub fn draw(id: EntityId) {
         } else {
             0.0
         };
-        let bx = p.x + shift;
-        let by = p.y - waft;
-        // Body (large), head, and beak, sized like the original's sprite box.
-        draw_rect(bx - 18.0, by - 12.0, 36.0, 24.0, BODY);
-        draw_rect(bx - 10.0, by - 6.0, 20.0, 12.0, BELLY);
-        draw_rect(bx - 22.0, by - 22.0, 12.0, 12.0, BODY);
-        draw_rect(
-            bx - 26.0,
-            by - 10.0,
-            6.0,
-            4.0,
-            Color::new(0xd8, 0x60, 0x30, 0xff),
-        );
+        Entity::new(id)
+            .position
+            .set_xy(st.base.x + shift, st.base.y - waft);
     });
 }
+
+// The bird is drawn by the host SpriteBank renderer via `entity.sprite`.
+pub fn draw(_id: EntityId) {}

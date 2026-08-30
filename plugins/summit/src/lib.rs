@@ -1,5 +1,5 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
-use ruleste_plugins_api::host::{collect, draw_rect, entities_by_type, set_respawn};
+use ruleste_plugins_api::host::{collect, draw_image, draw_rect, entities_by_type, set_respawn};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
@@ -25,12 +25,6 @@ const FLAG: Color = Color {
     r: 0x44,
     g: 0xcc,
     b: 0x66,
-    a: 0xff,
-};
-const GEM: Color = Color {
-    r: 0xff,
-    g: 0xee,
-    b: 0x55,
     a: 0xff,
 };
 const MANAGER: Color = Color {
@@ -160,11 +154,26 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     };
     let e = Entity::new(id);
     let p = e.position.get();
-    let c = match st.kind {
-        Kind::SummitCloud => CLOUD,
-        Kind::SummitCheckpoint => FLAG,
-        Kind::SummitGem => GEM,
-        Kind::SummitGemManager => MANAGER,
-    };
-    draw_rect(p.x, p.y, st.w, st.h, c);
+    match st.kind {
+        // The summit gem is the real heart-gem collectable sprite.
+        Kind::SummitGem => {
+            draw_image(
+                "collectables/heartGem/0/00",
+                p.x + st.w * 0.5 - 8.0,
+                p.y + st.h * 0.5 - 8.0,
+                0.0,
+                1.0,
+                1.0,
+            );
+        }
+        _ => {
+            let c = match st.kind {
+                Kind::SummitCloud => CLOUD,
+                Kind::SummitCheckpoint => FLAG,
+                Kind::SummitGemManager => MANAGER,
+                _ => CLOUD,
+            };
+            draw_rect(p.x, p.y, st.w, st.h, c);
+        }
+    }
 }

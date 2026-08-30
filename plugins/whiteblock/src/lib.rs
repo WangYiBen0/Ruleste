@@ -2,7 +2,7 @@
 use std::cell::RefCell;
 
 use ruleste_plugins_api::host::{
-    draw_rect, entities_by_type, is_cold_mode, play_sound, player_ducking,
+    draw_rect, draw_tile_box, entities_by_type, is_cold_mode, play_sound, player_ducking,
 };
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
@@ -13,12 +13,6 @@ ruleste_plugins_api::ruleste_entity_types!("whiteblock");
 
 const DUCK_DURATION: f32 = 3.0;
 
-const COLOR_ENABLED: Color = Color {
-    r: 0xf2,
-    g: 0xf2,
-    b: 0xf2,
-    a: 0xff,
-};
 const COLOR_DISABLED: Color = Color {
     r: 0xf2,
     g: 0xf2,
@@ -133,11 +127,13 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         Some(s) => (s.w, s.h),
         None => (8.0, 8.0),
     };
-    let color = match st {
-        Some(s) if !s.enabled || s.activated => COLOR_DISABLED,
-        _ => COLOR_ENABLED,
-    };
-    draw_rect(p.x, p.y, w, h, color);
+    let enabled = st.map(|s| s.enabled && !s.activated).unwrap_or(true);
+    if enabled {
+        // Enabled white blocks use the level's solid tile texture.
+        draw_tile_box('3', p.x, p.y, (w / 8.0) as u32, (h / 8.0) as u32);
+    } else {
+        draw_rect(p.x, p.y, w, h, COLOR_DISABLED);
+    }
 }
 
 #[unsafe(no_mangle)]

@@ -845,6 +845,14 @@ impl WasmHost {
         )?;
         linker.func_wrap(
             "env",
+            "host_sprite_bank_get",
+            |mut caller: Caller<'_, GameState>, id: u32, out: u32, cap: u32| {
+                let s = world_get(&caller, id, |e| e.sprite.sprite.clone()).unwrap_or_default();
+                write_string(&mut caller, out, cap, &s) as u32
+            },
+        )?;
+        linker.func_wrap(
+            "env",
             "host_sprite_frame_get",
             |caller: Caller<'_, GameState>, id: u32| {
                 caller.data().world.get(id).map_or(0.0, |e| e.sprite.frame)

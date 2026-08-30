@@ -4,10 +4,10 @@
 //! The B-side black gem collectible: a solid-looking pickup that is consumed when
 //! the player overlaps it.
 
-use ruleste_plugins_api::host::{self, draw_rect, entities_by_type};
+use ruleste_plugins_api::host::{self, entities_by_type};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, Hitbox, Position, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
+use ruleste_plugins_api::types::EntityId;
 
 use std::cell::RefCell;
 
@@ -15,19 +15,6 @@ ruleste_plugins_api::ruleste_meta!("black-gem");
 ruleste_plugins_api::ruleste_entity_types!("blackGem");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const GEM: Color = Color {
-    r: 0x18,
-    g: 0x18,
-    b: 0x20,
-    a: 0xff,
-};
-const SPARK: Color = Color {
-    r: 0xff,
-    g: 0xff,
-    b: 0xff,
-    a: 0xff,
-};
 
 thread_local! {
     static COLLECTED: RefCell<ruleste_plugins_api::plugin::EntityState<bool>> =
@@ -55,6 +42,8 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
         .set_xy(spawn.get_float("x", 0.0), spawn.get_float("y", 0.0));
     e.hitbox.set(16.0, 16.0, -8.0, -8.0);
     e.depth.set(200);
+    e.sprite.set_bank("heartGemWhite");
+    e.sprite.play("idle");
     COLLECTED.with(|s| s.borrow_mut().insert(id, false));
 }
 
@@ -73,11 +62,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, _dt: f32) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ruleste_entity_draw(id: EntityId) {
-    if COLLECTED.with(|s| s.borrow_mut().get(id).copied().unwrap_or(false)) {
-        return;
-    }
-    let p = Entity::new(id).position.get();
-    draw_rect(p.x - 6.0, p.y - 6.0, 12.0, 12.0, GEM);
-    draw_rect(p.x - 2.0, p.y - 2.0, 4.0, 4.0, SPARK);
+pub extern "C" fn ruleste_entity_draw(_id: EntityId) {
+    // Visual (the heart gem) is drawn by the host via the SpriteBank
+    // ("heartGemWhite" sprite); it is `<Center/>`d on the entity anchor.
 }

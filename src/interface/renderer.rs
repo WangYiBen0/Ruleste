@@ -387,8 +387,7 @@ impl Renderer {
             // Resolve the atlas frame: prefer SpriteBank animations; fall back
             // to treating the animation name as a direct atlas frame id (used
             // by scenery/decals like "scenery/lamp" that are not in Sprites.xml).
-            let (frame_id, sprite_origin) = if let Some(sprite) = bank.sprite(&entity.sprite.sprite)
-            {
+            let (frame_id, sprite_ref) = if let Some(sprite) = bank.sprite(&entity.sprite.sprite) {
                 let Some(anim) = sprite.animation(&entity.sprite.animation) else {
                     continue;
                 };
@@ -396,13 +395,13 @@ impl Renderer {
                 else {
                     continue;
                 };
-                (frame_id, (sprite.origin.0 as f32, sprite.origin.1 as f32))
+                (frame_id, Some(sprite))
             } else {
                 let frame_id = entity.sprite.animation.clone();
                 if !atlas.frame_index.contains_key(&frame_id) {
                     continue;
                 }
-                (frame_id, (0.0, 0.0))
+                (frame_id, None)
             };
             let Some((page_idx, frame_idx)) = atlas.frame_index.get(&frame_id) else {
                 continue;
@@ -413,8 +412,21 @@ impl Renderer {
                 continue;
             };
 
-            let ox = sprite_origin.0 + frame.offset.x as f32;
-            let oy = sprite_origin.1 + frame.offset.y as f32;
+            // Resolve the anchor point within the frame. A sprite may declare an
+            // explicit `<Origin>`, be `<Center/>`d (Justify 0.5), or use an
+            // explicit `<Justify x y>`; otherwise the origin defaults to (0,0).
+            let (mut ox, mut oy) = match sprite_ref {
+                Some(sprite) if sprite.center => {
+                    (frame.clip.w as f32 * 0.5, frame.clip.h as f32 * 0.5)
+                }
+                Some(sprite) => match sprite.justify {
+                    Some((jx, jy)) => (jx * frame.clip.w as f32, jy * frame.clip.h as f32),
+                    None => (sprite.origin.0 as f32, sprite.origin.1 as f32),
+                },
+                None => (0.0, 0.0),
+            };
+            ox += frame.offset.x as f32;
+            oy += frame.offset.y as f32;
 
             // Anchor: entity position is the bottom-center of its hitbox.
             let anchor_x = entity.position.x + entity.hitbox_offset.x + entity.hitbox.x * 0.5;

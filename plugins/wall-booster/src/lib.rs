@@ -2,32 +2,13 @@
 use std::cell::RefCell;
 
 use ruleste_plugins_api::event;
-use ruleste_plugins_api::host::{draw_rect, emit, entities_by_type, is_cold_mode, play_sound};
+use ruleste_plugins_api::host::{draw_image, emit, entities_by_type, is_cold_mode, play_sound};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
+use ruleste_plugins_api::types::EntityId;
 
 ruleste_plugins_api::ruleste_meta!("wallBooster");
 ruleste_plugins_api::ruleste_entity_types!("wallBooster");
-
-const BOOST_HOT: Color = Color {
-    r: 0x33,
-    g: 0xcc,
-    b: 0xff,
-    a: 0xff,
-};
-const BOOST_COLD: Color = Color {
-    r: 0x88,
-    g: 0xee,
-    b: 0xff,
-    a: 0xff,
-};
-const BOOST_EDGE: Color = Color {
-    r: 0x11,
-    g: 0x88,
-    b: 0xcc,
-    a: 0xff,
-};
 
 #[derive(Clone, Copy)]
 struct WallBoosterState {
@@ -153,11 +134,50 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
             None => return,
         };
 
-        let color = if st.ice_mode { BOOST_COLD } else { BOOST_HOT };
+        // The booster is an 8px-wide sprite that overhangs the 2px collision box:
+        // it sticks out to the left of a left-facing wall (or right for right).
+        let kind = if st.ice_mode { "ice" } else { "fire" };
+        let sx = if st.left { p.x - 6.0 } else { p.x + 6.0 };
 
-        let x = if st.left { p.x } else { p.x + 6.0 };
-        draw_rect(x, p.y, st.w, st.h, color);
-        draw_rect(x, p.y, st.w, 1.0, BOOST_EDGE);
+        if st.h <= 8.0 {
+            draw_image(
+                &format!("objects/wallBooster/{kind}Mid00"),
+                sx,
+                p.y,
+                0.0,
+                1.0,
+                1.0,
+            );
+        } else {
+            draw_image(
+                &format!("objects/wallBooster/{kind}Top00"),
+                sx,
+                p.y,
+                0.0,
+                1.0,
+                1.0,
+            );
+            let mut y = p.y + 8.0;
+            while y + 8.0 <= p.y + st.h - 8.0 {
+                draw_image(
+                    &format!("objects/wallBooster/{kind}Mid00"),
+                    sx,
+                    y,
+                    0.0,
+                    1.0,
+                    1.0,
+                );
+                y += 8.0;
+            }
+            draw_image(
+                &format!("objects/wallBooster/{kind}Bottom00"),
+                sx,
+                p.y + st.h - 8.0,
+                0.0,
+                1.0,
+                1.0,
+            );
+        }
     });
 }
 

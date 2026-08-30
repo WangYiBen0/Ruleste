@@ -5,10 +5,10 @@
 //! carrying anything standing on top. Mirrors `MovingPlatform` in
 //! `references/source/Celeste/Celeste/MovingPlatform.cs`.
 
-use ruleste_plugins_api::host::draw_rect;
+use ruleste_plugins_api::host::draw_image;
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId, Vec2};
+use ruleste_plugins_api::types::{EntityId, Vec2};
 
 use std::cell::RefCell;
 
@@ -16,13 +16,6 @@ ruleste_plugins_api::ruleste_meta!("moving-platform");
 ruleste_plugins_api::ruleste_entity_types!("movingPlatform");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const PLAT: Color = Color {
-    r: 0x7a,
-    g: 0x7a,
-    b: 0x88,
-    a: 0xff,
-};
 
 const SPEED: f32 = 40.0;
 
@@ -100,5 +93,21 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         None => return,
     };
     let p = Entity::new(id).position.get();
-    draw_rect(p.x, p.y, st.w, st.h, PLAT);
+    // Real wooden platform (32x8 tile) tiled across the body.
+    let mut ty = 0.0;
+    while ty < st.h {
+        let mut tx = 0.0;
+        while tx < st.w {
+            draw_image(
+                "objects/woodPlatform/default",
+                p.x + tx,
+                p.y + ty,
+                0.0,
+                1.0,
+                1.0,
+            );
+            tx += 32.0;
+        }
+        ty += 8.0;
+    }
 }

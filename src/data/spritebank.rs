@@ -31,6 +31,12 @@ pub struct SpriteData {
     pub start: String,
     /// Texture origin (usually bottom-center of the first frame).
     pub origin: (i32, i32),
+    /// When set, the frame is centered on the entity anchor (`<Center/>` in
+    /// the original SpriteBank, equivalent to `Justify 0.5 0.5`).
+    pub center: bool,
+    /// Optional explicit justify, `(x, y)` in `[0,1]` of the frame size
+    /// (`<Justify x=".." y=".."/>` in the original SpriteBank).
+    pub justify: Option<(f32, f32)>,
     pub animations: HashMap<String, Animation>,
 }
 
@@ -90,6 +96,8 @@ fn parse_sprite(el: roxmltree::Node<'_, '_>) -> anyhow::Result<Option<SpriteData
     }
     let start = el.attribute("start").unwrap_or("idle").to_string();
     let mut origin = (0, 0);
+    let mut center = false;
+    let mut justify = None;
     let mut animations = HashMap::new();
 
     for child in el.children().filter(|n| n.is_element()) {
@@ -99,6 +107,14 @@ fn parse_sprite(el: roxmltree::Node<'_, '_>) -> anyhow::Result<Option<SpriteData
                     child.attribute("x").and_then(parse_i32).unwrap_or(0),
                     child.attribute("y").and_then(parse_i32).unwrap_or(0),
                 );
+            }
+            "Center" => {
+                center = true;
+            }
+            "Justify" => {
+                let jx = child.attribute("x").and_then(parse_f32).unwrap_or(0.5);
+                let jy = child.attribute("y").and_then(parse_f32).unwrap_or(0.5);
+                justify = Some((jx, jy));
             }
             "Anim" | "Loop" => {
                 let id = child.attribute("id").unwrap_or("").to_string();
@@ -128,6 +144,8 @@ fn parse_sprite(el: roxmltree::Node<'_, '_>) -> anyhow::Result<Option<SpriteData
         path,
         start,
         origin,
+        center,
+        justify,
         animations,
     }))
 }

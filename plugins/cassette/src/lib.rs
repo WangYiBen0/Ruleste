@@ -7,10 +7,10 @@
 //! its own crate.
 
 use ruleste_plugins_api::event;
-use ruleste_plugins_api::host::{self, draw_rect, entities_by_type};
+use ruleste_plugins_api::host::{self, entities_by_type};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, Hitbox, Position, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
+use ruleste_plugins_api::types::EntityId;
 
 use std::cell::RefCell;
 
@@ -18,13 +18,6 @@ ruleste_plugins_api::ruleste_meta!("cassette");
 ruleste_plugins_api::ruleste_entity_types!("cassette");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const CASSETTE_COL: Color = Color {
-    r: 0x33,
-    g: 0x33,
-    b: 0x44,
-    a: 0xff,
-};
 
 thread_local! {
     static COLLECTED: RefCell<ruleste_plugins_api::plugin::EntityState<bool>> =
@@ -52,6 +45,8 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
         .set_xy(spawn.get_float("x", 0.0), spawn.get_float("y", 0.0));
     e.hitbox.set(16.0, 16.0, -8.0, -8.0);
     e.depth.set(200);
+    e.sprite.set_bank("cassette");
+    e.sprite.play("idle");
     COLLECTED.with(|s| s.borrow_mut().insert(id, false));
 }
 
@@ -71,10 +66,6 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, _dt: f32) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ruleste_entity_draw(id: EntityId) {
-    if COLLECTED.with(|s| s.borrow_mut().get(id).copied().unwrap_or(false)) {
-        return;
-    }
-    let p = Entity::new(id).position.get();
-    draw_rect(p.x - 8.0, p.y - 8.0, 16.0, 16.0, CASSETTE_COL);
+pub extern "C" fn ruleste_entity_draw(_id: EntityId) {
+    // Visual is drawn by the host via the SpriteBank ("cassette" sprite).
 }
