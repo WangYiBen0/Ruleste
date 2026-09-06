@@ -1,0 +1,10 @@
+[package]
+name = "ruleste-plugin-player-seeker"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruleste-plugins-api = { path = "../../crates/ruleste-plugins-api" }

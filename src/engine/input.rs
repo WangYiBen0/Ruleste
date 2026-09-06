@@ -9,7 +9,7 @@
 use std::collections::HashSet;
 
 use ruleste_plugins_api::types::input as act;
-use sdl3::event::Event;
+use sdl3::event::{Event, WindowEvent};
 use sdl3::keyboard::Keycode;
 use sdl3::mouse::MouseButton;
 
@@ -149,6 +149,15 @@ impl Input {
                     self.mouse.left_down = false;
                     self.mouse.x = x;
                     self.mouse.y = y;
+                }
+                // Mirror `MInput.UpdateNull()`: when the window loses focus,
+                // clear all held keys so the player doesn't walk off-screen
+                // while alt-tabbed.
+                Event::Window {
+                    win_event: WindowEvent::FocusLost,
+                    ..
+                } => {
+                    self.keys_down.clear();
                 }
                 _ => {}
             }
@@ -296,5 +305,38 @@ mod tests {
         input.pump([], 1.0 / 60.0);
         assert!(!input.mouse.left_pressed);
         assert!(!input.mouse.left_released);
+    }
+
+    #[test]
+    fn focus_loss_clears_held_keys() {
+        let mut input = Input::default();
+        // Press and hold Escape (PAUSE action).
+        input.pump(
+            [Event::KeyDown {
+                timestamp: 0,
+                window_id: 0,
+                keycode: Some(Keycode::Escape),
+                scancode: None,
+                keymod: sdl3::keyboard::Mod::empty(),
+                repeat: false,
+                which: 0,
+                raw: 0,
+            }],
+            1.0 / 60.0,
+        );
+        assert!(input.button(act::PAUSE), "escape should be held after keydown");
+        // Window loses focus — all held keys should be cleared.
+        input.pump(
+            [Event::Window {
+                timestamp: 0,
+                window_id: 0,
+                win_event: WindowEvent::FocusLost,
+            }],
+            1.0 / 60.0,
+        );
+        assert!(
+            !input.button(act::PAUSE),
+            "escape should be cleared after focus lost"
+        );
     }
 }

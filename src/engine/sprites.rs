@@ -12,6 +12,8 @@ pub struct SpriteAnimator<'a> {
     bank: &'a SpriteBank,
     /// Cache of (sprite name, animation id) -> resolved atlas frame ids.
     cache: HashMap<(String, String), Vec<String>>,
+    /// Simple xorshift64 PRNG for weighted random goto selection.
+    rng: u64,
 }
 
 impl<'a> SpriteAnimator<'a> {
@@ -20,6 +22,7 @@ impl<'a> SpriteAnimator<'a> {
             atlas,
             bank,
             cache: HashMap::new(),
+            rng: 0xDEAD_BEEF_CAFE_1234,
         }
     }
 
@@ -51,17 +54,18 @@ impl<'a> SpriteAnimator<'a> {
                 e.sprite.frame += e.sprite.rate * dt / anim.delay;
             }
             if e.sprite.frame >= len {
-                match &anim.goto {
-                    Some(next) => {
-                        e.sprite.animation = next.clone();
-                        e.sprite.frame = 0.0;
-                    }
-                    None if anim.is_loop => {
-                        e.sprite.frame %= len;
-                    }
-                    None => {
-                        e.sprite.frame = len - 1.0;
-                    }
+                if let Some(ref chooser) = anim.goto {
+                    let next = chooser.choose(&mut self.rng);
+                    e.sprite.animation = next.to_string();
+                    e.sprite.frame = 0.0;
+                } else if anim.is_loop {
+                    e.sprite.frame %= len;
+                } else {
+                    // Non-loop animation finished with no goto.
+                    // Pin to last frame and clear animation (equivalent to
+                    // C# `Animating = false` + clearing state).
+                    e.sprite.frame = len - 1.0;
+                    e.sprite.animation.clear();
                 }
             }
         }
@@ -115,14 +119,14 @@ impl<'a> SpriteAnimator<'a> {
     }
 
     fn subtexture_key(&self, prefix: &str, index: u32) -> String {
-        if index == 0 && self.atlas.frame_index.contains_key(prefix) {
+        if index == 0 && self.atlas.has_frame(prefix) {
             return prefix.to_string();
         }
         let base: String = index.to_string();
         for pad in 0..=6 {
             let width: usize = base.len() + pad;
             let key = format!("{prefix}{:0>width$}", base, width = width);
-            if self.atlas.frame_index.contains_key(&key) {
+            if self.atlas.has_frame(&key) {
                 return key;
             }
         }
@@ -130,14 +134,14 @@ impl<'a> SpriteAnimator<'a> {
     }
 
     fn subtexture_key_exists(&self, prefix: &str, index: u32) -> bool {
-        if index == 0 && self.atlas.frame_index.contains_key(prefix) {
+        if index == 0 && self.atlas.has_frame(prefix) {
             return true;
         }
         let base: String = index.to_string();
         (0..=6).any(|pad| {
             let width: usize = base.len() + pad;
             let key = format!("{prefix}{:0>width$}", base, width = width);
-            self.atlas.frame_index.contains_key(&key)
+            self.atlas.has_frame(&key)
         })
     }
 }

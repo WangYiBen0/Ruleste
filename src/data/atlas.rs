@@ -58,6 +58,8 @@ pub struct Frame {
 pub struct AtlasMeta {
     pub source_dir: String,
     pub pages: Vec<Page>,
+    /// Alias mapping from the optional "LINKS" trailer: links[name] = real_id.
+    pub links: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -96,7 +98,26 @@ impl AtlasMeta {
             }
             pages.push(Page { name, frames });
         }
-        Ok(AtlasMeta { source_dir, pages })
+
+        // Parse optional "LINKS" trailer (alias mapping).
+        let mut links = HashMap::new();
+        if !r.is_at_end() {
+            let marker = r.read_dotnet_string()?;
+            if marker == "LINKS" {
+                let count = r.read_i16()?;
+                for _ in 0..count {
+                    let key = r.read_dotnet_string()?.to_string();
+                    let value = r.read_dotnet_string()?.to_string();
+                    links.insert(key, value);
+                }
+            }
+        }
+
+        Ok(AtlasMeta {
+            source_dir,
+            pages,
+            links,
+        })
     }
 
     pub fn from_file(path: &Path) -> ReadResult<AtlasMeta> {
@@ -190,11 +211,47 @@ impl AtlasPage {
 #[derive(Debug, Default)]
 pub struct Atlas {
     pub pages: Vec<AtlasPage>,
-    /// Maps a frame id to a `(page index, frame index)`.
+    /// Maps a **lowercase** frame id to a `(page index, frame index)`.
+    /// Keys are always stored in lowercase for case-insensitive lookup.
     pub frame_index: HashMap<String, (usize, usize)>,
+    /// Alias mapping: if a direct lookup fails, check `links` to redirect.
+    links: HashMap<String, String>,
 }
 
 impl Atlas {
+    /// Normalizes a frame id for case-insensitive lookup (lowercase).
+    fn normalize(id: &str) -> String {
+        id.to_ascii_lowercase()
+    }
+
+    /// Case-insensitive check: does this atlas contain a frame with the given id?
+    #[must_use]
+    pub fn has_frame(&self, id: &str) -> bool {
+        self.frame_index.contains_key(&Self::normalize(id))
+    }
+
+    /// Case-insensitive lookup: resolve a frame id to `(page_idx, frame_idx)`.
+    /// If the id isn't found directly, checks the LINKS alias mapping.
+    #[must_use]
+    pub fn resolve_frame(&self, id: &str) -> Option<(usize, usize)> {
+        let key = Self::normalize(id);
+        self.frame_index
+            .get(&key)
+            .or_else(|| {
+                // Check LINKS alias: links maps alias → real id.
+                self.links.get(&key).and_then(|real| {
+                    self.frame_index.get(&Self::normalize(real))
+                })
+            })
+            .copied()
+    }
+
+    /// Returns the alias mapping from the LINKS trailer.
+    #[must_use]
+    pub fn get_linked(&self, id: &str) -> Option<&str> {
+        self.links.get(id).map(String::as_str)
+    }
+
     /// Loads an atlas from a `.meta` file plus its numbered `.data` pages that
     /// live next to it (e.g. `Gameplay.meta` + `Gameplay0.data`).
     pub fn load(base: &Path) -> ReadResult<Atlas> {
@@ -214,11 +271,15 @@ impl Atlas {
         let mut frame_index = HashMap::new();
         for (pi, page) in pages.iter().enumerate() {
             for (fi, frame) in page.frames.iter().enumerate() {
-                frame_index.insert(frame.id.clone(), (pi, fi));
+                frame_index.insert(Self::normalize(&frame.id), (pi, fi));
             }
         }
 
-        Ok(Atlas { pages, frame_index })
+        Ok(Atlas {
+            pages,
+            frame_index,
+            links: meta.links,
+        })
     }
 
     /// Loads a `PackerNoAtlas` atlas: each frame is its own `.data` texture
@@ -248,12 +309,16 @@ impl Atlas {
                     clip,
                     offset: frame.offset,
                 }];
-                frame_index.insert(frame.id.clone(), (pages.len(), 0));
+                frame_index.insert(Self::normalize(&frame.id), (pages.len(), 0));
                 pages.push(decoded);
             }
         }
 
-        Ok(Atlas { pages, frame_index })
+        Ok(Atlas {
+            pages,
+            frame_index,
+            links: meta.links,
+        })
     }
 
     /// Appends another atlas's pages and frame index to this one (used to make
@@ -263,6 +328,9 @@ impl Atlas {
         for (id, (pi, fi)) in other.frame_index {
             self.frame_index.insert(id, (base + pi, fi));
         }
+        for (k, v) in other.links {
+            self.links.entry(k).or_insert(v);
+        }
         self.pages.extend(other.pages);
     }
 
@@ -270,9 +338,9 @@ impl Atlas {
     /// clip rect), as a contiguous row-major buffer.
     #[must_use]
     pub fn frame_rgba_into(&self, id: &str) -> Option<Vec<u8>> {
-        let (pi, fi) = self.frame_index.get(id)?;
-        let page = &self.pages[*pi];
-        let frame = &page.frames[*fi];
+        let (pi, fi) = self.resolve_frame(id)?;
+        let page = &self.pages[pi];
+        let frame = &page.frames[fi];
         let w = frame.clip.w as usize;
         let h = frame.clip.h as usize;
         let start = ((frame.clip.y as usize) * page.width as usize + frame.clip.x as usize) * 4;
@@ -288,8 +356,8 @@ impl Atlas {
     /// Returns the clip rect of a frame, if known.
     #[must_use]
     pub fn frame_clip(&self, id: &str) -> Option<FrameRect> {
-        let (pi, fi) = self.frame_index.get(id)?;
-        Some(self.pages[*pi].frames[*fi].clip)
+        let (pi, fi) = self.resolve_frame(id)?;
+        Some(self.pages[pi].frames[fi].clip)
     }
 }
 

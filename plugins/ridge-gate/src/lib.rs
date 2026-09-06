@@ -1,6 +1,6 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 use ruleste_plugins_api::event;
-use ruleste_plugins_api::host::{drain_events, draw_rect};
+use ruleste_plugins_api::host::{drain_events, draw_image, draw_rect};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
@@ -11,12 +11,6 @@ ruleste_plugins_api::ruleste_entity_types!("ridgeGate");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const SHUT: Color = Color {
-    r: 0xaa,
-    g: 0x44,
-    b: 0x44,
-    a: 0xff,
-};
 const OPEN: Color = Color {
     r: 0x55,
     g: 0x55,
@@ -78,9 +72,18 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let e = Entity::new(id);
     let p = e.position.get();
     let st = STATES.with(|s| s.borrow().get(&id).copied());
-    let (w, h, open) = match st {
-        Some(st) => (st.w, st.h, st.open),
-        None => (8.0, 8.0, false),
-    };
-    draw_rect(p.x, p.y, w, h, if open { OPEN } else { SHUT });
+    let open = st.map(|s| s.open).unwrap_or(false);
+    if !open {
+        // Real ridge gate sprite (objects/ridgeGate, 32x32).
+        draw_image("objects/ridgeGate", p.x, p.y, 0.0, 1.0, 1.0);
+    } else {
+        // Open: faded ghost.
+        draw_rect(
+            p.x,
+            p.y,
+            st.map(|s| s.w).unwrap_or(8.0),
+            st.map(|s| s.h).unwrap_or(8.0),
+            OPEN,
+        );
+    }
 }

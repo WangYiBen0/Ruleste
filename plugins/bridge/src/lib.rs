@@ -11,7 +11,7 @@
 
 use std::cell::RefCell;
 
-use ruleste_plugins_api::host::{draw_rect, entities_by_type, play_sound};
+use ruleste_plugins_api::host::{draw_image, draw_rect, entities_by_type, play_sound};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
@@ -164,11 +164,17 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     };
 
     if offset < w {
-        draw_rect(p.x + offset, p.y, w - offset, h, PLANK_DARK);
-        let mut x = p.x + offset + 8.0;
-        while x < p.x + w - 1.0 {
-            draw_rect(x - 1.0, p.y, 2.0, h, PLANK);
-            x += 8.0;
+        // Real bridge sprite (scenery/bridge, 104x55) when not collapsing.
+        if offset == 0.0 {
+            draw_image("scenery/bridge", p.x, p.y, 0.0, 1.0, 1.0);
+        } else {
+            // During collapse, draw planks shrinking from left.
+            draw_rect(p.x + offset, p.y, w - offset, h, PLANK_DARK);
+            let mut x = p.x + offset + 8.0;
+            while x < p.x + w - 1.0 {
+                draw_rect(x - 1.0, p.y, 2.0, h, PLANK);
+                x += 8.0;
+            }
         }
     }
 }

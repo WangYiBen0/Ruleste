@@ -7,7 +7,7 @@
 //! in its own crate.
 
 use ruleste_plugins_api::event;
-use ruleste_plugins_api::host::{drain_events, draw_rect};
+use ruleste_plugins_api::host::{drain_events, draw_image, draw_rect};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
@@ -19,12 +19,6 @@ ruleste_plugins_api::ruleste_entity_types!("lockBlock");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
 
-const LOCK: Color = Color {
-    r: 0x9a,
-    g: 0x6a,
-    b: 0x3a,
-    a: 0xff,
-};
 const LOCK_OPEN: Color = Color {
     r: 0x9a,
     g: 0x6a,
@@ -87,6 +81,11 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         None => return,
     };
     let p = Entity::new(id).position.get();
-    let c = if st.open { LOCK_OPEN } else { LOCK };
-    draw_rect(p.x, p.y, st.w, st.h, c);
+    if !st.open {
+        // Real lock door sprite (objects/door/lockdoor00, 32x32).
+        draw_image("objects/door/lockdoor00", p.x, p.y, 0.0, 1.0, 1.0);
+    } else {
+        // Open: faded ghost.
+        draw_rect(p.x, p.y, st.w, st.h, LOCK_OPEN);
+    }
 }

@@ -1023,7 +1023,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-big-waterfall"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
 name = "ruleste-plugin-black-gem"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-block-field"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugins-api",
@@ -1072,13 +1086,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ruleste-plugin-celestial-resort"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugins-api",
-]
-
-[[package]]
 name = "ruleste-plugin-checkpoint"
 version = "0.1.0"
 dependencies = [
@@ -1107,6 +1114,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-clutter-door"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
 name = "ruleste-plugin-color-switch"
 version = "0.1.0"
 dependencies = [
@@ -1114,7 +1128,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "ruleste-plugin-core"
+name = "ruleste-plugin-condition-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-core-message"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-core-mode-toggle"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugins-api",
@@ -1135,7 +1163,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-crumble-wall"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
 name = "ruleste-plugin-crush-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-cutscene-node"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugins-api",
@@ -1150,6 +1192,13 @@ dependencies = [
 
 [[package]]
 name = "ruleste-plugin-dash-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-dash-switch"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugins-api",
@@ -1191,6 +1240,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-eyebomb"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
 name = "ruleste-plugin-fake-wall"
 version = "0.1.0"
 dependencies = [
@@ -1205,6 +1261,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-final-boss"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-final-boss-falling-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-final-boss-moving-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
 name = "ruleste-plugin-fire-ball"
 version = "0.1.0"
 dependencies = [
@@ -1213,6 +1290,13 @@ dependencies = [
 
 [[package]]
 name = "ruleste-plugin-fire-barrier"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-floaty-space-block"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugins-api",
@@ -1303,6 +1387,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-lightning"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-lightning-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
 name = "ruleste-plugin-lock-block"
 version = "0.1.0"
 dependencies = [
@@ -1310,21 +1408,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ruleste-plugin-lostlevels"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugins-api",
-]
-
-[[package]]
 name = "ruleste-plugin-memorial"
-version = "0.1.0"
-dependencies = [
- "ruleste-plugins-api",
-]
-
-[[package]]
-name = "ruleste-plugin-mirror-temple"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugins-api",
@@ -1359,6 +1443,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-oshiro-door"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
 name = "ruleste-plugin-plateau"
 version = "0.1.0"
 dependencies = [
@@ -1373,6 +1464,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-player-seeker"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
 name = "ruleste-plugin-refill"
 version = "0.1.0"
 dependencies = [
@@ -1380,7 +1478,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "ruleste-plugin-reflection"
+name = "ruleste-plugin-reflection-heart-statue"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-resort-roof-ending"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugins-api",
@@ -1394,6 +1499,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-rising-lava"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
 name = "ruleste-plugin-rotate-spinner"
 version = "0.1.0"
 dependencies = [
@@ -1401,7 +1513,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-sandwich-lava"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
 name = "ruleste-plugin-seeker"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-seeker-barrier"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugins-api",
@@ -1450,7 +1576,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "ruleste-plugin-summit"
+name = "ruleste-plugin-summit-checkpoint"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-summit-cloud"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-summit-gem"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-summit-gem-manager"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugins-api",
@@ -1471,7 +1618,63 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruleste-plugin-temple-big-eyeball"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-temple-cracked-block"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-temple-eye"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-temple-fall-trigger"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-temple-gate"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-tentacles"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
 name = "ruleste-plugin-theo-crystal"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-theo-crystal-holding-barrier"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-theo-crystal-pedestal"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugins-api",
@@ -1486,6 +1689,13 @@ dependencies = [
 
 [[package]]
 name = "ruleste-plugin-track-spinner"
+version = "0.1.0"
+dependencies = [
+ "ruleste-plugins-api",
+]
+
+[[package]]
+name = "ruleste-plugin-trapdoor"
 version = "0.1.0"
 dependencies = [
  "ruleste-plugins-api",

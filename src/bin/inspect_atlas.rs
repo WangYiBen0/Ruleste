@@ -5,9 +5,9 @@ fn main() {
         .nth(1)
         .unwrap_or_else(|| "resources/Celeste/Celeste/textures/Atlases/Gameplay.meta".to_string());
     let atlas = Atlas::load(Path::new(&meta)).unwrap();
-    let (pi, fi) = atlas.frame_index.get("tilesets/dirt").unwrap();
-    let page = &atlas.pages[*pi];
-    let f = &page.frames[*fi];
+    let (pi, fi) = atlas.resolve_frame("tilesets/dirt").unwrap();
+    let page = &atlas.pages[pi];
+    let f = &page.frames[fi];
     let w = page.width as usize;
     let rgba = &page.rgba;
     let (fx, fy) = (f.clip.x as usize, f.clip.y as usize);

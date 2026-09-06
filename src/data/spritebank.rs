@@ -7,6 +7,71 @@
 
 use std::collections::HashMap;
 
+/// Weighted random target for animation transitions.
+/// Matches C#'s `Chooser<string>`: a list of `(weight, target)` pairs.
+#[derive(Debug, Clone)]
+pub struct Chooser {
+    pub entries: Vec<ChooserEntry>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChooserEntry {
+    pub weight: f32,
+    pub target: String,
+}
+
+impl Chooser {
+    /// Picks a random target based on weights.
+    #[must_use]
+    pub fn choose(&self, rng: &mut u64) -> &str {
+        let total: f32 = self.entries.iter().map(|e| e.weight).sum();
+        if total <= 0.0 {
+            return &self.entries[0].target;
+        }
+        // Simple xorshift64 PRNG step.
+        *rng ^= *rng << 13;
+        *rng ^= *rng >> 7;
+        *rng ^= *rng << 17;
+        let r = (*rng as f64 / u64::MAX as f64) as f32 * total;
+        let mut acc = 0.0;
+        for entry in &self.entries {
+            acc += entry.weight;
+            if r < acc {
+                return &entry.target;
+            }
+        }
+        &self.entries.last().unwrap().target
+    }
+}
+
+/// Parses a goto attribute value like `"idle:10,flash:2,blink"`.
+/// Returns a `Chooser` with weighted entries. Items without explicit weight
+/// get weight 1.0 (matching C#'s `Chooser.FromString`).
+fn parse_goto(s: &str) -> Chooser {
+    let entries = s
+        .split(',')
+        .filter_map(|part| {
+            let part = part.trim();
+            if part.is_empty() {
+                return None;
+            }
+            if let Some((name, w)) = part.split_once(':') {
+                let weight = w.parse::<f32>().unwrap_or(1.0);
+                Some(ChooserEntry {
+                    weight,
+                    target: name.to_string(),
+                })
+            } else {
+                Some(ChooserEntry {
+                    weight: 1.0,
+                    target: part.to_string(),
+                })
+            }
+        })
+        .collect();
+    Chooser { entries }
+}
+
 #[derive(Debug, Clone)]
 pub struct Animation {
     pub id: String,
@@ -17,7 +82,9 @@ pub struct Animation {
     /// Explicit frame indices; empty means the full `00..` sequence.
     pub frames: Vec<u32>,
     /// Animation to switch to when this one finishes.
-    pub goto: Option<String>,
+    /// `None` = no goto (loop or stop on last frame).
+    /// `Some(chooser)` = pick next animation randomly.
+    pub goto: Option<Chooser>,
     /// Whether this animation loops.
     pub is_loop: bool,
 }
@@ -65,7 +132,7 @@ impl SpriteBank {
         let root = doc.root_element();
         let mut sprites = HashMap::new();
         for node in root.children().filter(|n| n.is_element()) {
-            if let Some(sprite) = parse_sprite(node)? {
+            if let Some(sprite) = parse_sprite(node, &sprites)? {
                 sprites.insert(sprite.name.clone(), sprite);
             }
         }
@@ -84,7 +151,10 @@ impl SpriteBank {
     }
 }
 
-fn parse_sprite(el: roxmltree::Node<'_, '_>) -> anyhow::Result<Option<SpriteData>> {
+fn parse_sprite(
+    el: roxmltree::Node<'_, '_>,
+    existing: &HashMap<String, SpriteData>,
+) -> anyhow::Result<Option<SpriteData>> {
     let name = el.tag_name().name();
     // Skip the Sprites root itself and any metadata nodes without a path.
     if name == "Sprites" || name.starts_with('#') {
@@ -94,7 +164,13 @@ fn parse_sprite(el: roxmltree::Node<'_, '_>) -> anyhow::Result<Option<SpriteData
     if path.is_empty() {
         return Ok(None);
     }
-    let start = el.attribute("start").unwrap_or("idle").to_string();
+
+    // If `copy` is present, start from the referenced sprite's data.
+    let mut sprite = el
+        .attribute("copy")
+        .and_then(|src| existing.get(src).cloned());
+
+    // Parse child elements (Origin, Center, Justify, Anim, Loop).
     let mut origin = (0, 0);
     let mut center = false;
     let mut justify = None;
@@ -121,7 +197,7 @@ fn parse_sprite(el: roxmltree::Node<'_, '_>) -> anyhow::Result<Option<SpriteData
                 let anim_path = child.attribute("path").unwrap_or(&id).to_string();
                 let delay = child.attribute("delay").and_then(parse_f32).unwrap_or(0.1);
                 let frames = parse_frames(child.attribute("frames"));
-                let goto = child.attribute("goto").map(str::to_string);
+                let goto = child.attribute("goto").map(parse_goto);
                 let is_loop = child.tag_name().name() == "Loop";
                 animations.insert(
                     id.clone(),
@@ -139,8 +215,67 @@ fn parse_sprite(el: roxmltree::Node<'_, '_>) -> anyhow::Result<Option<SpriteData
         }
     }
 
+    // Merge: current element's animations override the copied ones.
+    let source_name = name.to_string();
+    let start = el.attribute("start").unwrap_or("idle").to_string();
+    let start = if let Some(ref s) = sprite {
+        // Only override start if the copy element explicitly specified one.
+        if el.attribute("start").is_some() || !s.start.is_empty() && start != "idle" {
+            start
+        } else {
+            s.start.clone()
+        }
+    } else {
+        start
+    };
+    let origin = if el.attribute("x").is_some() || el.attribute("y").is_some() {
+        origin
+    } else if let Some(ref s) = sprite {
+        if el.children().filter(|n| n.is_element()).any(|n| n.tag_name().name() == "Origin") {
+            origin
+        } else {
+            s.origin
+        }
+    } else {
+        origin
+    };
+    let center = center
+        || sprite.as_ref().is_some_and(|s| {
+            // Inherit center from source unless overridden.
+            s.center
+                && !el
+                    .children()
+                    .filter(|n| n.is_element())
+                    .any(|n| n.tag_name().name() == "Center")
+        });
+    let justify = if el
+        .children()
+        .filter(|n| n.is_element())
+        .any(|n| n.tag_name().name() == "Justify")
+    {
+        justify
+    } else if let Some(ref s) = sprite {
+        s.justify
+    } else {
+        justify
+    };
+
+    // If copied, merge animations: source + current (current overrides).
+    if let Some(ref mut s) = sprite {
+        for (k, v) in animations.drain() {
+            s.animations.insert(k, v);
+        }
+        s.name = source_name;
+        s.path = path;
+        s.start = start;
+        s.origin = origin;
+        s.center = center;
+        s.justify = justify;
+        return Ok(Some(s.clone()));
+    }
+
     Ok(Some(SpriteData {
-        name: name.to_string(),
+        name: source_name,
         path,
         start,
         origin,

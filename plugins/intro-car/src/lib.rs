@@ -5,34 +5,15 @@
 //! Inherits from `JumpThru` (depth 1) with a standable top platform
 //! (`entity.collision.platform(true)`). Sinks slightly when ridden.
 
-use ruleste_plugins_api::host::{self, draw_rect};
+use ruleste_plugins_api::host::{self, draw_image};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
+use ruleste_plugins_api::types::EntityId;
 
 ruleste_plugins_api::ruleste_meta!("intro-car");
 ruleste_plugins_api::ruleste_entity_types!("introCar");
 ruleste_plugins_api::ruleste_noop_destroy!();
 ruleste_plugins_api::ruleste_noop_serialize!();
-
-const BODY: Color = Color {
-    r: 0x2c,
-    g: 0x34,
-    b: 0x44,
-    a: 0xff,
-};
-const CABIN: Color = Color {
-    r: 0x6c,
-    g: 0x7c,
-    b: 0x9c,
-    a: 0xff,
-};
-const WHEEL: Color = Color {
-    r: 0x16,
-    g: 0x1a,
-    b: 0x22,
-    a: 0xff,
-};
 
 #[derive(Debug, Default)]
 struct CarState {
@@ -111,9 +92,14 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         let p = Entity::new(id).position.get();
         let sway = (st.timer * 0.8).sin() * 0.5;
 
-        draw_rect(p.x - 24.0, p.y - 10.0 + sway, 48.0, 10.0, BODY);
-        draw_rect(p.x - 14.0, p.y - 16.0 + sway, 28.0, 6.0, CABIN);
-        draw_rect(p.x - 26.0, p.y - 2.0, 12.0, 6.0, WHEEL);
-        draw_rect(p.x + 14.0, p.y - 2.0, 12.0, 6.0, WHEEL);
+        // Real car body sprite (scenery/car/body, 47x16).
+        draw_image(
+            "scenery/car/body",
+            p.x - 24.0,
+            p.y - 10.0 + sway,
+            0.0,
+            1.0,
+            1.0,
+        );
     });
 }

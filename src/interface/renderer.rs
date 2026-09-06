@@ -171,7 +171,8 @@ impl Renderer {
         let Some(rgba) = atlas.frame_rgba_into(frame_id) else {
             anyhow::bail!("backdrop frame {frame_id:?} not in atlas");
         };
-        let (pi, fi) = atlas.frame_index[frame_id];
+        let (pi, fi) = atlas.resolve_frame(frame_id)
+            .ok_or_else(|| anyhow::anyhow!("backdrop frame {frame_id:?} not in atlas"))?;
         let frame = &atlas.pages[pi].frames[fi];
         let w = frame.clip.w as u32;
         let h = frame.clip.h as u32;
@@ -328,7 +329,7 @@ impl Renderer {
                 // atlas frame id (e.g. "tilesets/dirt").
                 let frame_id = format!("tilesets/{tileset_path}");
                 // Look up the tileset frame in the atlas.
-                if let Some(&(page_idx, frame_idx)) = atlas.frame_index.get(&frame_id) {
+                if let Some((page_idx, frame_idx)) = atlas.resolve_frame(&frame_id) {
                     let page = &atlas.pages[page_idx];
                     let frame = &page.frames[frame_idx];
                     let Some(texture) = self.atlas_textures.get(&page_idx) else {
@@ -398,17 +399,17 @@ impl Renderer {
                 (frame_id, Some(sprite))
             } else {
                 let frame_id = entity.sprite.animation.clone();
-                if !atlas.frame_index.contains_key(&frame_id) {
+                if !atlas.has_frame(&frame_id) {
                     continue;
                 }
                 (frame_id, None)
             };
-            let Some((page_idx, frame_idx)) = atlas.frame_index.get(&frame_id) else {
+            let Some((page_idx, frame_idx)) = atlas.resolve_frame(&frame_id) else {
                 continue;
             };
-            let page = &atlas.pages[*page_idx];
-            let frame = &page.frames[*frame_idx];
-            let Some(texture) = self.atlas_textures.get(page_idx) else {
+            let page = &atlas.pages[page_idx];
+            let frame = &page.frames[frame_idx];
+            let Some(texture) = self.atlas_textures.get(&page_idx) else {
                 continue;
             };
 
@@ -850,7 +851,7 @@ impl Renderer {
     /// Draws plugin-submitted autotiled boxes (`TileBox`), e.g. introCrusher
     pub fn draw_tile_boxes(&mut self, boxes: &[TileBox], atlas: &Atlas) {
         for tile_box in boxes {
-            let Some(&(page_idx, frame_idx)) = atlas.frame_index.get(&tile_box.frame_id) else {
+            let Some((page_idx, frame_idx)) = atlas.resolve_frame(&tile_box.frame_id) else {
                 continue;
             };
             let page = &atlas.pages[page_idx];
@@ -885,12 +886,12 @@ impl Renderer {
     /// honored like entity sprites.
     pub fn draw_images(&mut self, images: &[Image], atlas: &Atlas) {
         for image in images {
-            let Some((page_idx, frame_idx)) = atlas.frame_index.get(&image.frame_id) else {
+            let Some((page_idx, frame_idx)) = atlas.resolve_frame(&image.frame_id) else {
                 continue;
             };
-            let page = &atlas.pages[*page_idx];
-            let frame = &page.frames[*frame_idx];
-            let Some(texture) = self.atlas_textures.get(page_idx) else {
+            let page = &atlas.pages[page_idx];
+            let frame = &page.frames[frame_idx];
+            let Some(texture) = self.atlas_textures.get(&page_idx) else {
                 continue;
             };
             let w = frame.offset.w as f32;

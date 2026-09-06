@@ -2,7 +2,7 @@
 use std::cell::RefCell;
 
 use ruleste_plugins_api::host::{
-    draw_rect, draw_tile_box, entities_by_type, is_cold_mode, play_sound, player_ducking,
+    draw_image, draw_rect, entities_by_type, is_cold_mode, play_sound, player_ducking,
 };
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
@@ -129,8 +129,8 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     };
     let enabled = st.map(|s| s.enabled && !s.activated).unwrap_or(true);
     if enabled {
-        // Enabled white blocks use the level's solid tile texture.
-        draw_tile_box('3', p.x, p.y, (w / 8.0) as u32, (h / 8.0) as u32);
+        // Real white block sprite (objects/whiteblock, 48x24).
+        draw_image("objects/whiteblock", p.x, p.y, 0.0, 1.0, 1.0);
     } else {
         draw_rect(p.x, p.y, w, h, COLOR_DISABLED);
     }

@@ -12,7 +12,7 @@
 //! re-`include_str!`s the file), and add it to this macro.
 
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
-use ruleste_plugins_api::host::draw_rect;
+use ruleste_plugins_api::host::{draw_image, draw_rect};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId};
@@ -24,20 +24,42 @@ ruleste_plugins_api::ruleste_meta!("decorations");
 ruleste_plugins_api::ruleste_entity_types!(
     "SummitBackgroundManager",
     "bird",
+    "birdForsakenCityGem",
+    "birdPath",
     "bonfire",
     "cliffflag",
+    "clutterCabinet",
+    "clothesline",
     "cobweb",
     "dreamMirror",
+    "flingBird",
+    "flingBirdIntro",
     "floatingDebris",
     "flutterbird",
     "foregroundDebris",
+    "friendlyGhost",
+    "glider",
+    "hahaha",
     "hanginglamp",
+    "kevins_pc",
     "lamp",
     "lightbeam",
+    "memorial",
+    "moonCreature",
+    "picoconsole",
+    "playbackBillboard",
+    "playbackTutorial",
+    "powerSourceNumber",
     "resortLantern",
+    "resortmirror",
+    "seekerStatue",
     "soundSource",
+    "templeBigEyeball",
+    "templeMirror",
+    "templeMirrorPortal",
     "torch",
     "towerviewer",
+    "wavedashmachine",
     "wire"
 );
 ruleste_plugins_api::ruleste_noop_destroy!();
@@ -87,16 +109,6 @@ fn default_init(id: EntityId, data: *const u8, len: u32) {
     STATES.with(|s| {
         s.borrow_mut().insert(id, State { w, h });
     });
-}
-
-fn default_draw(id: EntityId) {
-    let st = STATES.with(|s| s.borrow().get(&id).cloned());
-    let (w, h) = match st {
-        Some(st) => (st.w, st.h),
-        None => return,
-    };
-    let p = Entity::new(id).position.get();
-    draw_rect(p.x, p.y, w, h, color_for("decoration"));
 }
 
 #[unsafe(no_mangle)]
@@ -149,11 +161,13 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     match Entity::new(id).sprite.bank().as_str() {
         "SummitBackgroundManager" => summitbackground::draw(id),
         "bird" => bird::draw(id),
+        "birdPath" | "playbackTutorial" => {} // Invisible / complex, skip
         "bonfire" => bonfire::draw(id),
         "cliffflag" => cliffflag::draw(id),
         "cobweb" => cobweb::draw(id),
         "floatingDebris" | "foregroundDebris" => debris::draw(id),
         "flutterbird" => flutterbird::draw(id),
+        "flingBird" | "flingBirdIntro" => bird::draw(id),
         "hanginglamp" => hanginglamp::draw(id),
         "lamp" => lamp::draw(id),
         "lightbeam" => lightbeam::draw(id),
@@ -162,18 +176,139 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
         "torch" => torch::draw(id),
         "towerviewer" => towerviewer::draw(id),
         "wire" => wire::draw(id),
-        _ => default_draw(id),
+        // All other miscellaneous decorations go through draw_misc.
+        _ => draw_misc(id, Entity::new(id).sprite.bank().as_str()),
     }
 }
 
-fn color_for(t: &str) -> Color {
-    let h: u32 = t.bytes().fold(0x8110_C8A5u32, |acc, b| {
-        acc.wrapping_mul(16777619) ^ b as u32
-    });
-    Color {
-        r: ((h >> 16) & 0xff) as u8,
-        g: ((h >> 8) & 0xff) as u8,
-        b: (h & 0xff) as u8,
+/// Draw miscellaneous decorative entities (resort, lostlevels, temple, etc.).
+fn draw_misc(id: EntityId, kind: &str) {
+    let st = STATES.with(|s| s.borrow().get(&id).cloned());
+    let (w, h) = match st {
+        Some(st) => (st.w, st.h),
+        None => return,
+    };
+    let p = Entity::new(id).position.get();
+
+    // Common colors.
+    const METAL: Color = Color {
+        r: 0x99,
+        g: 0x99,
+        b: 0x99,
         a: 0xff,
+    };
+    const WOOD: Color = Color {
+        r: 0x8a,
+        g: 0x5a,
+        b: 0x2b,
+        a: 0xff,
+    };
+    const GHOST: Color = Color {
+        r: 0xcc,
+        g: 0xdd,
+        b: 0xee,
+        a: 0xaa,
+    };
+    const PROP: Color = Color {
+        r: 0x6a,
+        g: 0x5a,
+        b: 0x4a,
+        a: 0xff,
+    };
+    const STATUE: Color = Color {
+        r: 0x77,
+        g: 0x77,
+        b: 0x66,
+        a: 0xff,
+    };
+    const EYE: Color = Color {
+        r: 0xff,
+        g: 0x55,
+        b: 0x55,
+        a: 0xff,
+    };
+
+    match kind {
+        // -- Forsaken City --
+        "birdForsakenCityGem" => {
+            draw_image(
+                "scenery/flutterbird/idle00",
+                p.x - 8.0,
+                p.y - 4.0,
+                0.0,
+                1.0,
+                1.0,
+            );
+        }
+        // -- Celestial Resort --
+        "clutterCabinet" => draw_rect(p.x, p.y, w, h, WOOD),
+        "clothesline" => {
+            draw_rect(p.x, p.y, w, 1.0, METAL);
+            let mut x = p.x + 4.0;
+            while x < p.x + w - 2.0 {
+                draw_rect(x, p.y + 1.0, 4.0, 8.0, GHOST);
+                x += 12.0;
+            }
+        }
+        "friendlyGhost" => {
+            draw_rect(p.x - 6.0, p.y - 8.0, 12.0, 14.0, GHOST);
+            draw_rect(p.x - 3.0, p.y - 4.0, 2.0, 2.0, METAL);
+            draw_rect(p.x + 1.0, p.y - 4.0, 2.0, 2.0, METAL);
+        }
+        "picoconsole" => {
+            draw_rect(p.x, p.y, w, h, METAL);
+            draw_rect(p.x + 2.0, p.y + 2.0, w - 4.0, h * 0.5, GHOST);
+        }
+        "resortmirror" => {
+            draw_rect(p.x, p.y, w, h, GHOST);
+            draw_rect(p.x, p.y, w, 2.0, METAL);
+        }
+        // -- Lost Levels --
+        "glider" => {
+            draw_image(
+                "objects/glider/idle00",
+                p.x - 12.0,
+                p.y - 10.0,
+                0.0,
+                1.0,
+                1.0,
+            );
+        }
+        "kevins_pc" => {
+            draw_rect(p.x, p.y, w, h, METAL);
+            draw_rect(p.x + 2.0, p.y + 2.0, w - 4.0, h * 0.5, GHOST);
+        }
+        "moonCreature" => {
+            draw_image(
+                "scenery/moon_creatures/tiny00",
+                p.x - 8.0,
+                p.y - 8.0,
+                0.0,
+                1.0,
+                1.0,
+            );
+        }
+        "playbackBillboard" => {
+            draw_image("scenery/tvSlices", p.x, p.y, 0.0, 1.0, 1.0);
+        }
+        "powerSourceNumber" | "wavedashmachine" => {
+            draw_rect(p.x, p.y, w, h, PROP);
+        }
+        // -- Mirror Temple --
+        "seekerStatue" => draw_rect(p.x, p.y, w, h, STATUE),
+        "templeBigEyeball" => draw_rect(p.x, p.y, w, h, EYE),
+        "templeMirror" | "templeMirrorPortal" => {
+            draw_image("objects/mirror/frame", p.x, p.y, 0.0, 1.0, 1.0);
+            draw_image(
+                "objects/mirror/glassbg",
+                p.x + 4.0,
+                p.y + 4.0,
+                0.0,
+                1.0,
+                1.0,
+            );
+        }
+        // -- Fallback --
+        _ => draw_rect(p.x, p.y, w, h, PROP),
     }
 }

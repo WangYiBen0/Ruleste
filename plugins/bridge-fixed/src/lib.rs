@@ -1,20 +1,8 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
-use ruleste_plugins_api::host::draw_rect;
+use ruleste_plugins_api::host::draw_image;
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, spawn_data};
-use ruleste_plugins_api::types::{Color, EntityId};
-
-ruleste_plugins_api::ruleste_meta!("bridgeFixed");
-ruleste_plugins_api::ruleste_entity_types!("bridgeFixed");
-ruleste_plugins_api::ruleste_noop_destroy!();
-ruleste_plugins_api::ruleste_noop_serialize!();
-
-const PLANK: Color = Color {
-    r: 0x8a,
-    g: 0x5a,
-    b: 0x2b,
-    a: 0xff,
-};
+use ruleste_plugins_api::types::EntityId;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
@@ -35,6 +23,6 @@ pub extern "C" fn ruleste_entity_update(_id: EntityId, _dt: f32) {}
 pub extern "C" fn ruleste_entity_draw(id: EntityId) {
     let e = Entity::new(id);
     let p = e.position.get();
-    let (w, h, _, _) = e.hitbox.get();
-    draw_rect(p.x, p.y, w, h, PLANK);
+    // Real fixed bridge sprite (scenery/bridge_fixed, 208x55).
+    draw_image("scenery/bridge_fixed", p.x, p.y, 0.0, 1.0, 1.0);
 }

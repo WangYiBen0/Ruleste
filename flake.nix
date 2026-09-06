@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     fenix.url = "github:nix-community/fenix";
+    fenix.inputs.nixpkgs.follows = "nixpkgs";
     crane.url = "github:ipetkov/crane";
   };
 
@@ -128,7 +129,7 @@
                 // {
                   pname = "ruleste-plugins";
                   CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-              cargoExtraArgs = "-p ruleste-plugin-player -p ruleste-plugin-spring";
+                  cargoExtraArgs = "-p ruleste-plugin-player -p ruleste-plugin-spring";
                 }
               );
               installPhase = ''
