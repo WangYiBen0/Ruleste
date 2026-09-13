@@ -472,8 +472,8 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
         return;
     }
 
-    let mut move_x = Input::axis(input::MOVE_RIGHT) - Input::axis(input::MOVE_LEFT);
-    let move_y = Input::axis(input::MOVE_DOWN) - Input::axis(input::MOVE_UP);
+    let mut move_x = Input::move_x() as f32;
+    let move_y = Input::move_y() as f32;
     // `forceMoveX` overrides directional input (ClimbHop keeps sliding on its
     // own even if the player lets go or presses the other way).
     if st.force_move_timer > 0.0 {
@@ -1092,8 +1092,8 @@ fn emit_dash_block(id: EntityId, dir: Vec2, state: u32) {
 /// `BOOST_TIME`, then a dash fires in the held aim — a normal dash for green
 /// boosters, a sustained red dash for `red` ones. `BoostBegin` refills.
 fn boost_update(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt: f32) -> u32 {
-    let aim_x = Input::axis(input::MOVE_RIGHT) - Input::axis(input::MOVE_LEFT);
-    let aim_y = Input::axis(input::MOVE_DOWN) - Input::axis(input::MOVE_UP);
+    let aim_x = Input::move_x() as f32;
+    let aim_y = Input::move_y() as f32;
     // `BoostTarget - Collider.Center + aim * 3`, the collider center being
     // `(0, -5.5)` for the normal 8×11 hitbox.
     let p = entity.position.get();
@@ -1158,8 +1158,8 @@ fn red_dash_build(st: &mut PlayerState, speed: &mut Vec2, aim_x: f32, aim_y: f32
 fn red_dash_update(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt: f32) -> u32 {
     // A fresh dash input re-dashes with the held aim (`CanDash`).
     if can_dash(*st) && Input::pressed(input::DASH) {
-        let mx = Input::axis(input::MOVE_RIGHT) - Input::axis(input::MOVE_LEFT);
-        let my = Input::axis(input::MOVE_DOWN) - Input::axis(input::MOVE_UP);
+        let mx = Input::move_x() as f32;
+        let my = Input::move_y() as f32;
         start_dash(entity, st, speed, mx, my);
         return ST_DASH;
     }
@@ -1220,8 +1220,8 @@ fn launch_update(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt: f3
         entity.position.set_xy(nx, p.y);
     }
     if can_dash(*st) && Input::pressed(input::DASH) {
-        let move_x = Input::axis(input::MOVE_RIGHT) - Input::axis(input::MOVE_LEFT);
-        let move_y = Input::axis(input::MOVE_DOWN) - Input::axis(input::MOVE_UP);
+        let move_x = Input::move_x() as f32;
+        let move_y = Input::move_y() as f32;
         start_dash(entity, st, speed, move_x, move_y);
         return ST_DASH;
     }

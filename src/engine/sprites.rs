@@ -51,7 +51,21 @@ impl<'a> SpriteAnimator<'a> {
             }
             let e = world.get_mut(id).expect("listed");
             if e.sprite.rate != 0.0 {
-                e.sprite.frame += e.sprite.rate * dt / anim.delay;
+                if anim.delay > 0.0 {
+                    // Normal case: `animationTimer += dt * Rate`, compared
+                    // against `Delay` — a fractional frame index accumulates at
+                    // `rate * dt / delay`.
+                    e.sprite.frame += e.sprite.rate * dt / anim.delay;
+                } else if e.sprite.rate > 0.0 {
+                    // `delay="0"` in Sprites.xml (single-frame `Loop`s like
+                    // `idle`, `duck`, ...): the frame timer condition
+                    // `|animationTimer| >= Delay` is immediately true, so the
+                    // animation advances one whole frame per tick. Dividing by
+                    // zero would produce Infinity → NaN after `% len`.
+                    e.sprite.frame += 1.0;
+                } else {
+                    e.sprite.frame -= 1.0;
+                }
             }
             if e.sprite.frame >= len {
                 if let Some(ref chooser) = anim.goto {
@@ -143,5 +157,182 @@ impl<'a> SpriteAnimator<'a> {
             let key = format!("{prefix}{:0>width$}", base, width = width);
             self.atlas.has_frame(&key)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::spritebank::{Animation, SpriteData};
+    use crate::engine::ecs::World;
+
+    /// Builds a bare `Atlas` with the given frame ids present (empty pixel
+    /// pages; enough for `has_frame` / animation resolution).
+    fn atlas_with_frames(ids: &[&str]) -> Atlas {
+        let mut atlas = Atlas::default();
+        for (i, id) in ids.iter().enumerate() {
+            atlas.frame_index.insert(id.to_string(), (0, i));
+        }
+        atlas
+    }
+
+    /// A tiny sprite with one loop animation whose frames map to atlas ids
+    /// `test/idle00`, `test/idle01`, ...
+    fn loop_sprite() -> (SpriteData, Animation) {
+        let sprite = SpriteData {
+            name: "tb".to_string(),
+            path: "test/".to_string(),
+            start: "idle".to_string(),
+            origin: (0, 0),
+            center: false,
+            justify: None,
+            animations: HashMap::new(),
+        };
+        let anim = Animation {
+            id: "idle".to_string(),
+            path: "idle".to_string(),
+            delay: 0.1,
+            frames: Vec::new(),
+            goto: None,
+            is_loop: true,
+        };
+        (sprite, anim)
+    }
+
+    #[test]
+    fn loop_animation_converges_large_randomized_frame() {
+        let atlas = atlas_with_frames(&[
+            "test/idle00",
+            "test/idle01",
+            "test/idle02",
+            "test/idle03",
+            "test/idle04",
+        ]);
+        let (mut sprite, anim) = loop_sprite();
+        sprite.animations.insert(anim.id.clone(), anim.clone());
+        let mut bank = SpriteBank::default();
+        bank.sprites.insert(sprite.name.clone(), sprite.clone());
+
+        let mut world = World::default();
+        let id = world.spawn();
+        {
+            let e = world.get_mut(id).unwrap();
+            e.sprite.sprite = "tb".to_string();
+            e.sprite.animation = "idle".to_string();
+            // Simulate `randomizeFrame`: a large random starting frame.
+            e.sprite.frame = 60_007.0;
+        }
+
+        let mut animator = SpriteAnimator::new(&atlas, &bank);
+        // Advance one tick; `rate * dt / delay` with rate=1, dt=1/60, delay=0.1
+        // adds ~0.167, pushing frame far past len=4.
+        animator.update(&mut world, 1.0 / 60.0);
+        let e = world.get(id).unwrap();
+        // The loop's `frame %= len` must have reduced it into [0, 4).
+        assert!(
+            (0.0..4.0).contains(&e.sprite.frame),
+            "loop animation frame {} not reduced into [0,4)",
+            e.sprite.frame
+        );
+        // And it must not be exactly 0 (the randomized phase survived).
+        assert!(
+            (0.0..4.0).contains(&e.sprite.frame) && e.sprite.frame != 0.0,
+            "randomized loop phase lost"
+        );
+    }
+
+    #[test]
+    fn non_loop_animation_clears_animation_on_finish() {
+        let atlas = atlas_with_frames(&["test/once00", "test/once01"]);
+        let sprite = SpriteData {
+            name: "tb".to_string(),
+            path: "test/".to_string(),
+            start: "once".to_string(),
+            origin: (0, 0),
+            center: false,
+            justify: None,
+            animations: HashMap::new(),
+        };
+        let anim = Animation {
+            id: "once".to_string(),
+            path: "once".to_string(),
+            delay: 0.1,
+            frames: Vec::new(),
+            goto: None,
+            is_loop: false,
+        };
+        let mut sprite = sprite;
+        sprite.animations.insert(anim.id.clone(), anim.clone());
+        let mut bank = SpriteBank::default();
+        bank.sprites.insert(sprite.name.clone(), sprite.clone());
+
+        let mut world = World::default();
+        let id = world.spawn();
+        {
+            let e = world.get_mut(id).unwrap();
+            e.sprite.sprite = "tb".to_string();
+            e.sprite.animation = "once".to_string();
+            e.sprite.frame = 0.0;
+        }
+        let mut animator = SpriteAnimator::new(&atlas, &bank);
+        // Push well past the 2-frame end.
+        animator.update(&mut world, 1.0);
+        let e = world.get(id).unwrap();
+        // Mirrors C# `Animating = false` + clearing `AnimationID`.
+        assert!(
+            e.sprite.animation.is_empty(),
+            "non-loop should clear animation"
+        );
+        assert_eq!(e.sprite.frame, 1.0, "frame pinned to last frame");
+    }
+
+    #[test]
+    fn zero_delay_loop_does_not_produce_nan() {
+        // `Sprites.xml` has many `delay="0"` single-frame Loop animations
+        // (player `idle`, `duck`, `pretendDead`, ...). The original advances
+        // one full frame per tick (`|animationTimer| >= Delay` is immediately
+        // true); dividing by zero used to yield Infinity → NaN on `% len`.
+        let atlas = atlas_with_frames(&["test/zero00"]);
+        let sprite = SpriteData {
+            name: "tb".to_string(),
+            path: "test/".to_string(),
+            start: "zero".to_string(),
+            origin: (0, 0),
+            center: false,
+            justify: None,
+            animations: HashMap::new(),
+        };
+        let anim = Animation {
+            id: "zero".to_string(),
+            path: "zero".to_string(),
+            delay: 0.0,
+            frames: Vec::new(),
+            goto: None,
+            is_loop: true,
+        };
+        let mut sprite = sprite;
+        sprite.animations.insert(anim.id.clone(), anim.clone());
+        let mut bank = SpriteBank::default();
+        bank.sprites.insert(sprite.name.clone(), sprite.clone());
+
+        let mut world = World::default();
+        let id = world.spawn();
+        {
+            let e = world.get_mut(id).unwrap();
+            e.sprite.sprite = "tb".to_string();
+            e.sprite.animation = "zero".to_string();
+            e.sprite.frame = 0.0;
+        }
+        let mut animator = SpriteAnimator::new(&atlas, &bank);
+        for _ in 0..120 {
+            animator.update(&mut world, 1.0 / 60.0);
+        }
+        let e = world.get(id).unwrap();
+        assert!(
+            e.sprite.frame.is_finite(),
+            "single-frame loop frame must stay finite, got {}",
+            e.sprite.frame
+        );
+        assert_eq!(e.sprite.frame, 0.0, "single-frame loop pins to frame 0");
     }
 }

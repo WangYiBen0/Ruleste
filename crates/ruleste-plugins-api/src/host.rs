@@ -42,6 +42,17 @@ unsafe extern "C" {
     fn host_visible_get(id: EntityId) -> bool;
     fn host_visible_set(id: EntityId, visible: bool);
     fn host_sprite_play(id: EntityId, name: *const u8, len: u32);
+    /// `host_sprite_play_flags` mirrors `Monocle.Sprite.Play(id, restart,
+    /// randomizeFrame)`: `restart` resets the frame timer, `randomize_frame`
+    /// picks a random starting frame (used by fireball fans, spikes, ... to
+    /// desynchronise identical loop animations).
+    fn host_sprite_play_flags(
+        id: EntityId,
+        name: *const u8,
+        len: u32,
+        restart: i32,
+        randomize_frame: i32,
+    );
     fn host_sprite_bank_set(id: EntityId, name: *const u8, len: u32);
     fn host_sprite_animation(id: EntityId, out: *mut u8, out_cap: u32) -> u32;
     fn host_sprite_bank_get(id: EntityId, out: *mut u8, out_cap: u32) -> u32;
@@ -55,6 +66,9 @@ unsafe extern "C" {
     fn host_sprite_flip_y_get(id: EntityId) -> bool;
     fn host_sprite_flip_y_set(id: EntityId, flip: bool);
     fn host_input_axis(action: i32) -> f32;
+    fn host_input_axis_check(negative: i32, positive: i32) -> i32;
+    fn host_input_move_x() -> i32;
+    fn host_input_move_y() -> i32;
     fn host_input_button(action: i32) -> bool;
     fn host_input_pressed(action: i32) -> bool;
     fn host_input_released(action: i32) -> bool;
@@ -112,6 +126,7 @@ unsafe extern "C" {
         outline_g: u32,
         outline_b: u32,
         outline_a: u32,
+        scale: f32,
     );
     fn host_emit_particle(
         x: f32,
@@ -452,6 +467,48 @@ pub fn draw_text(
             og,
             ob,
             oa,
+            1.0,
+        );
+    }
+}
+
+/// Mirrors `Draw.Text` with an explicit font `scale` (the renderer picks the
+/// smallest loaded PixelFont size at least `64 * scale`).
+pub fn draw_text_scaled(
+    x: f32,
+    y: f32,
+    text: &str,
+    color: Color,
+    justify: Justify,
+    outline_color: Option<Color>,
+    scale: f32,
+) {
+    unsafe {
+        let j = match justify {
+            Justify::Left => 0u32,
+            Justify::Center => 1,
+            Justify::Right => 2,
+        };
+        let (or, og, ob, oa) = match outline_color {
+            Some(c) => (c.r as u32, c.g as u32, c.b as u32, c.a as u32),
+            None => (0, 0, 0, 0),
+        };
+        let bytes = text.as_bytes();
+        host_draw_text(
+            x,
+            y,
+            bytes.as_ptr(),
+            bytes.len() as u32,
+            color.r as u32,
+            color.g as u32,
+            color.b as u32,
+            color.a as u32,
+            j,
+            or,
+            og,
+            ob,
+            oa,
+            scale,
         );
     }
 }
@@ -711,6 +768,22 @@ impl Sprite {
         }
     }
 
+    /// Mirrors `Monocle.Sprite.Play(id, restart, randomizeFrame)`: when
+    /// `randomize_frame` is true the animation starts at a random frame so
+    /// identical loop animations across instances desynchronise (fireball
+    /// fans, spikes). `restart=false` keeps the current frame timer.
+    pub fn play_with(&self, name: &str, restart: bool, randomize_frame: bool) {
+        unsafe {
+            host_sprite_play_flags(
+                self.id,
+                name.as_ptr(),
+                name.len() as u32,
+                i32::from(restart),
+                i32::from(randomize_frame),
+            );
+        }
+    }
+
     /// Selects which SpriteBank sprite this entity's animations come from.
     /// The host defaults this to the entity type name; use this to point at a
     /// differently-named SpriteBank entry (e.g. `goldenBerry` -> `goldberry`).
@@ -812,6 +885,30 @@ impl Input {
     #[must_use]
     pub fn axis(action: i32) -> f32 {
         unsafe { host_input_axis(action) }
+    }
+
+    /// Mirrors `MInput.AxisCheck(negative, positive)`: `1` when `positive` is
+    /// held alone, `-1` when `negative` is held alone, `0` when neither or
+    /// both are held.
+    #[must_use]
+    pub fn axis_check(negative: i32, positive: i32) -> i32 {
+        unsafe { host_input_axis_check(negative, positive) }
+    }
+
+    /// The latched horizontal movement axis, mirroring `Input.MoveX.Value`
+    /// (`VirtualIntegerAxis`, `OverlapBehavior.TakeNewer`). Use this instead
+    /// of subtracting `axis(MOVE_LEFT)` from `axis(MOVE_RIGHT)` so both
+    /// directions held resolves to the last-held direction, matching the
+    /// original player movement.
+    #[must_use]
+    pub fn move_x() -> i32 {
+        unsafe { host_input_move_x() }
+    }
+
+    /// The latched vertical movement axis, mirroring `Input.MoveY.Value`.
+    #[must_use]
+    pub fn move_y() -> i32 {
+        unsafe { host_input_move_y() }
     }
 
     #[must_use]

@@ -150,7 +150,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             e.position.set_xy(carry.x, carry.y);
             emit_carried(id, carry, true);
 
-            let throw_h = Input::axis(input::MOVE_RIGHT) - Input::axis(input::MOVE_LEFT);
+            let throw_h = Input::move_x() as f32;
             let facing = if throw_h > 0.1 {
                 1.0
             } else if throw_h < -0.1 {

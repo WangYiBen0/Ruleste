@@ -171,7 +171,8 @@ impl Renderer {
         let Some(rgba) = atlas.frame_rgba_into(frame_id) else {
             anyhow::bail!("backdrop frame {frame_id:?} not in atlas");
         };
-        let (pi, fi) = atlas.resolve_frame(frame_id)
+        let (pi, fi) = atlas
+            .resolve_frame(frame_id)
             .ok_or_else(|| anyhow::anyhow!("backdrop frame {frame_id:?} not in atlas"))?;
         let frame = &atlas.pages[pi].frames[fi];
         let w = frame.clip.w as u32;
@@ -672,7 +673,11 @@ impl Renderer {
             if t.text.is_empty() {
                 continue;
             }
-            let size = match font.get(t.text.len() as f32) {
+            // `PixelFont.Draw(baseSize, ...)`: pick the size whose `size` is
+            // the smallest >= `baseSize`. The caller supplies `t.size` (the
+            // requested font size); when not explicitly set it defaults to the
+            // dialog size.
+            let size = match font.get(t.size.max(1.0)) {
                 Some(s) => s,
                 None => continue,
             };
@@ -739,11 +744,20 @@ impl Renderer {
             let w = glyph.region.width as f32;
             let h = glyph.region.height as f32;
             if let Some(oc) = outline {
-                self.canvas
-                    .set_draw_color(SdlColor::RGBA(oc.r, oc.g, oc.b, oc.a));
-                let _ =
+                // The glyph is drawn once; a font variant that is itself
+                // pre-outlined (`PixelFontSize.outline == true`, mirroring the
+                // original `stroke > 0f && !Outline`) must not get a second
+                // runtime outline on top.
+                if !size.outline {
                     self.canvas
-                        .fill_rect(FRect::new(dst_x - 1.0, dst_y - 1.0, w + 2.0, h + 2.0));
+                        .set_draw_color(SdlColor::RGBA(oc.r, oc.g, oc.b, oc.a));
+                    let _ = self.canvas.fill_rect(FRect::new(
+                        dst_x - 1.0,
+                        dst_y - 1.0,
+                        w + 2.0,
+                        h + 2.0,
+                    ));
+                }
             }
             let src = FRect::new(glyph.region.x as f32, glyph.region.y as f32, w, h);
             let dst = FRect::new(dst_x, dst_y, w, h);

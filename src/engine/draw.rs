@@ -94,4 +94,23 @@ pub struct Text {
     /// Optional 1px outline color (drawn around each glyph). Mirrors
     /// `Draw.OutlineText`.
     pub outline: Option<Color>,
+    /// Requested base font size in pixels (`PixelFont.Get(baseSize * scale)`);
+    /// the renderer picks the smallest loaded size at least this large. Mirrors
+    /// the `baseSize` argument of `PixelFont.Draw`. Defaults to the dialog
+    /// font size (64) when the caller doesn't set one.
+    pub size: f32,
+}
+
+impl Default for Text {
+    fn default() -> Text {
+        Text {
+            x: 0.0,
+            y: 0.0,
+            text: String::new(),
+            color: Color::WHITE,
+            justify: Justify::Left,
+            outline: None,
+            size: 64.0,
+        }
+    }
 }

@@ -34,7 +34,10 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     let h = spawn.get_float("height", 8.0);
     e.hitbox.set(w, h, -2.0, -2.0);
     e.sprite.set_bank("fireball");
-    e.sprite.play("hot");
+    // Original `FireBall.cs`: `sprite.Play("hot", restart: false,
+    // randomizeFrame: true)` so the fan of fireballs spins out of phase with
+    // each other instead of all syncing on frame 0.
+    e.sprite.play_with("hot", false, true);
     let nodes: Vec<(f32, f32)> = spawn.nodes().iter().map(|n| (n.x, n.y)).collect();
     STATES.with(|s| {
         s.borrow_mut().insert(

@@ -134,6 +134,9 @@ pub struct GameState {
     /// The plugin currently executing (set around each `update` call so the
     /// event FFI can route delivery).
     pub current_plugin: Option<String>,
+    /// Simple xorshift64 PRNG for host-side randomisation (currently sprite
+    /// `randomize_frame`). Mirrors the role of `Calc.Random`.
+    pub rng: u64,
 }
 
 impl GameState {
@@ -167,7 +170,17 @@ impl GameState {
             death_dir: (0.0, 0.0),
             plugin_cursors: HashMap::new(),
             current_plugin: None,
+            rng: 0x2545_F491_4F6C_DD1D,
         }
+    }
+
+    /// Next `u32` in the deterministic xorshift64 sequence (mirrors the role
+    /// of `Calc.Random` for host-side randomness).
+    fn next_rand(&mut self) -> u32 {
+        self.rng ^= self.rng << 13;
+        self.rng ^= self.rng >> 7;
+        self.rng ^= self.rng << 17;
+        (self.rng >> 32) as u32
     }
 }
 
@@ -827,6 +840,36 @@ impl WasmHost {
         )?;
         linker.func_wrap(
             "env",
+            "host_sprite_play_flags",
+            |mut caller: Caller<'_, GameState>,
+             id: u32,
+             name: u32,
+             len: u32,
+             restart: i32,
+             randomize_frame: i32| {
+                let s = read_string(&mut caller, name, len);
+                let rand_frame = if randomize_frame != 0 {
+                    // `Sprite.Play(id, restart, randomizeFrame)`: start at a
+                    // random frame so identical loop animations desynchronise.
+                    // The value is deliberately large: `SpriteAnimator`'s
+                    // loop handling reduces it (`frame %= len`) to a uniform
+                    // 0..len phase on the next tick.
+                    Some(caller.data_mut().next_rand() % 100_000)
+                } else {
+                    None
+                };
+                if let Some(e) = caller.data_mut().world.get_mut(id) {
+                    e.sprite.animation = s;
+                    if let Some(r) = rand_frame {
+                        e.sprite.frame = r as f32;
+                    } else if restart != 0 {
+                        e.sprite.frame = 0.0;
+                    }
+                }
+            },
+        )?;
+        linker.func_wrap(
+            "env",
             "host_sprite_bank_set",
             |mut caller: Caller<'_, GameState>, id: u32, name: u32, len: u32| {
                 let s = read_string(&mut caller, name, len);
@@ -942,6 +985,23 @@ impl WasmHost {
             "env",
             "host_input_axis",
             |caller: Caller<'_, GameState>, action: i32| caller.data().input.axis(action),
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_input_axis_check",
+            |caller: Caller<'_, GameState>, negative: i32, positive: i32| {
+                caller.data().input.axis_check(negative, positive)
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_input_move_x",
+            |caller: Caller<'_, GameState>| caller.data().input.move_x(),
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_input_move_y",
+            |caller: Caller<'_, GameState>| caller.data().input.move_y(),
         )?;
         linker.func_wrap(
             "env",
@@ -1225,7 +1285,8 @@ impl WasmHost {
              outline_r: u32,
              outline_g: u32,
              outline_b: u32,
-             outline_a: u32| {
+             outline_a: u32,
+             scale: f32| {
                 let text = read_string(&mut caller, text_ptr, text_len);
                 let justify = match justify {
                     1 => ruleste_plugins_api::types::Justify::Center,
@@ -1254,6 +1315,9 @@ impl WasmHost {
                     },
                     justify,
                     outline,
+                    // `PixelFont.Draw(baseSize, ...)`: the requested font size
+                    // is the base * scale (64 default * uniform scale).
+                    size: 64.0 * scale.max(0.1),
                 });
             },
         )?;

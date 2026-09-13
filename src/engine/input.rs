@@ -52,6 +52,56 @@ impl MouseState {
     }
 }
 
+/// A `VirtualIntegerAxis` equivalent for the movement stick, mirroring the
+/// original `Input.MoveX`/`MoveY` (`VirtualIntegerAxis` with the default
+/// `OverlapBehavior.TakeNewer`). When both the negative and positive bindings
+/// are held, the value flips to the previously held direction instead of
+/// cancelling out, so a left→hold-right transition never dithers through 0.
+#[derive(Debug, Clone)]
+struct IntegerAxis {
+    value: i32,
+    previous: i32,
+    turned: bool,
+}
+
+impl IntegerAxis {
+    fn new() -> IntegerAxis {
+        IntegerAxis {
+            value: 0,
+            previous: 0,
+            turned: false,
+        }
+    }
+
+    /// Mirrors `VirtualIntegerAxis.Update()`: reads the current held state of
+    /// the negative/positive bindings and applies the overlap behavior.
+    fn update(&mut self, negative: bool, positive: bool) -> i32 {
+        self.previous = self.value;
+        match (negative, positive) {
+            (true, true) => {
+                // OverlapBehaviors.TakeNewer: flip to the last direction held.
+                if !self.turned {
+                    self.value = -self.value;
+                    self.turned = true;
+                }
+            }
+            (true, false) => {
+                self.turned = false;
+                self.value = -1;
+            }
+            (false, true) => {
+                self.turned = false;
+                self.value = 1;
+            }
+            (false, false) => {
+                self.turned = false;
+                self.value = 0;
+            }
+        }
+        self.value
+    }
+}
+
 #[derive(Debug)]
 pub struct Input {
     pub bindings: [Binding; act::COUNT as usize],
@@ -66,6 +116,12 @@ pub struct Input {
     /// Mouse state, updated from SDL mouse events during `pump`.
     pub mouse: MouseState,
     prev_mouse_left: bool,
+    /// Latched movement axes, mirroring `Input.MoveX`/`MoveY`
+    /// (`VirtualIntegerAxis`, `OverlapBehavior.TakeNewer`). Kept as the
+    /// authoritative -1/0/1 source so plugins don't re-derive it from the two
+    /// directional actions (which would cancel out when both are held).
+    move_x: IntegerAxis,
+    move_y: IntegerAxis,
 }
 
 impl Default for Input {
@@ -100,6 +156,8 @@ impl Default for Input {
             buffer: [0.0; act::COUNT as usize],
             mouse: MouseState::new(),
             prev_mouse_left: false,
+            move_x: IntegerAxis::new(),
+            move_y: IntegerAxis::new(),
         }
     }
 }
@@ -185,6 +243,17 @@ impl Input {
         self.mouse.left_pressed = self.mouse.left_down && !self.prev_mouse_left;
         self.mouse.left_released = !self.mouse.left_down && self.prev_mouse_left;
         self.prev_mouse_left = self.mouse.left_down;
+
+        // Latched movement axes (`VirtualIntegerAxis.Update` runs after the
+        // keyboard state update, using the current held state).
+        self.move_x.update(
+            self.held[act::MOVE_LEFT as usize],
+            self.held[act::MOVE_RIGHT as usize],
+        );
+        self.move_y.update(
+            self.held[act::MOVE_UP as usize],
+            self.held[act::MOVE_DOWN as usize],
+        );
     }
 
     pub fn axis(&self, action: i32) -> f32 {
@@ -195,6 +264,33 @@ impl Input {
             act::MOVE_DOWN => (self.held[act::MOVE_DOWN as usize] as i32) as f32,
             _ => 0.0,
         }
+    }
+
+    /// Mirrors `MInput.AxisCheck(negative, positive)`: returns `-1`/`0`/`1`
+    /// (positive when `positive` is held alone, negative when `negative` is
+    /// held alone, `0` when neither or both are held).
+    pub fn axis_check(&self, negative: i32, positive: i32) -> i32 {
+        if self.button(negative) {
+            if self.button(positive) { 0 } else { -1 }
+        } else if self.button(positive) {
+            1
+        } else {
+            0
+        }
+    }
+
+    /// The latched horizontal movement axis, mirroring `Input.MoveX.Value`
+    /// (`VirtualIntegerAxis` with `OverlapBehavior.TakeNewer`): when both
+    /// directions are held the value flips to the last-held direction.
+    #[must_use]
+    pub fn move_x(&self) -> i32 {
+        self.move_x.value
+    }
+
+    /// The latched vertical movement axis, mirroring `Input.MoveY.Value`.
+    #[must_use]
+    pub fn move_y(&self) -> i32 {
+        self.move_y.value
     }
 
     pub fn button(&self, action: i32) -> bool {
@@ -324,7 +420,10 @@ mod tests {
             }],
             1.0 / 60.0,
         );
-        assert!(input.button(act::PAUSE), "escape should be held after keydown");
+        assert!(
+            input.button(act::PAUSE),
+            "escape should be held after keydown"
+        );
         // Window loses focus — all held keys should be cleared.
         input.pump(
             [Event::Window {
@@ -338,5 +437,75 @@ mod tests {
             !input.button(act::PAUSE),
             "escape should be cleared after focus lost"
         );
+    }
+
+    fn keydown(kc: Keycode) -> Event {
+        Event::KeyDown {
+            timestamp: 0,
+            window_id: 0,
+            keycode: Some(kc),
+            scancode: None,
+            keymod: sdl3::keyboard::Mod::empty(),
+            repeat: false,
+            which: 0,
+            raw: 0,
+        }
+    }
+
+    fn keyup(kc: Keycode) -> Event {
+        Event::KeyUp {
+            timestamp: 0,
+            window_id: 0,
+            keycode: Some(kc),
+            scancode: None,
+            keymod: sdl3::keyboard::Mod::empty(),
+            repeat: false,
+            which: 0,
+            raw: 0,
+        }
+    }
+
+    #[test]
+    fn axis_check_two_sides() {
+        let mut input = Input::default();
+        let (neg, pos) = (act::MOVE_LEFT, act::MOVE_RIGHT);
+        // Neither held → 0.
+        input.pump([], 1.0 / 60.0);
+        assert_eq!(input.axis_check(neg, pos), 0);
+        // Negative alone → -1.
+        input.pump([keydown(Keycode::Left)], 1.0 / 60.0);
+        assert_eq!(input.axis_check(neg, pos), -1);
+        // Release, positive alone → 1.
+        input.pump([keyup(Keycode::Left), keydown(Keycode::Right)], 1.0 / 60.0);
+        assert_eq!(input.axis_check(neg, pos), 1);
+        // Both held → 0 (mirrors `AxisCheck`).
+        input.pump([keydown(Keycode::Left)], 1.0 / 60.0);
+        assert_eq!(input.axis_check(neg, pos), 0);
+        // Release positive → negative alone → -1 again.
+        input.pump([keyup(Keycode::Right)], 1.0 / 60.0);
+        assert_eq!(input.axis_check(neg, pos), -1);
+    }
+
+    #[test]
+    fn move_axis_take_newer_on_overlap() {
+        let mut input = Input::default();
+        // Nothing held → 0.
+        input.pump([], 1.0 / 60.0);
+        assert_eq!(input.move_x(), 0);
+        // Right alone → 1.
+        input.pump([keydown(Keycode::Right)], 1.0 / 60.0);
+        assert_eq!(input.move_x(), 1);
+        // Left alone → -1.
+        input.pump([keyup(Keycode::Right), keydown(Keycode::Left)], 1.0 / 60.0);
+        assert_eq!(input.move_x(), -1);
+        // Both held → TakeNewer flips to the most recently held direction
+        // (right), matching the original: `Value *= -1` once.
+        input.pump([keydown(Keycode::Right)], 1.0 / 60.0);
+        assert_eq!(input.move_x(), 1);
+        // Both still held → no further flip (turned stays latched).
+        input.pump([], 1.0 / 60.0);
+        input.pump([keydown(Keycode::Left)], 1.0 / 60.0);
+        input.pump([keydown(Keycode::Right)], 1.0 / 60.0);
+        assert_eq!(input.move_x(), 1);
     }
 }
