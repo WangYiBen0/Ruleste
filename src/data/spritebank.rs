@@ -24,6 +24,11 @@ impl Chooser {
     /// Picks a random target based on weights.
     #[must_use]
     pub fn choose(&self, rng: &mut u64) -> &str {
+        if self.entries.is_empty() {
+            // Defensive: an empty `goto` (or one that parsed to nothing)
+            // shouldn't panic; the caller falls back to looping/stopping.
+            return "";
+        }
         let total: f32 = self.entries.iter().map(|e| e.weight).sum();
         if total <= 0.0 {
             return &self.entries[0].target;
@@ -231,7 +236,11 @@ fn parse_sprite(
     let origin = if el.attribute("x").is_some() || el.attribute("y").is_some() {
         origin
     } else if let Some(ref s) = sprite {
-        if el.children().filter(|n| n.is_element()).any(|n| n.tag_name().name() == "Origin") {
+        if el
+            .children()
+            .filter(|n| n.is_element())
+            .any(|n| n.tag_name().name() == "Origin")
+        {
             origin
         } else {
             s.origin

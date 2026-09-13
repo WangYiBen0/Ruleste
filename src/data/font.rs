@@ -271,12 +271,20 @@ impl PixelFont {
             .and_then(|v| v.parse().ok())
             .unwrap_or(line_height as f32);
 
+        // `<info outline="1">` marks a pre-outlined font variant. Mirrors the
+        // original `PixelFontSize.Outline`: such a variant must not receive a
+        // second runtime outline (`stroke > 0f && !Outline`).
+        let outline: bool = info
+            .attribute("outline")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(false);
+
         let font_size = PixelFontSize {
             size,
             line_height,
             page_textures,
             characters,
-            outline: false,
+            outline,
         };
 
         let mut font = Self::new(face);

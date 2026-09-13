@@ -239,9 +239,9 @@ impl Atlas {
             .get(&key)
             .or_else(|| {
                 // Check LINKS alias: links maps alias → real id.
-                self.links.get(&key).and_then(|real| {
-                    self.frame_index.get(&Self::normalize(real))
-                })
+                self.links
+                    .get(&key)
+                    .and_then(|real| self.frame_index.get(&Self::normalize(real)))
             })
             .copied()
     }

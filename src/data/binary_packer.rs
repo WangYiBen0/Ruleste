@@ -73,6 +73,22 @@ impl Attr {
             _ => "",
         }
     }
+
+    /// Renders the attribute as a string the way C#'s `Element.Attr(name)`
+    /// does — every value type is `.ToString()`'d (e.g. an `int` of 42 becomes
+    /// `"42"`, a `bool` becomes `"True"`). String variants return their
+    /// content directly.
+    #[must_use]
+    pub fn to_display_string(&self) -> String {
+        match self {
+            Attr::Bool(b) => if *b { "True" } else { "False" }.to_string(),
+            Attr::Byte(b) => b.to_string(),
+            Attr::Short(s) => s.to_string(),
+            Attr::Int(i) => i.to_string(),
+            Attr::Float(f) => f.to_string(),
+            Attr::String(s) | Attr::RleString(s) => s.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -101,7 +117,7 @@ impl Element {
     #[must_use]
     pub fn attr_str(&self, name: &str, default: &str) -> String {
         self.attr(name)
-            .map_or_else(|| default.to_string(), |a| a.as_str().to_string())
+            .map_or_else(|| default.to_string(), |a| a.to_display_string())
     }
 
     #[must_use]
@@ -215,5 +231,35 @@ mod tests {
         // "aaa" = count 3, char 'a'
         let bytes = [3u8, b'a'];
         assert_eq!(rle_decode(&bytes), "aaa");
+    }
+
+    #[test]
+    fn attr_display_string_matches_csharp_tostring() {
+        // `Element.Attr(name)` in C# calls `.ToString()` on every value type.
+        assert_eq!(Attr::Bool(true).to_display_string(), "True");
+        assert_eq!(Attr::Bool(false).to_display_string(), "False");
+        assert_eq!(Attr::Byte(7).to_display_string(), "7");
+        assert_eq!(Attr::Short(-3).to_display_string(), "-3");
+        assert_eq!(Attr::Int(42).to_display_string(), "42");
+        assert_eq!(Attr::Float(2.5).to_display_string(), "2.5");
+        assert_eq!(
+            Attr::String("hello".to_string()).to_display_string(),
+            "hello"
+        );
+        assert_eq!(
+            Attr::RleString("abc".to_string()).to_display_string(),
+            "abc"
+        );
+    }
+
+    #[test]
+    fn attr_str_uses_display_for_non_string() {
+        let el = Element {
+            name: "test".to_string(),
+            attrs: vec![("count".to_string(), Attr::Int(10))],
+            children: Vec::new(),
+        };
+        assert_eq!(el.attr_str("count", "0"), "10");
+        assert_eq!(el.attr_str("missing", "fallback"), "fallback");
     }
 }
