@@ -1401,13 +1401,9 @@ impl WasmHost {
         linker.func_wrap(
             "env",
             "host_death_dir",
-            |caller: Caller<'_, GameState>, out: u32| {
+            |mut caller: Caller<'_, GameState>, out: u32| {
                 let dir = caller.data().death_dir;
-                let out = out as usize as *mut f32;
-                unsafe {
-                    *out = dir.0;
-                    *out.add(1) = dir.1;
-                }
+                write_vec2(&mut caller, out, dir.0, dir.1);
             },
         )?;
         // --- Consume an entity this session (won't respawn on death) ---
