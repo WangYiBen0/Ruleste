@@ -8,7 +8,7 @@
 //! (`Player.PointBounce`) unless they are dash-attacking. Drawing is procedural
 //! (four-point star + shield ring) so it reads clearly without the atlas art.
 
-use ruleste_plugins_api::host::{self, draw_image, draw_line, draw_rect, entities_by_type};
+use ruleste_plugins_api::host::{self, draw_image, draw_line, entities_by_type};
 use ruleste_plugins_api::map::MapData;
 use ruleste_plugins_api::plugin::{Entity, EntityState, spawn_data};
 use ruleste_plugins_api::types::{Color, EntityId, Vec2};

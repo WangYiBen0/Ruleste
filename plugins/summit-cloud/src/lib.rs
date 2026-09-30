@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 ruleste_plugins_api::ruleste_meta!("summitcloud");
 ruleste_plugins_api::ruleste_entity_types!("summitcloud");
 ruleste_plugins_api::ruleste_noop_destroy!();

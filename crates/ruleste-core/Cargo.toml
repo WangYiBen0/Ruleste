@@ -1,0 +1,25 @@
+[package]
+name = "ruleste-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Ruleste core: resource parsers, engine simulation, and the Wasm plugin host. Contains no rendering; the client crate owns SDL drawing and windowing."
+license = "MIT"
+
+[dependencies]
+ruleste-plugins-api = { path = "../ruleste-plugins-api", default-features = false }
+wasmtime = "47"
+bytemuck = { version = "1", features = ["derive"] }
+anyhow = "1"
+roxmltree = "0.20"
+lewton = "0.10.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# SDL3：core 保留输入/音频设备层（engine::input / engine::audio）；渲染在 client。
+[target.'cfg(unix)'.dependencies]
+sdl3 = { version = "0.18", features = ["use-pkg-config", "unsafe_textures"] }
+
+[target.'cfg(windows)'.dependencies]
+sdl3 = { version = "0.18", features = ["use-vcpkg", "unsafe_textures"] }

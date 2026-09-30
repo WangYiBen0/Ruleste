@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 ruleste_plugins_api::ruleste_meta!("templeFallTrigger");
 ruleste_plugins_api::ruleste_entity_types!("templeFallTrigger");
 ruleste_plugins_api::ruleste_noop_destroy!();

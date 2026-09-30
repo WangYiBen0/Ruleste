@@ -122,6 +122,10 @@ pub struct Input {
     /// directional actions (which would cancel out when both are held).
     move_x: IntegerAxis,
     move_y: IntegerAxis,
+    /// Actions forced held by the headless run's input script. They are OR-ed
+    /// with the real keyboard state in `pump`, so a scripted run goes through
+    /// exactly the same virtual-button edges a human key press produces.
+    scripted_held: [bool; act::COUNT as usize],
 }
 
 impl Default for Input {
@@ -158,6 +162,7 @@ impl Default for Input {
             prev_mouse_left: false,
             move_x: IntegerAxis::new(),
             move_y: IntegerAxis::new(),
+            scripted_held: [false; act::COUNT as usize],
         }
     }
 }
@@ -222,7 +227,10 @@ impl Input {
         }
 
         for (i, binding) in self.bindings.iter().enumerate() {
-            let held = binding.keys.iter().any(|k| self.keys_down.contains(k));
+            // A scripted action counts as held even though no key is down, so
+            // the headless run produces the same edges as a real key press.
+            let held =
+                self.scripted_held[i] || binding.keys.iter().any(|k| self.keys_down.contains(k));
             let fresh_press = held && !self.prev_held[i];
             self.pressed[i] = fresh_press;
             self.released[i] = !held && self.prev_held[i];
@@ -323,6 +331,55 @@ impl Input {
     pub fn consume(&mut self, action: i32) {
         if (0..act::COUNT).contains(&action) {
             self.buffer[action as usize] = 0.0;
+        }
+    }
+
+    /// Maps a scripted action name to its abstract action id.
+    ///
+    /// The names are the ones `--headless-input` accepts, chosen to read like
+    /// the bindings in `Settings.SetDefaultKeyboardControls`.
+    fn action_by_name(name: &str) -> Option<i32> {
+        Some(match name {
+            "move_left" | "left" => act::MOVE_LEFT,
+            "move_right" | "right" => act::MOVE_RIGHT,
+            "move_up" | "up" => act::MOVE_UP,
+            "move_down" | "down" => act::MOVE_DOWN,
+            "climb" => act::CLIMB,
+            "jump" => act::JUMP,
+            "dash" => act::DASH,
+            "start" | "confirm" => act::START,
+            "cancel" => act::CANCEL,
+            "quick_restart" => act::QUICK_RESTART,
+            "pause" => act::PAUSE,
+            _ => return None,
+        })
+    }
+
+    /// Holds a scripted action as if its key were down, for the headless run.
+    ///
+    /// This drives the *same* virtual-button machinery a real key press does:
+    /// the action's first frame produces a `pressed` edge (and re-arms its
+    /// press buffer), and the latched `move_x`/`move_y` axes see it as held.
+    /// Unknown names are ignored so a typo in a script cannot panic the run.
+    pub fn scripted_press(&mut self, name: &str) {
+        let Some(action) = Self::action_by_name(name) else {
+            return;
+        };
+        let i = action as usize;
+        if !self.scripted_held.get(i).is_some_and(|h| *h) {
+            // A fresh press must look like a fresh key press, so the previous
+            // frame's `held` bit is cleared first: the next `pump` sees the
+            // rising edge and arms the buffer.
+            self.held[i] = false;
+        }
+        self.scripted_held[i] = true;
+    }
+
+    /// Releases every scripted action, so a step's action does not leak into
+    /// the frames after it.
+    pub fn scripted_release(&mut self) {
+        for i in 0..act::COUNT as usize {
+            self.scripted_held[i] = false;
         }
     }
 }

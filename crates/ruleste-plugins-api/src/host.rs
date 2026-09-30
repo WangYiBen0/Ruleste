@@ -54,10 +54,24 @@ unsafe extern "C" {
         randomize_frame: i32,
     );
     fn host_sprite_bank_set(id: EntityId, name: *const u8, len: u32);
+    /// `host_sprite_play_offset` mirrors `Monocle.Sprite.PlayOffset(id, offset,
+    /// restart)`: `offset` is a 0..1 phase into the animation, so callers can
+    /// start an animation part-way through (animation timers are shared
+    /// machinery, not wall-clock). A `delay == 0` animation ignores the
+    /// offset and pins to frame 0, exactly like the original.
+    fn host_sprite_play_offset(id: EntityId, name: *const u8, len: u32, offset: f32, restart: i32);
     fn host_sprite_animation(id: EntityId, out: *mut u8, out_cap: u32) -> u32;
     fn host_sprite_bank_get(id: EntityId, out: *mut u8, out_cap: u32) -> u32;
     fn host_sprite_frame_get(id: EntityId) -> f32;
     fn host_sprite_frame_set(id: EntityId, frame: f32);
+    /// Writes the entity's current atlas frame id, e.g.
+    /// `characters/player/walk03`. This is the key
+    /// `PlayerSprite.FrameMetadata` uses in the original.
+    fn host_sprite_atlas_path(id: EntityId, out: *mut u8, out_cap: u32) -> u32;
+    /// Writes `[has_hair i32][hair_x i32][hair_y i32][bangs i32][carry_y i32]`
+    /// for the current frame, mirroring `PlayerSprite.PlayerAnimMetadata`.
+    /// Returns 0 when the frame declares no metadata.
+    fn host_sprite_frame_meta(id: EntityId, out: *mut u32, out_cap: u32) -> i32;
     fn host_sprite_rate_get(id: EntityId) -> f32;
     fn host_sprite_rate_set(id: EntityId, rate: f32);
     fn host_sprite_color_set(id: EntityId, color: Color);
@@ -88,7 +102,7 @@ unsafe extern "C" {
     fn host_line_of_sight(x1: f32, y1: f32, x2: f32, y2: f32) -> i32;
     fn host_actor_move(id: EntityId, h: f32, v: f32) -> u32;
     fn host_actor_is_grounded(id: EntityId) -> bool;
-    fn host_play_sound(name: *const u8, len: u32);
+    fn host_play_sound(name: *const u8, len: u32, volume: f32, pan: f32, pitch: f32, looping: u32);
     fn host_log(msg: *const u8, len: u32);
     fn host_emit(id: EntityId, event: u32, data: *const u8, len: u32);
     fn host_draw_line(x1: f32, y1: f32, x2: f32, y2: f32, r: u32, g: u32, b: u32, a: u32);
@@ -142,6 +156,10 @@ unsafe extern "C" {
         a: u32,
         size: f32,
     );
+    /// `Level.OnInterval(interval)`: true once per `interval` seconds of
+    /// accumulated time, then resets. `Level.DashUpdate` uses it to emit the
+    /// dash trail every 0.02s.
+    fn host_on_interval(interval: f32) -> bool;
     fn host_shake(intensity: f32, duration: f32);
     fn host_die();
     fn host_die_dir(dir_x: f32, dir_y: f32);
@@ -276,15 +294,50 @@ impl ActorMoveResult {
     }
 }
 
+/// Per-frame sprite metadata, mirroring `PlayerSprite.PlayerAnimMetadata`.
+///
+/// The original reads this from a `<Metadata>` block in `Sprites.xml`, keyed
+/// by the frame's atlas path; the host resolves it from the entity's current
+/// frame and hands it over here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameMeta {
+    /// `HasHair`: false when the frame opts out (the `x` entry form).
+    pub has_hair: bool,
+    /// `HairOffset`: hair anchor offset from the sprite position, in pixels.
+    pub hair_offset: (i32, i32),
+    /// `HairFrame`: which `characters/player/bangsNN` frame to draw.
+    pub bangs_frame: i32,
+    /// `CarryYOffset`: vertical offset while carrying something.
+    pub carry_y_offset: i32,
+}
+
 pub fn log(msg: &str) {
     unsafe {
         host_log(msg.as_ptr(), msg.len() as u32);
     }
 }
 
+/// Plays a one-shot sound at default volume/pan/pitch.
 pub fn play_sound(name: &str) {
+    play_sound_ex(name, 1.0, 0.0, 1.0, false);
+}
+
+/// Plays a sound with full mixer parameters.
+///
+/// Mirrors `Audio.Play(name)` / `Audio.Loop(name, position)` of the original
+/// engine: `volume` 0..1, `pan` -1(left)..1(right), `pitch` 1.0 = normal,
+/// `looping` repeats the stream forever. The host resolves `event:/...`
+/// aliases to the manifest stream names and feeds the SDL mixer each frame.
+pub fn play_sound_ex(name: &str, volume: f32, pan: f32, pitch: f32, looping: bool) {
     unsafe {
-        host_play_sound(name.as_ptr(), name.len() as u32);
+        host_play_sound(
+            name.as_ptr(),
+            name.len() as u32,
+            volume,
+            pan,
+            pitch,
+            u32::from(looping),
+        );
     }
 }
 
@@ -378,6 +431,37 @@ pub fn draw_image_color(frame_id: &str, x: f32, y: f32, color: Color) {
             0.0,
             1.0,
             1.0,
+            false as i32,
+            false as i32,
+            color.r as u32,
+            color.g as u32,
+            color.b as u32,
+            color.a as u32,
+        );
+    }
+}
+
+/// Like [`draw_image_color`], with a per-axis scale.
+///
+/// The hair needs this: `PlayerHair.GetHairScale` returns a non-uniform scale
+/// that tapers each strand toward the tail and mirrors the head by facing.
+pub fn draw_image_color_scaled(
+    frame_id: &str,
+    x: f32,
+    y: f32,
+    scale_x: f32,
+    scale_y: f32,
+    color: Color,
+) {
+    unsafe {
+        host_draw_image(
+            frame_id.as_ptr(),
+            frame_id.len() as u32,
+            x,
+            y,
+            0.0,
+            scale_x,
+            scale_y,
             false as i32,
             false as i32,
             color.r as u32,
@@ -551,6 +635,15 @@ pub fn emit_particle(
 
 /// Triggers a screen shake. Mirrors `Camera.Shake(intensity, duration)`. The
 /// host stores the request; the main loop consumes it and applies to the camera.
+/// `Level.OnInterval(interval)`: returns true once every `interval` seconds.
+///
+/// Each call carries its own accumulator keyed by the interval value, so
+/// nested intervals (a 0.02s trail inside a 0.1s one) do not clobber each
+/// other, matching the original's per-callsite state.
+pub fn on_interval(interval: f32) -> bool {
+    unsafe { host_on_interval(interval) }
+}
+
 pub fn shake(intensity: f32, duration: f32) {
     unsafe {
         host_shake(intensity, duration);
@@ -784,6 +877,39 @@ impl Sprite {
         }
     }
 
+    /// Mirrors `Monocle.Sprite.PlayOffset(id, offset, restart)`: starts the
+    /// animation at a 0..1 phase instead of its first frame. The phase is
+    /// resolved against the animation's frame count, so `0.5` lands halfway
+    /// through regardless of how many frames it has. `restart = false` keeps
+    /// the animation if it is already playing.
+    pub fn play_offset(&self, name: &str, offset: f32, restart: bool) {
+        unsafe {
+            host_sprite_play_offset(
+                self.id,
+                name.as_ptr(),
+                name.len() as u32,
+                offset,
+                i32::from(restart),
+            );
+        }
+    }
+
+    /// Mirrors `Monocle.Sprite.Reverse(id, restart)`: plays `name` and then
+    /// negates `Rate`, so the animation runs backwards and wraps around.
+    pub fn reverse(&self, name: &str, restart: bool) {
+        let rate = self.rate();
+        self.play_with(name, restart, false);
+        if rate > 0.0 {
+            self.set_rate(-rate);
+        }
+    }
+
+    /// Mirrors `Monocle.Sprite.Stop()`: halts playback and clears the current
+    /// animation id, so the entity stops drawing that animation entirely.
+    pub fn stop(&self) {
+        self.play("");
+    }
+
     /// Selects which SpriteBank sprite this entity's animations come from.
     /// The host defaults this to the entity type name; use this to point at a
     /// differently-named SpriteBank entry (e.g. `goldenBerry` -> `goldberry`).
@@ -825,6 +951,36 @@ impl Sprite {
         unsafe {
             host_sprite_frame_set(self.id, frame);
         }
+    }
+
+    /// The atlas frame id currently being drawn, e.g.
+    /// `characters/player/walk03`. Mirrors `PlayerSprite.Texture.AtlasPath`.
+    #[must_use]
+    pub fn atlas_path(&self) -> String {
+        let mut buf = [0u8; 64];
+        let n =
+            unsafe { host_sprite_atlas_path(self.id, buf.as_mut_ptr(), buf.len() as u32) } as usize;
+        let len = n.min(buf.len());
+        String::from_utf8_lossy(&buf[..len]).into_owned()
+    }
+
+    /// The per-frame metadata for the current sprite frame, mirroring
+    /// `PlayerSprite.PlayerAnimMetadata` (`HasHair` / `HairOffset` /
+    /// `HairFrame` / `CarryYOffset`). `None` when the frame declares none,
+    /// which is how the original's missing-dictionary-entry case presents.
+    #[must_use]
+    pub fn frame_meta(&self) -> Option<FrameMeta> {
+        let mut out = [0u32; 5];
+        let ok = unsafe { host_sprite_frame_meta(self.id, out.as_mut_ptr(), out.len() as u32) };
+        if ok == 0 {
+            return None;
+        }
+        Some(FrameMeta {
+            has_hair: out[0] != 0,
+            hair_offset: (out[1] as i32, out[2] as i32),
+            bangs_frame: out[3] as i32,
+            carry_y_offset: out[4] as i32,
+        })
     }
 
     #[must_use]

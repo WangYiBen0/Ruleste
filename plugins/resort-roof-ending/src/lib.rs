@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 ruleste_plugins_api::ruleste_meta!("resortRoofEnding");
 ruleste_plugins_api::ruleste_entity_types!("resortRoofEnding");
 ruleste_plugins_api::ruleste_noop_destroy!();

@@ -78,7 +78,7 @@ impl AudioBus {
         match Self::open(sdl) {
             Ok(inner) => AudioBus { inner: Some(inner) },
             Err(e) => {
-                eprintln!("ruleste: audio disabled: {e:#}");
+                crate::log_warn!("audio disabled: {e:#}");
                 AudioBus { inner: None }
             }
         }
@@ -91,7 +91,7 @@ impl AudioBus {
         let device_name = device.name()?;
         let stream = device.open_device_stream(Some(&spec))?;
         stream.resume()?;
-        println!(
+        crate::log_info!(
             "Audio: {} ({} Hz, {} ch, f32)",
             device_name,
             spec.freq.unwrap_or(0),
@@ -122,7 +122,106 @@ impl AudioBus {
         for (name, entry) in manifest.iter_entries() {
             inner.manifest.insert(name.to_string(), entry.clone());
         }
-        println!("AudioBus: {} streams indexed", inner.manifest.len());
+        crate::log_info!("AudioBus: {} streams indexed", inner.manifest.len());
+    }
+
+    /// Maps an FMOD-style `event:/...` path back to a playable stream name.
+    ///
+    /// The converted audio tree is keyed by the raw FSB5 stream name
+    /// (`game_<NN>_<sound>`, e.g. `game_04_arrowblock_activate`), while
+    /// gameplay plugins trigger the original `event:/...` path
+    /// (`event:/game/04_cliffside/arrowblock_activate`). The authoritative
+    /// `event -> stream` relation lives in the original `SFX.cs`; the table
+    /// below is the subset used by the current plugins, inlined so the runtime
+    /// never depends on `references/`.
+    ///
+    /// Streams that are exported as numbered variants in the manifest
+    /// (`game_05_seeker_aggro_01`, `_02`, ...) are picked by probing a `_NN`
+    /// suffix on the base stream name.
+    ///
+    /// Unknown paths return `None` so `play` falls through to its usual
+    /// unknown-name stats bump.
+    pub fn resolve(&mut self, name: &str) -> Option<&str> {
+        let inner = self.inner.as_ref()?;
+        if let Some((name, _)) = inner.manifest.get_key_value(name) {
+            return Some(name);
+        }
+        // Exact event -> base stream table (from the original SFX.cs); keep in
+        // sync with what the plugins actually play.
+        let mapped =
+            match name {
+                "event:/game/00_prologue/bridge_rumble_loop" => "game_00_bridge_rumble_loop",
+                "event:/game/00_prologue/bridge_stop"
+                | "event:/game/00_prologue/bridge_support_break" => "game_00_bridge_supportbreak",
+                "event:/game/00_prologue/fallblock_first_impact" => {
+                    "game_00_fallingblock_prologue_impact"
+                }
+                "event:/game/00_prologue/fallblock_first_shake" => {
+                    "game_00_fallingblock_prologue_shake"
+                }
+                "event:/game/03_resort/lantern_bump" => "game_03_lantern_bump",
+                "event:/game/04_cliffside/arrowblock_activate" => "game_04_arrowblock_activate",
+                "event:/game/04_cliffside/arrowblock_break" => "game_04_arrowblock_break",
+                "event:/game/04_cliffside/arrowblock_reappear" => "game_04_arrowblock_reappear",
+                "event:/game/04_cliffside/greenbooster_dash"
+                | "event:/game/04_cliffside/wallbooster_boost"
+                | "event:/game/09_core/icewall_boost" => "game_04_greenbooster_dash",
+                "event:/game/04_cliffside/whiteblock_fallthru" => "game_04_whiteblock_fallthru",
+                "event:/game/05_mirror/seeker_attack"
+                | "event:/game/05_mirror_temple/seeker_dash" => "game_05_seeker_dash",
+                "event:/game/05_mirror/seeker_killed"
+                | "event:/game/05_mirror_temple/seeker_death" => "game_05_seeker_death",
+                "event:/game/05_mirror/seeker_locate"
+                | "event:/game/05_mirror_temple/seeker_aggro" => "game_05_seeker_aggro",
+                "event:/game/05_mirror/seeker_regenerate"
+                | "event:/game/05_mirror_temple/seeker_revive" => "game_05_seeker_booped",
+                "event:/game/09_core/bounceblock_break" => "game_09_bounceblock_break",
+                "event:/game/09_core/bounceblock_reappear" => "game_09_bounceblock_reappear",
+                "event:/game/09_core/bounceblock_touch" => "game_09_bounceblock_touch",
+                "event:/game/09_core/frontdoor_unlock" => "game_09_frontdoor_unlock",
+                "event:/game/09_core/iceball_break"
+                | "event:/game/09_core/iceblock_break"
+                | "event:/game/09_core/iceblock_death" => "game_09_iceball_break",
+                "event:/game/09_core/iceblock_touch" => "game_09_iceblock_touch",
+                "event:/game/general/strawberry_blue_touch" => "game_gen_strawberry_blue_touch",
+                "event:/game/general/strawberry_get" => "game_gen_strawberry_red_get_1000",
+                "event:/game/general/strawberry_touch" => "game_gen_strawberry_touch",
+                _ => return None,
+            };
+        // Prefer the exact base stream; otherwise probe numbered variants.
+        if let Some(name) = inner.manifest.get_key_value(mapped) {
+            return Some(name.0.as_str());
+        }
+        for i in 1..=12u32 {
+            let variant = format!("{mapped}_{i:02}");
+            if let Some(name) = inner.manifest.get_key_value(&variant) {
+                return Some(name.0.as_str());
+            }
+        }
+        // Some converter names use underscores before the two-digit variant
+        // (for example `game_00_bridge_supportbreak_01`).  Accept that form
+        // as well so a mapped event is not silently dropped just because the
+        // export naming differs.
+        for i in 1..=12u32 {
+            let variant = format!("{mapped}_{i}");
+            if let Some(name) = inner.manifest.get_key_value(&variant) {
+                return Some(name.0.as_str());
+            }
+        }
+        None
+    }
+
+    /// Plays every request a Wasm plugin queued this frame and clears the queue.
+    ///
+    /// `requests` is `wasm_host::AudioBus::drain()`. Unknown / unmapped names
+    /// bump `AudioStats::unknown` without allocating voices. Each request
+    /// carries volume/pan/pitch/looping straight through to the mixer.
+    pub fn play_plugin_requests(&mut self, requests: Vec<crate::hotload::wasm_host::AudioRequest>) {
+        for req in requests {
+            let resolved = self.resolve(&req.name).map(str::to_owned);
+            let stream = resolved.as_deref().unwrap_or(&req.name);
+            self.play(stream, req.volume, req.pan, req.pitch, req.looping);
+        }
     }
 
     /// Starts a stream by name. `volume` 0..1, `pan` -1(left)..1(right),
@@ -244,7 +343,7 @@ impl AudioBus {
         }
         if let Err(e) = inner.stream.put_data_f32(&mix) {
             inner.stats.dropped += 1;
-            eprintln!("ruleste: audio feed failed: {e}");
+            crate::log_warn!("audio feed failed: {e}");
         }
     }
 }
@@ -260,7 +359,7 @@ impl Inner {
         let bytes = match std::fs::read(&path) {
             Ok(b) => b,
             Err(e) => {
-                eprintln!("ruleste: audio: cannot read {}: {e}", path.display());
+                crate::log_warn!("audio: cannot read {}: {e}", path.display());
                 self.stats.dropped += 1;
                 return None;
             }
@@ -268,7 +367,7 @@ impl Inner {
         let pcm: DecodedPcm = match decode_ogg(&bytes) {
             Ok(p) => p,
             Err(e) => {
-                eprintln!("ruleste: audio: bad ogg {}: {e:#}", path.display());
+                crate::log_warn!("audio: bad ogg {}: {e:#}", path.display());
                 self.stats.dropped += 1;
                 return None;
             }

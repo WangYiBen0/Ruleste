@@ -151,7 +151,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                     st.stun_timer = STUN_DURATION;
                     st.speed_x = 0.0;
                     st.speed_y = -BOUNCE_SPEED;
-                    play_sound("event:/game/05_mirror/seeker_regenerate");
+                    play_sound("event:/game/05_mirror_temple/seeker_revive");
                     // best-effort: bounce the player upward (Floor orientation);
                     // consumed by the player plugin once it handles spring bounces.
                     let mut payload = [0u8; 13];
@@ -181,7 +181,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                     if dx * dx + dy * dy < SIGHT_DIST_SQ && line_of_sight(p.x, p.y, px, py) {
                         st.state = STATE_SPOTTED;
                         st.spotted_timer = 0.4;
-                        play_sound("event:/game/05_mirror/seeker_locate");
+                        play_sound("event:/game/05_mirror_temple/seeker_aggro");
                     }
                 }
 
@@ -218,7 +218,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                     let dy = py - p.y;
                     if dx * dx + dy * dy < ATTACK_RANGE_SQ {
                         st.state = STATE_ATTACK;
-                        play_sound("event:/game/05_mirror/seeker_attack");
+                        play_sound("event:/game/05_mirror_temple/seeker_dash");
                     } else {
                         st.speed_x = approach(st.speed_x, 0.0, ACCEL * dt);
                         st.speed_y = approach(st.speed_y, 0.0, ACCEL * dt);
@@ -237,7 +237,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
 
                     if dist < ATTACK_RANGE_SQ {
                         die();
-                        play_sound("event:/game/05_mirror/seeker_killed");
+                        play_sound("event:/game/05_mirror_temple/seeker_death");
                         st.state = STATE_STUNNED;
                         st.stun_timer = STUN_DURATION;
                     }
@@ -264,7 +264,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                     st.state = STATE_REGENERATE;
                     st.regen_timer = REGEN_DURATION;
                     st.visible = false;
-                    play_sound("event:/game/05_mirror/seeker_regenerate");
+                    play_sound("event:/game/05_mirror_temple/seeker_revive");
                 }
             }
             STATE_REGENERATE => {

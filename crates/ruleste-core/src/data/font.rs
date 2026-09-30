@@ -122,6 +122,75 @@ impl PixelFontSize {
         }
         lines * self.line_height
     }
+
+    /// Width of a string using this size's glyph advances + kerning.
+    fn line_width(&self, text: &str) -> i32 {
+        let chars: Vec<char> = text.chars().collect();
+        let mut w = 0i32;
+        for (i, &c) in chars.iter().enumerate() {
+            if let Some(g) = self.characters.get(&c) {
+                w += g.x_advance;
+                if i + 1 < chars.len() {
+                    if let Some(&k) = g.kerning.get(&chars[i + 1]) {
+                        w += k;
+                    }
+                }
+            }
+        }
+        w
+    }
+
+    /// Wraps `text` to `max_width`, mirroring `PixelFontSize.AutoNewline`.
+    /// Existing newlines and whitespace runs are preserved; words are kept
+    /// intact when possible, and an overlong word is split at a glyph
+    /// boundary.
+    #[must_use]
+    pub fn auto_newline(&self, text: &str, max_width: i32) -> String {
+        if text.is_empty() || max_width <= 0 {
+            return text.to_string();
+        }
+
+        let mut out = String::with_capacity(text.len() + text.len() / 4);
+        for (paragraph_index, paragraph) in text.split('\n').enumerate() {
+            if paragraph_index > 0 {
+                out.push('\n');
+            }
+
+            let mut line = String::new();
+            for token in split_whitespace_tokens(paragraph) {
+                // Leading whitespace on an otherwise empty line must never
+                // force a break of its own.
+                if line.chars().any(|c| !c.is_whitespace())
+                    && self.line_width(&line) + self.line_width(token) > max_width
+                {
+                    out.push_str(&line);
+                    out.push('\n');
+                    line.clear();
+                }
+
+                if token.chars().all(char::is_whitespace) {
+                    // Whitespace is kept verbatim. It may remain at the end
+                    // of a line, matching the token-preserving behavior of
+                    // the original AutoNewline helper.
+                    line.push_str(token);
+                    continue;
+                }
+
+                for c in token.chars() {
+                    let mut candidate = line.clone();
+                    candidate.push(c);
+                    if !line.is_empty() && self.line_width(&candidate) > max_width {
+                        out.push_str(&line);
+                        out.push('\n');
+                        line.clear();
+                    }
+                    line.push(c);
+                }
+            }
+            out.push_str(&line);
+        }
+        out
+    }
 }
 
 /// A font with one or more size tables, mirroring Monocle's `PixelFont`.
@@ -447,7 +516,7 @@ impl SpriteFont {
 
         let line_spacing = (size as i32 * 12 / 10).max(1);
 
-        println!(
+        crate::log_info!(
             "Loaded font '{}' (size={}, style={}, {} glyphs, spacing={}, kerning={})",
             font_name,
             size,
@@ -509,6 +578,30 @@ impl SpriteFont {
         }
         lines
     }
+}
+
+/// Splits a paragraph into alternating word / whitespace tokens so wrapping
+/// can preserve the original spacing while measuring only the words.
+fn split_whitespace_tokens(text: &str) -> Vec<&str> {
+    let mut tokens = Vec::new();
+    let mut start = 0;
+    let mut in_space: Option<bool> = None;
+    for (index, c) in text.char_indices() {
+        let is_space = c.is_whitespace();
+        match in_space {
+            Some(prev) if prev == is_space => {}
+            Some(_) => {
+                tokens.push(&text[start..index]);
+                start = index;
+                in_space = Some(is_space);
+            }
+            None => in_space = Some(is_space),
+        }
+    }
+    if start < text.len() {
+        tokens.push(&text[start..]);
+    }
+    tokens
 }
 
 fn parse_html_entity(s: &str) -> Result<char> {
@@ -668,6 +761,33 @@ mod tests {
         let size = &f.sizes[0];
         assert_eq!(size.width_to_next_line("HI\nI", 0), 52);
         assert_eq!(size.width_to_next_line("HI\nI", 3), 16);
+    }
+
+    #[test]
+    fn auto_newline_wraps_words_and_splits_long_words() {
+        let f = PixelFont::parse(SAMPLE_FNT).unwrap();
+        let size = &f.sizes[0];
+        // H(37), I(16), kerning H->I(-1): "HI" is 52 pixels. The sample font
+        // has no space glyph, so the space token measures 0. It stays attached
+        // to the wrapped line, mirroring the original token-based AutoNewline.
+        assert_eq!(size.auto_newline("HI HI", 100), "HI \nHI");
+        // A single word wider than the limit is split at glyph boundaries.
+        // H is 37px wide, so only one H fits within 40px.
+        assert_eq!(size.auto_newline("HHHH", 40), "H\nH\nH\nH");
+        // Explicit newlines survive wrapping.
+        assert_eq!(size.auto_newline("HI\nHI", 60), "HI\nHI");
+        assert_eq!(size.auto_newline("", 60), "");
+        assert_eq!(size.auto_newline("HI", 0), "HI");
+    }
+
+    #[test]
+    fn auto_newline_preserves_whitespace_tokens() {
+        let f = PixelFont::parse(SAMPLE_FNT).unwrap();
+        let size = &f.sizes[0];
+        // A line that already fits is returned unchanged, spacing included.
+        assert_eq!(size.auto_newline("HI  HI", 104), "HI  HI");
+        // Leading indentation survives the first wrap as well.
+        assert_eq!(size.auto_newline("  HHHH", 40), "  H\nH\nH\nH");
     }
 
     #[test]

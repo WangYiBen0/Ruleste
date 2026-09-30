@@ -146,7 +146,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
                     st.ended = true;
                     st.collapsing = false;
                     Entity::new(id).collision.solid(false);
-                    play_sound("event:/game/00_prologue/bridge_stop");
+                    play_sound("event:/game/00_prologue/bridge_support_break");
                 }
             }
         }

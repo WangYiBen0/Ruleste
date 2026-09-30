@@ -109,7 +109,7 @@ fn check_player_kill(block: (f32, f32), bw: f32, bh: f32) {
         let (pw, ph, _, _) = pe.hitbox.get();
         if pp.x < block.0 + bw && pp.x + pw > block.0 && pp.y < block.1 + bh && pp.y + ph > block.1
         {
-            play_sound("event:/game/09_core/iceblock_death");
+            play_sound("event:/game/09_core/iceball_break");
             // `Player.Die(dir)`: the player is flung away from the block along
             // the dominant contact axis. Horizontal contact dominates, matching
             // the original's `Util.BounceDirection` on the lava edge.
@@ -170,7 +170,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             if !now_active {
                 st.deactivate_flash = 0.6;
                 st.shake = 0.4;
-                play_sound("event:/game/09_core/iceblock_break");
+                play_sound("event:/game/09_core/iceball_break");
             }
         }
 

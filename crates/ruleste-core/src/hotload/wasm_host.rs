@@ -19,11 +19,13 @@ use ruleste_plugins_api::export;
 use ruleste_plugins_api::types::{Color, Vec2};
 use wasmtime::{Caller, Engine, Extern, Instance, Linker, Memory, Module, Store, TypedFunc};
 
+use crate::data::atlas::Atlas;
+use crate::data::spritebank::SpriteBank;
 use crate::engine::autotiler::{Autotiler, TileGrid};
 use crate::engine::draw::{Circle, HollowRect, Image, Line, Rect, Text, TileBox};
 use crate::engine::ecs::World;
 use crate::engine::input::Input;
-use crate::engine::particles::{Particle, ParticleSystem};
+use crate::engine::particles::ParticleSystem;
 use crate::engine::physics::SolidGrid;
 
 pub const SCRATCH_ALLOC: &str = "ruleste_alloc";
@@ -45,17 +47,34 @@ pub struct GameEvent {
     pub data: Vec<u8>,
 }
 
+/// A sound request queued by a Wasm plugin during `entity_update` and
+/// flattened into the SDL mixer once per frame by the main loop.
+#[derive(Debug, Clone)]
+pub struct AudioRequest {
+    pub name: String,
+    pub volume: f32,
+    pub pan: f32,
+    pub pitch: f32,
+    pub looping: bool,
+}
+
 #[derive(Debug, Default)]
 pub struct AudioBus {
-    pub requests: Vec<(String, f32)>,
+    pub requests: Vec<AudioRequest>,
 }
 
 impl AudioBus {
-    pub fn play(&mut self, name: &str, pitch: f32) {
-        self.requests.push((name.to_string(), pitch));
+    pub fn play(&mut self, name: &str, volume: f32, pan: f32, pitch: f32, looping: bool) {
+        self.requests.push(AudioRequest {
+            name: name.to_string(),
+            volume,
+            pan,
+            pitch,
+            looping,
+        });
     }
 
-    pub fn drain(&mut self) -> Vec<(String, f32)> {
+    pub fn drain(&mut self) -> Vec<AudioRequest> {
         std::mem::take(&mut self.requests)
     }
 }
@@ -90,6 +109,12 @@ pub struct GameState {
     pub death_timer: f32,
     /// Pending screen shake requests from plugins (intensity, duration).
     pub shake_requests: Vec<(f32, f32)>,
+    /// Elapsed time of the current frame, and the per-interval accumulators
+    /// behind `Level.OnInterval`.
+    pub dt: f32,
+    /// Keyed by the interval in seconds, mirroring the original's per-callsite
+    /// interval state: `Level.OnInterval(0.02f)` and `(0.1f)` tick separately.
+    interval_timers: HashMap<u32, f32>,
     /// Top-left world-space camera position, updated by the main loop each
     /// frame so plugin FFI can convert mouse coordinates into world units.
     pub camera: Vec2,
@@ -137,9 +162,41 @@ pub struct GameState {
     /// Simple xorshift64 PRNG for host-side randomisation (currently sprite
     /// `randomize_frame`). Mirrors the role of `Calc.Random`.
     pub rng: u64,
+    /// SpriteBank loaded once at startup. The FFI needs it to answer
+    /// `host_sprite_play_offset`, which has to know an animation's frame
+    /// count to convert a 0..1 phase into a frame index.
+    pub sprite_bank: SpriteBank,
+    /// Atlas used to resolve an entity's current frame id, which the
+    /// `host_sprite_atlas_path` / `host_sprite_frame_meta` FFI expose so
+    /// plugins can read the per-frame `hair` metadata keyed by that id.
+    ///
+    /// Shared rather than owned: an atlas holds every decoded texture page, so
+    /// cloning one per host would duplicate megabytes of pixels.
+    pub atlas: Option<std::sync::Arc<Atlas>>,
 }
 
 impl GameState {
+    /// `Level.OnInterval(interval)`: true once every `interval` seconds.
+    ///
+    /// The original stores the accumulator per call site; here the interval
+    /// value identifies the site, so two effects using the same interval also
+    /// share a tick (they are indistinguishable in practice).
+    pub fn interval_hit(&mut self, interval: f32, dt: f32) -> bool {
+        if interval <= 0.0 {
+            return true;
+        }
+        // The interval is a f32 from the plugin; keying on its bit pattern
+        // keeps the map allocation-free and exact.
+        let key = interval.to_bits();
+        let timer = self.interval_timers.entry(key).or_insert(interval);
+        if *timer <= 0.0 {
+            *timer = interval;
+            return true;
+        }
+        *timer -= dt;
+        false
+    }
+
     pub fn new(world: World, input: Input, solids: SolidGrid) -> GameState {
         GameState {
             world,
@@ -157,6 +214,8 @@ impl GameState {
             particles: ParticleSystem::new(),
             death_timer: 0.0,
             shake_requests: Vec::new(),
+            dt: 0.0,
+            interval_timers: HashMap::new(),
             camera: Vec2::ZERO,
             pixel_scale: 1.0,
             collected: HashSet::new(),
@@ -171,6 +230,8 @@ impl GameState {
             plugin_cursors: HashMap::new(),
             current_plugin: None,
             rng: 0x2545_F491_4F6C_DD1D,
+            sprite_bank: SpriteBank::default(),
+            atlas: None,
         }
     }
 
@@ -251,7 +312,7 @@ impl WasmHost {
     pub fn spawn_player_once(&mut self, spawn: (String, Vec<u8>)) {
         self.player_spawn = Some(spawn.clone());
         if let Err(e) = self.spawn_entity(&spawn.0, spawn.1) {
-            eprintln!("ruleste: spawn player failed: {e}");
+            crate::log_warn!("spawn player failed: {e}");
         }
         self.rebuild_respawn();
     }
@@ -341,7 +402,7 @@ impl WasmHost {
                 let types = match self.peek_plugin_types(&path) {
                     Ok(t) => t,
                     Err(e) => {
-                        eprintln!("ruleste: skip plugin {}: {e:#}", path.display());
+                        crate::log_debug!("skip plugin {}: {e:#}", path.display());
                         continue;
                     }
                 };
@@ -350,7 +411,7 @@ impl WasmHost {
                 }
             }
             if let Err(e) = self.load_plugin(&path) {
-                eprintln!("ruleste: failed to load plugin {}: {e:#}", path.display());
+                crate::log_warn!("failed to load plugin {}: {e:#}", path.display());
             }
         }
         Ok(())
@@ -370,9 +431,10 @@ impl WasmHost {
 
     pub fn load_plugin(&mut self, path: &Path) -> Result<()> {
         let plugin = self.build_plugin(path)?;
-        eprintln!(
-            "ruleste: loaded plugin {:?} (types: {:?})",
-            plugin.name, plugin.types
+        crate::log_debug!(
+            "loaded plugin {:?} (types: {:?})",
+            plugin.name,
+            plugin.types
         );
         self.plugins.push(plugin);
         Ok(())
@@ -457,6 +519,9 @@ impl WasmHost {
         let mut respawn = false;
         {
             let state = self.store.data_mut();
+            // `Level.OnInterval` accumulates against the frame time, so the
+            // host keeps it current for the plugin FFI.
+            state.dt = dt;
             if state.death_timer > 0.0 {
                 state.death_timer -= dt;
                 respawn = state.death_timer <= 0.0;
@@ -487,7 +552,7 @@ impl WasmHost {
             };
             self.store.data_mut().current_plugin = Some(self.plugins[idx].name.clone());
             if let Err(e) = update.call(&mut self.store, (id, dt)) {
-                eprintln!("ruleste: plugin update error (entity {id}): {e}");
+                crate::log_error!("plugin update error (entity {id}): {e}");
             }
         }
         self.store.data_mut().current_plugin = None;
@@ -547,7 +612,7 @@ impl WasmHost {
                 continue;
             }
             if let Err(e) = self.spawn_entity(entity_type, spawn.clone()) {
-                eprintln!("ruleste: respawn of {entity_type} failed: {e}");
+                crate::log_error!("respawn of {entity_type} failed: {e}");
             }
         }
         // A reached checkpoint overrides the level-start spawn position.
@@ -603,13 +668,19 @@ impl WasmHost {
                 continue;
             };
             if let Err(e) = draw.call(&mut self.store, (id,)) {
-                eprintln!("ruleste: plugin draw error (entity {id}): {e}");
+                crate::log_error!("plugin draw error (entity {id}): {e}");
             }
         }
         // Bake the live particles into this frame's rectangle list so the
-        // existing rectangle renderer draws them (in world space, above entities).
+        // existing rectangle renderer draws them. The foreground layer goes
+        // in front of the entities, as `level.ParticlesFG` does in the
+        // original; the background layer is emitted before the plugin draw
+        // hooks so it lands behind them.
         let state = self.store.data_mut();
-        state.particles.append_to_rects(&mut state.draw_rects);
+        crate::engine::particles::append_to_rects(
+            &state.particles.foreground,
+            &mut state.draw_rects,
+        );
     }
 
     pub fn despawn(&mut self, id: u32) {
@@ -665,7 +736,7 @@ impl WasmHost {
                 let len_ptr = match write_buffer(&mut self.store, instance, &[0u8; 4]) {
                     Ok(p) => p,
                     Err(e) => {
-                        eprintln!("ruleste: serialize alloc for entity {id}: {e}");
+                        crate::log_warn!("serialize alloc for entity {id}: {e}");
                         continue;
                     }
                 };
@@ -681,7 +752,7 @@ impl WasmHost {
                         }
                     }
                     Ok(_) => {}
-                    Err(e) => eprintln!("ruleste: serialize entity {id}: {e}"),
+                    Err(e) => crate::log_warn!("serialize entity {id}: {e}"),
                 }
             }
         }
@@ -691,7 +762,7 @@ impl WasmHost {
 
         for (id, spawn) in &owned {
             if let Err(e) = call_init(&mut self.store, instance, *id, spawn) {
-                eprintln!("ruleste: re-init entity {id} after reload: {e}");
+                crate::log_warn!("re-init entity {id} after reload: {e}");
                 continue;
             }
             if let Some(restore) = &self.plugins[idx].funcs.deserialize {
@@ -699,19 +770,19 @@ impl WasmHost {
                     let ptr = match write_buffer(&mut self.store, instance, buf) {
                         Ok(p) => p,
                         Err(e) => {
-                            eprintln!("ruleste: deserialize alloc for entity {id}: {e}");
+                            crate::log_warn!("deserialize alloc for entity {id}: {e}");
                             continue;
                         }
                     };
                     let result = restore.call(&mut self.store, (*id, ptr, buf.len() as u32));
                     let _ = free_buffer(&mut self.store, instance, ptr, buf.len() as u32);
                     if let Err(e) = result {
-                        eprintln!("ruleste: deserialize entity {id}: {e}");
+                        crate::log_warn!("deserialize entity {id}: {e}");
                     }
                 }
             }
         }
-        eprintln!("ruleste: hot-reloaded plugin {owner:?}");
+        crate::log_info!("hot-reloaded plugin {owner:?}");
         Ok(())
     }
 
@@ -835,6 +906,7 @@ impl WasmHost {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
                     e.sprite.animation = s;
                     e.sprite.frame = 0.0;
+                    e.sprite.finished = false;
                 }
             },
         )?;
@@ -860,11 +932,62 @@ impl WasmHost {
                 };
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
                     e.sprite.animation = s;
+                    e.sprite.finished = false;
                     if let Some(r) = rand_frame {
                         e.sprite.frame = r as f32;
                     } else if restart != 0 {
                         e.sprite.frame = 0.0;
                     }
+                }
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_sprite_play_offset",
+            |mut caller: Caller<'_, GameState>,
+             id: u32,
+             name: u32,
+             len: u32,
+             offset: f32,
+             restart: i32| {
+                let s = read_string(&mut caller, name, len);
+                let state = caller.data_mut();
+                // `PlayOffset` is a no-op when the animation is already
+                // playing and `restart` was not requested.
+                if restart == 0
+                    && state
+                        .world
+                        .get(id)
+                        .is_some_and(|e| e.sprite.animation == s && !e.sprite.finished)
+                {
+                    return;
+                }
+                let (frame_count, has_delay) = {
+                    let e = match state.world.get(id) {
+                        Some(e) => e,
+                        None => return,
+                    };
+                    let anim = state
+                        .sprite_bank
+                        .sprite(&e.sprite.sprite)
+                        .and_then(|d| d.animation(&s).cloned());
+                    match anim {
+                        // `Delay == 0` animations ignore the phase and pin to
+                        // frame 0, and never animate.
+                        Some(a) if a.delay <= 0.0 => (0, false),
+                        Some(a) => (a.frames.len(), true),
+                        None => (0, false),
+                    }
+                };
+                if let Some(e) = state.world.get_mut(id) {
+                    e.sprite.animation = s;
+                    e.sprite.finished = !has_delay;
+                    // C# converts the phase by walking whole `Delay` slices
+                    // from frame 0; the leftover is kept in the frame timer.
+                    // The host folds the timer into the fractional frame
+                    // index, so the same phase is reproduced directly.
+                    let phase = offset.clamp(0.0, 1.0) * frame_count as f32;
+                    e.sprite.frame = if frame_count == 0 { 0.0 } else { phase };
                 }
             },
         )?;
@@ -907,7 +1030,57 @@ impl WasmHost {
             |mut caller: Caller<'_, GameState>, id: u32, frame: f32| {
                 if let Some(e) = caller.data_mut().world.get_mut(id) {
                     e.sprite.frame = frame;
+                    e.sprite.finished = false;
                 }
+            },
+        )?;
+        // The atlas frame id an entity is currently drawing, e.g.
+        // `characters/player/walk03`. The hair renderer looks the per-frame
+        // `hair` metadata up by this key, exactly as `PlayerSprite.HairFrame`
+        // / `HasHair` do (keyed by `Texture.AtlasPath`).
+        linker.func_wrap(
+            "env",
+            "host_sprite_atlas_path",
+            |mut caller: Caller<'_, GameState>, id: u32, out: u32, cap: u32| {
+                let frame_id = current_frame_id(&mut caller, id).unwrap_or_default();
+                write_string(&mut caller, out, cap, &frame_id) as u32
+            },
+        )?;
+        // Writes `[has_hair i32][hair_x i32][hair_y i32][bangs i32][carry_y i32]`
+        // for the entity's current frame, mirroring
+        // `PlayerSprite.PlayerAnimMetadata`. Returns 0 (writing nothing) when
+        // the frame declares no metadata, so the caller can skip the hair.
+        linker.func_wrap(
+            "env",
+            "host_sprite_frame_meta",
+            |mut caller: Caller<'_, GameState>, id: u32, out: u32, cap: u32| -> i32 {
+                if cap < 20 {
+                    return 0;
+                }
+                let Some(frame_id) = current_frame_id(&mut caller, id) else {
+                    return 0;
+                };
+                let Some(meta) = caller.data().sprite_bank.frame_meta(&frame_id).copied() else {
+                    return 0;
+                };
+                let values = [
+                    i32::from(meta.has_hair),
+                    meta.hair_offset.0,
+                    meta.hair_offset.1,
+                    meta.bangs_frame,
+                    meta.carry_y_offset,
+                ];
+                let Some(mem) = plugin_memory(&mut caller) else {
+                    return 0;
+                };
+                let mut buf = [0u8; 20];
+                for (i, v) in values.iter().enumerate() {
+                    buf[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+                }
+                if mem.write(&mut caller, out as usize, &buf).is_err() {
+                    return 0;
+                }
+                1
             },
         )?;
         linker.func_wrap(
@@ -1139,9 +1312,18 @@ impl WasmHost {
         linker.func_wrap(
             "env",
             "host_play_sound",
-            |mut caller: Caller<'_, GameState>, name: u32, len: u32| {
+            |mut caller: Caller<'_, GameState>,
+             name: u32,
+             len: u32,
+             volume: f32,
+             pan: f32,
+             pitch: f32,
+             looping: u32| {
                 let s = read_string(&mut caller, name, len);
-                caller.data_mut().audio.play(&s, 1.0);
+                caller
+                    .data_mut()
+                    .audio
+                    .play(&s, volume, pan, pitch, looping != 0);
             },
         )?;
         linker.func_wrap(
@@ -1149,7 +1331,7 @@ impl WasmHost {
             "host_log",
             |mut caller: Caller<'_, GameState>, msg: u32, len: u32| {
                 let s = read_string(&mut caller, msg, len);
-                eprintln!("[plugin] {s}");
+                crate::log_info!("[plugin] {s}");
             },
         )?;
         linker.func_wrap(
@@ -1338,22 +1520,36 @@ impl WasmHost {
              b: u32,
              a: u32,
              size: f32| {
-                caller.data_mut().particles.emit(Particle::new(
-                    x,
-                    y,
-                    vx,
-                    vy,
-                    ax,
-                    ay,
-                    life,
-                    Color {
-                        r: r as u8,
-                        g: g as u8,
-                        b: b as u8,
-                        a: a as u8,
-                    },
-                    size,
-                ));
+                // `level.ParticlesFG.Emit`: plugin particles draw in front of
+                // the entities, so the dash bursts and death puffs stay
+                // visible over Madeline.
+                let mut particle = crate::engine::particles::Particle::inactive();
+                particle.active = true;
+                particle.position = (x, y);
+                particle.speed = (vx, vy);
+                particle.acceleration = (ax, ay);
+                particle.life = life;
+                particle.start_life = life;
+                particle.size = size;
+                particle.start_size = size;
+                let color = Color {
+                    r: r as u8,
+                    g: g as u8,
+                    b: b as u8,
+                    a: a as u8,
+                };
+                particle.color = color;
+                particle.start_color = color;
+                caller.data_mut().particles.foreground.add(particle);
+            },
+        )?;
+        linker.func_wrap(
+            "env",
+            "host_on_interval",
+            |mut caller: Caller<'_, GameState>, interval: f32| -> i32 {
+                // Wasm has no bool in the ABI; `bool` lowers to i32 there.
+                let dt = caller.data().dt;
+                i32::from(caller.data_mut().interval_hit(interval, dt))
             },
         )?;
         // --- Request a screen shake (intensity in pixels, duration seconds) ---
@@ -1755,6 +1951,40 @@ fn write_vec2(caller: &mut Caller<'_, GameState>, ptr: u32, x: f32, y: f32) {
     }
 }
 
+/// The atlas frame id an entity is currently drawing.
+///
+/// Mirrors `PlayerSprite.Texture.AtlasPath`, which is the key the original
+/// looks `HairFrame` / `HasHair` / `CarryYOffset` up with. Returns `None` when
+/// the entity has no sprite bank entry, no current animation, or the animation
+/// resolves to no frames.
+fn current_frame_id(caller: &mut Caller<'_, GameState>, id: u32) -> Option<String> {
+    let state = caller.data();
+    let e = state.world.get(id)?;
+    if e.sprite.animation.is_empty() {
+        return None;
+    }
+    let sprite = state.sprite_bank.sprite(&e.sprite.sprite)?;
+    let anim = sprite.animation(&e.sprite.animation)?;
+    let frames = crate::engine::sprites::resolve_frames(
+        &state.sprite_bank,
+        sprite,
+        anim,
+        state.atlas.as_deref()?,
+    );
+    if frames.is_empty() {
+        return None;
+    }
+    let len = frames.len() as f32;
+    // Same folding the animator applies, so a reversed (`Rate < 0`) animation
+    // reports the frame it actually draws.
+    let idx = if e.sprite.frame < 0.0 {
+        (len - 1.0).max(0.0)
+    } else {
+        e.sprite.frame.floor().rem_euclid(len)
+    };
+    frames.get(idx as usize).cloned()
+}
+
 fn write_string(caller: &mut Caller<'_, GameState>, ptr: u32, cap: u32, s: &str) -> usize {
     let Some(mem) = plugin_memory(caller) else {
         return 0;
@@ -1837,4 +2067,54 @@ fn free_buffer(
         .map_err(|e| anyhow!("plugin missing {SCRATCH_DEALLOC} export: {e}"))?;
     dealloc.call(&mut *store, (ptr, len))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state() -> GameState {
+        GameState::new(World::new(), Input::default(), SolidGrid::from_rows(&[]))
+    }
+
+    #[test]
+    fn on_interval_fires_once_per_period() {
+        let mut st = state();
+        // `Level.OnInterval(0.02f)` drives the 0.02s dash trail, so at 60fps
+        // it should fire on roughly every other frame.
+        let mut fired = 0;
+        for _ in 0..6 {
+            if st.interval_hit(0.02, 1.0 / 60.0) {
+                fired += 1;
+            }
+        }
+        assert!((1..=3).contains(&fired), "fired {fired} times in 6 frames");
+    }
+
+    #[test]
+    fn separate_intervals_tick_independently() {
+        let mut st = state();
+        // A 0.02s trail inside a 0.1s effect must not reset the outer timer.
+        let mut inner = 0;
+        let mut outer = 0;
+        for _ in 0..12 {
+            if st.interval_hit(0.02, 1.0 / 60.0) {
+                inner += 1;
+            }
+            if st.interval_hit(0.1, 1.0 / 60.0) {
+                outer += 1;
+            }
+        }
+        assert!(
+            inner > outer,
+            "the fast interval must fire more often: {inner} vs {outer}"
+        );
+    }
+
+    #[test]
+    fn a_zero_or_negative_interval_always_fires() {
+        let mut st = state();
+        assert!(st.interval_hit(0.0, 1.0 / 60.0));
+        assert!(st.interval_hit(-1.0, 1.0 / 60.0));
+    }
 }

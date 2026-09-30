@@ -12,8 +12,6 @@ ruleste_plugins_api::ruleste_noop_serialize!();
 
 #[derive(Clone)]
 struct State {
-    w: f32,
-    h: f32,
     nodes: Vec<(f32, f32)>,
     idx: usize,
 }
@@ -36,15 +34,7 @@ pub extern "C" fn ruleste_entity_init(id: EntityId, data: *const u8, len: u32) {
     e.collision.platform(true);
     let nodes: Vec<(f32, f32)> = spawn.nodes().iter().map(|n| (n.x, n.y)).collect();
     STATES.with(|s| {
-        s.borrow_mut().insert(
-            id,
-            State {
-                w,
-                h,
-                nodes,
-                idx: 0,
-            },
-        );
+        s.borrow_mut().insert(id, State { nodes, idx: 0 });
     });
 }
 

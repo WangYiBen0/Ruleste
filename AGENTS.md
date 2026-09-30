@@ -30,11 +30,18 @@ cargo run
 - **Windows**：SDL3 使用 Win32 窗口，需安装 vcpkg 并 `vcpkg install sdl3`，或使用 `build-from-source` feature 自动构建
 
 ## 架构与目录结构
-- `src/` — Rust 核心实现
-  - `src/data/` — 资源解析器（.bin 地图、.meta 图集、.data 纹理、对话、字体、存档）
-  - `src/engine/` — 引擎层：ECS、事件总线、输入、自动拼接、物理，类似原版的 Monocle 引擎
+
+前后端分离：**core**（`crates/ruleste-core`）负责资源解析、模拟与插件加载；**client**（根 crate `ruleste`）负责 SDL 渲染与主循环，按 core 提供的实体/资源清单加载纹理与音频。
+
+- `crates/ruleste-core/` — core 库，**不含渲染**
+  - `crates/ruleste-core/src/data/` — 资源解析器（.bin 地图、.meta 图集、.data 纹理、对话、字体、存档）
+  - `crates/ruleste-core/src/engine/` — 引擎层：ECS、事件总线、输入/音频设备、自动拼接、物理，类似原版的 Monocle 引擎
+  - `crates/ruleste-core/src/hotload/` — Mtime 热重载监视器（地图、对话、Wasm 插件）
+  - `crates/ruleste-core/src/resources.rs` — 资源清单（`ResourceManifest`）：从实体类型 + SpriteBank 展开出需要的帧 id / tileset / 音频集合，供 client 按需加载
+- `src/` — client（根 crate）：SDL 渲染与主循环
   - `src/interface/` — 渲染层：标题页面、主菜单、存档选择菜单、暂停菜单、画面
-  - `src/hotload/` — Mtime 热重载监视器（地图、对话、Wasm 插件）
+  - `src/main.rs` — 主循环：poll 事件 → 驱动 core 模拟 → 按 `ResourceManifest` 按需上传纹理 → 渲染
+- `crates/ruleste-plugins-api/` — 插件侧 FFI 接口（host 声明 + 类型）
 - `plugins/` — Wasm 实体插件（`wasm32-unknown-unknown` 目标）
   - 例如 `plugins/player/` 玩家插件，`plugins/booster/` 助推器插件
 - `maps/` — 关卡包，按 pack 分目录（例如 `maps/Celeste/*.bin`）
@@ -56,6 +63,16 @@ cargo run
 8. **窗口关闭**：`Input::pump` 只处理按键，不消费 `Quit`/`Escape`；主循环先 poll 事件检查退出，再把其余事件喂给 `Input`。
 9. **窗口尺寸**：渲染固定于内部 320×180 逻辑分辨率，通过 `set_logical_size(..., LETTERBOX)` 交给 SDL 缩放，窗口必须 `resizable()`。原因：Niri 等平铺合成器会把"固定尺寸"窗口自动浮动；可缩放窗口才会被平铺（已验证：tile 936×1144，内容 16:9 letterbox 居中，`RULESTE_DUMP_FRAME` dump 尺寸随窗口变化）。不要在 core 里手动 `set_scale` 后调整窗口大小，应由 SDL 逻辑呈现处理。
 10. **碰撞箱调试**：`--show-hitboxes` CLI 参数开启 wireframe 碰撞箱渲染，每个活动实体画一个空心矩形：红色=普通实体，黄色=`solid_platform`（踩踏平台），绿色=`solid_entity`（完全实体块）。位置 = `position + hitbox_offset`，尺寸 = `hitbox`；由 `Renderer::draw_hitboxes` 在所有实体精灵画完后叠加。
+11. **日志级别**：core 的输出统一走 `crates/ruleste-core/src/log.rs`（`log_info!` / `log_warn!` / `log_error!` 等宏，写 stderr）。级别由 `--log-level=<level>` 或 `RULESTE_LOG_LEVEL` 决定（`trace|debug|info|warn|error|off`，默认 `info`），CLI 优先。新增打印不要再直接用 `println!`/`eprintln!`；报告类输出（headless 报告）才走 stdout。
+12. **粒子系统**：core 的 `engine/particles.rs` 对齐 Monocle 的 `ParticleType` / `Particle` / `ParticleSystem`：`ParticleType` 是配方（`create` 采样出单个 `Particle`），`Layer` 是固定容量的环形池（原版 `Particle[]`，写满即覆盖最旧），`ParticleSystem` 持有背景层（`level.Particles`）与前景层（`level.ParticlesFG`）。插件经 `host_emit_particle` 发射，**进入前景层**（原版 dash/死亡特效都走 `ParticlesFG`），渲染时并入 `draw_rects`。新增特效类型时按 `ParticleTypes.cs` 的字段逐项对齐（color/fade/rotation 模式、速度与寿命区间、friction/speedMultiplier/scaleOut）。
+13. **Level.OnInterval**：`host_on_interval(interval)` 对齐 `Level.OnInterval`，按 interval 值分别累计（0.02s 的冲刺尾迹与 0.1s 的外层效果互不干扰），用于 `DashUpdate` 的每 0.02s 发射。
+14. **玩家帧元数据**：玩家精灵的 `hair` / `carry` 数据由 `SpriteBank` 从 `Sprites.xml` 的 `<Metadata>` 解析进 `frame_metadata`（按图集帧 id 索引），经 `host_sprite_atlas_path` / `host_sprite_frame_meta` 暴露给插件。`PlayerHair` 的发丝锚点、刘海帧都取自这里，不要在插件里硬编码。
+15. **Headless 运行**：`--headless-*` 参数让 `ruleste` 在不开窗口、不开音频设备的情况下跑完整模拟（资源解码 + Wasm 插件 + 物理 + 相机 + 精灵动画），结束时在 stdout 打印报告。`main.rs` 的 `Session` 封装了窗口/无头两条路径共用的加载逻辑，加新资源时只改 `Session::load`。脚本输入通过 `Input::scripted_press`/`scripted_release` 注入，与真实按键走同一套 virtual button 逻辑。示例：
+    ```sh
+    cargo run -- --headless-frames=120 --headless-input=60:move_right,3:jump \
+        --plugin-path=target/wasm32-unknown-unknown/release maps/Celeste/0-Intro.bin
+    ```
+    headless 模式默认把日志级别压到 `warn`（除非显式指定），报告始终在 stdout。集成测试见 `tests/headless.rs`。
 
 ## AI 代理职责
 本仓库期望 AI 协助以下工作：

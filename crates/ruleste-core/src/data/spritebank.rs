@@ -94,6 +94,32 @@ pub struct Animation {
     pub is_loop: bool,
 }
 
+/// Per-frame metadata for one player-sprite frame, mirroring
+/// `PlayerSprite.PlayerAnimMetadata`.
+///
+/// The original builds this from a `<Metadata>` block inside the sprite's
+/// `<SpriteName>` element:
+///
+/// ```xml
+/// <Frames path="walk" hair="0,-1|0,-1|0,-1|0,-3|0,-2" carry="0,0,0,0"/>
+/// ```
+///
+/// `hair` is a `|`-separated list, one entry per frame of that animation. Each
+/// entry is either `x` (or empty) for "this frame has no hair", or
+/// `offsetX,offsetY[:bangsFrame]`. `carry` is a `,`-separated list of the
+/// vertical offsets used when Madeline carries something.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct FrameMetadata {
+    /// False when the frame opts out of hair (the `x`/empty entry form).
+    pub has_hair: bool,
+    /// Hair anchor offset from the sprite's render position, in pixels.
+    pub hair_offset: (i32, i32),
+    /// Which `characters/player/bangsNN` frame to use for this frame.
+    pub bangs_frame: i32,
+    /// Vertical carry offset; `0` when the frame does not list one.
+    pub carry_y_offset: i32,
+}
+
 #[derive(Debug, Clone)]
 pub struct SpriteData {
     pub name: String,
@@ -128,6 +154,18 @@ impl SpriteData {
 #[derive(Debug, Clone, Default)]
 pub struct SpriteBank {
     pub sprites: HashMap<String, SpriteData>,
+    /// Per-frame metadata keyed by the full atlas frame id, e.g.
+    /// `characters/player/idle00`. Mirrors `PlayerSprite.FrameMetadata`, which
+    /// is keyed by `Texture.AtlasPath` in the original.
+    pub frame_metadata: HashMap<String, FrameMetadata>,
+}
+
+impl SpriteBank {
+    /// The metadata for a resolved atlas frame id, if the sprite declared any.
+    #[must_use]
+    pub fn frame_meta(&self, frame_id: &str) -> Option<&FrameMetadata> {
+        self.frame_metadata.get(frame_id)
+    }
 }
 
 impl SpriteBank {
@@ -136,12 +174,23 @@ impl SpriteBank {
             roxmltree::Document::parse(xml).map_err(|e| anyhow::anyhow!("spritebank xml: {e}"))?;
         let root = doc.root_element();
         let mut sprites = HashMap::new();
+        let mut frame_metadata = HashMap::new();
         for node in root.children().filter(|n| n.is_element()) {
             if let Some(sprite) = parse_sprite(node, &sprites)? {
                 sprites.insert(sprite.name.clone(), sprite);
             }
+            // `PlayerSprite.CreateFramesMetadata` walks each sprite's
+            // `<Metadata>` block after the sprite itself is parsed, so the
+            // frame ids it builds (`path` + `<Frames path=...>`) resolve against
+            // the same `path` attribute the sprite uses.
+            if let Some(path) = node.attribute("path").filter(|p| !p.is_empty()) {
+                collect_frame_metadata(node, path, &mut frame_metadata);
+            }
         }
-        Ok(SpriteBank { sprites })
+        Ok(SpriteBank {
+            sprites,
+            frame_metadata,
+        })
     }
 
     pub fn load(path: &std::path::Path) -> anyhow::Result<SpriteBank> {
@@ -161,8 +210,10 @@ fn parse_sprite(
     existing: &HashMap<String, SpriteData>,
 ) -> anyhow::Result<Option<SpriteData>> {
     let name = el.tag_name().name();
-    // Skip the Sprites root itself and any metadata nodes without a path.
-    if name == "Sprites" || name.starts_with('#') {
+    // Skip the Sprites root itself, and `<Metadata>` blocks: those hold
+    // per-frame `hair`/`carry` data, not animation definitions, and are
+    // collected separately by `collect_frame_metadata`.
+    if name == "Sprites" || name == "Metadata" || name.starts_with('#') {
         return Ok(None);
     }
     let path = el.attribute("path").unwrap_or("").to_string();
@@ -294,6 +345,92 @@ fn parse_sprite(
     }))
 }
 
+/// Walks a sprite element's `<Metadata>` block and fills `out` with one entry
+/// per declared frame, keyed by the full atlas frame id.
+///
+/// Mirrors `PlayerSprite.CreateFramesMetadata`:
+///
+/// ```csharp
+/// string[] hair   = item.Attr("hair").Split('|');
+/// string[] carry  = item.Attr("carry", "").Split(',');
+/// for (int i = 0; i < Math.Max(hair.Length, carry.Length); i++) {
+///     string frame = text + ((i < 10) ? "0" : "") + i;
+///     if (i == 0 && !GFX.Game.Has(frame)) frame = text;
+///     ...
+/// }
+/// ```
+///
+/// Note the zero-padding rule: index 0 becomes `...00`, and a *single*
+/// unsuffixed frame is addressed as the bare prefix when the padded name does
+/// not exist in the atlas. Since the parser cannot see the atlas, it registers
+/// the padded name and the bare prefix for index 0, letting the lookup miss
+/// harmlessly.
+fn collect_frame_metadata(
+    el: roxmltree::Node<'_, '_>,
+    path: &str,
+    out: &mut HashMap<String, FrameMetadata>,
+) {
+    let Some(metadata) = el
+        .children()
+        .find(|n| n.is_element() && n.tag_name().name() == "Metadata")
+    else {
+        return;
+    };
+
+    for frames in metadata
+        .children()
+        .filter(|n| n.is_element() && n.tag_name().name() == "Frames")
+    {
+        let base = format!("{path}{}", frames.attribute("path").unwrap_or(""));
+        // `Attr` returns "" for a missing attribute, and `"".Split('|')` in C#
+        // yields a single empty entry — so a missing `hair` still produces one
+        // frame slot, which the loop below turns into "no hair".
+        let hair: Vec<&str> = frames.attribute("hair").unwrap_or("").split('|').collect();
+        let carry: Vec<&str> = frames.attribute("carry").unwrap_or("").split(',').collect();
+
+        for i in 0..hair.len().max(carry.len()) {
+            let mut meta = parse_hair_entry(hair.get(i).copied().unwrap_or(""));
+            meta.carry_y_offset = carry
+                .get(i)
+                .map(|c| c.trim().parse::<i32>().unwrap_or(0))
+                .unwrap_or(0);
+
+            let padded = format!("{base}{i:02}");
+            out.insert(padded.clone(), meta);
+            if i == 0 {
+                // The original falls back to the unsuffixed frame when the
+                // padded name is absent; register it too so either lookup works.
+                out.insert(base.clone(), meta);
+            }
+        }
+    }
+}
+
+/// Parses one `hair="x,y[:frame]"` entry into its offset and bangs frame.
+///
+/// An entry of `x` (or an empty one) means "no hair", reported as
+/// `has_hair: false` by the caller.
+fn parse_hair_entry(entry: &str) -> FrameMetadata {
+    let entry = entry.trim();
+    if entry.is_empty() || entry.eq_ignore_ascii_case("x") {
+        return FrameMetadata::default();
+    }
+    let (offset, frame) = match entry.split_once(':') {
+        Some((offset, frame)) => (offset, frame.trim().parse::<i32>().unwrap_or(0)),
+        None => (entry, 0),
+    };
+    // The offsets are written as `0, -2`, so the split tolerates inner spaces.
+    let mut parts = offset.split(',');
+    let x = parts.next().map(str::trim).and_then(parse_i32).unwrap_or(0);
+    let y = parts.next().map(str::trim).and_then(parse_i32).unwrap_or(0);
+    FrameMetadata {
+        has_hair: true,
+        hair_offset: (x, y),
+        bangs_frame: frame,
+        carry_y_offset: 0,
+    }
+}
+
 fn parse_i32(s: &str) -> Option<i32> {
     s.parse().ok()
 }
@@ -307,7 +444,18 @@ fn parse_frames(s: Option<&str>) -> Vec<u32> {
     let Some(s) = s else { return out };
     for part in s.split(',') {
         let part = part.trim();
-        if let Some((a, b)) = part.split_once('-') {
+        if let Some((frame, count)) = part.split_once('*') {
+            // Celeste's SpriteBank uses `index*count` to hold a frame for a
+            // number of animation ticks. Preserve that repetition exactly;
+            // dropping it changes the timing and, for repeat-only lists, can
+            // make the whole animation fall back to an unrelated sequential
+            // frame list.
+            if let (Ok(index), Ok(count)) =
+                (frame.trim().parse::<u32>(), count.trim().parse::<usize>())
+            {
+                out.extend(std::iter::repeat_n(index, count));
+            }
+        } else if let Some((a, b)) = part.split_once('-') {
             if let (Ok(lo), Ok(hi)) = (a.parse::<u32>(), b.parse::<u32>()) {
                 out.extend(lo..=hi);
             }
@@ -316,4 +464,98 @@ fn parse_frames(s: Option<&str>) -> Vec<u32> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_frames_supports_repeat_ranges_and_mixed_lists() {
+        assert_eq!(parse_frames(Some("0*3")), vec![0, 0, 0]);
+        assert_eq!(parse_frames(Some("0*3,0-2")), vec![0, 0, 0, 0, 1, 2]);
+        assert_eq!(parse_frames(Some("7*2,3,1-2")), vec![7, 7, 3, 1, 2]);
+        assert_eq!(parse_frames(Some("8*10,8-17")).len(), 20);
+        assert!(parse_frames(None).is_empty());
+    }
+
+    /// A `<Metadata>` block shaped like the real `player` sprite, exercising
+    /// the offset, the bangs-frame suffix, the hair opt-out and the carry list.
+    const PLAYER_XML: &str = r#"
+    <Sprites>
+      <SpriteName name="player" path="characters/player/">
+        <Metadata>
+          <Frames path="idle" hair="0,-2|0,-2:1|x|0,-1:2" carry="0,0,-1"/>
+          <Frames path="walk" hair="0,-1|0,-3"/>
+        </Metadata>
+      </SpriteName>
+    </Sprites>"#;
+
+    #[test]
+    fn frame_metadata_is_keyed_by_padded_frame_id() {
+        let bank = SpriteBank::from_xml(PLAYER_XML).unwrap();
+
+        // Frame 0's entry is registered under both the padded and the bare
+        // name, mirroring the original's unsuffixed fallback.
+        let idle00 = bank.frame_meta("characters/player/idle00").unwrap();
+        assert!(idle00.has_hair);
+        assert_eq!(idle00.hair_offset, (0, -2));
+        assert_eq!(idle00.bangs_frame, 0, "no suffix means bangs frame 0");
+
+        let idle01 = bank.frame_meta("characters/player/idle01").unwrap();
+        assert_eq!(idle01.hair_offset, (0, -2));
+        assert_eq!(
+            idle01.bangs_frame, 1,
+            "the `:1` suffix selects the bangs frame"
+        );
+
+        let idle03 = bank.frame_meta("characters/player/idle03").unwrap();
+        assert_eq!(idle03.bangs_frame, 2);
+    }
+
+    #[test]
+    fn frame_metadata_handles_hair_opt_out_and_carry_offsets() {
+        let bank = SpriteBank::from_xml(PLAYER_XML).unwrap();
+
+        // `x` opts the frame out of hair entirely.
+        let idle02 = bank.frame_meta("characters/player/idle02").unwrap();
+        assert!(!idle02.has_hair);
+        assert_eq!(idle02.hair_offset, (0, 0));
+
+        // `carry` is a separate, comma-separated list; frame 2 of `idle` has no
+        // hair but does carry a -1 offset.
+        assert_eq!(idle02.carry_y_offset, -1);
+        assert_eq!(
+            bank.frame_meta("characters/player/walk00")
+                .unwrap()
+                .carry_y_offset,
+            0
+        );
+
+        // A frame the metadata never mentions has no entry at all.
+        assert!(bank.frame_meta("characters/player/run00").is_none());
+    }
+
+    #[test]
+    fn frame_metadata_tolerates_spaces_in_offsets() {
+        // The real bank writes `hair="1, 1|1,2"`, with a space after the comma.
+        let bank = SpriteBank::from_xml(
+            r#"<Sprites><SpriteName name="p" path="characters/player/">
+                 <Metadata><Frames path="runStumble" hair="1, 1|1,2"/></Metadata>
+               </SpriteName></Sprites>"#,
+        )
+        .unwrap();
+        assert_eq!(
+            bank.frame_meta("characters/player/runStumble00")
+                .unwrap()
+                .hair_offset,
+            (1, 1)
+        );
+        assert_eq!(
+            bank.frame_meta("characters/player/runStumble01")
+                .unwrap()
+                .hair_offset,
+            (1, 2)
+        );
+    }
 }

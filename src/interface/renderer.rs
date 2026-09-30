@@ -9,13 +9,13 @@ use sdl3::render::{BlendMode, FRect, Texture, TextureAccess, WindowCanvas};
 use sdl3::video::{Window, WindowBuilder};
 use sdl3::{EventPump, Sdl};
 
-use crate::data::atlas::{Atlas, FrameRect};
-use crate::data::spritebank::SpriteBank;
-use crate::engine::autotiler::TileGrid;
-use crate::engine::backdrops::Backdrop;
-use crate::engine::draw::{Circle, HollowRect, Image, Line, Rect, Text, TileBox};
-use crate::engine::ecs::World;
-use crate::engine::sprites::SpriteAnimator;
+use ruleste_core::data::atlas::{Atlas, FrameRect};
+use ruleste_core::data::spritebank::SpriteBank;
+use ruleste_core::engine::autotiler::TileGrid;
+use ruleste_core::engine::backdrops::Backdrop;
+use ruleste_core::engine::draw::{Circle, HollowRect, Image, Line, Rect, Text, TileBox};
+use ruleste_core::engine::ecs::World;
+use ruleste_core::engine::sprites::SpriteAnimator;
 use ruleste_plugins_api::types::Justify;
 
 pub const WINDOW_WIDTH: u32 = 320;
@@ -41,10 +41,10 @@ pub struct Renderer {
     /// The active PixelFont used for plugin-submitted text commands.
     /// Populated via `upload_pixel_font`; when present, `SpriteFont` is
     /// ignored (the legacy `set_font` path).
-    pub pixel_font: Option<crate::data::font::PixelFont>,
+    pub pixel_font: Option<ruleste_core::data::font::PixelFont>,
     /// The active SpriteFont used for plugin-submitted text commands.
     /// Used as a fallback when `pixel_font` is `None`.
-    pub font: Option<crate::data::font::SpriteFont>,
+    pub font: Option<ruleste_core::data::font::SpriteFont>,
 }
 
 /// A backdrop texture plus the atlas frame's offset rect (untrimmed box).
@@ -160,6 +160,48 @@ impl Renderer {
             self.atlas_textures.insert(i, texture);
         }
         Ok(())
+    }
+
+    /// Uploads only the atlas pages that contain frames from `needed` — the
+    /// client's on-demand path: the core hands it a [`ResourceManifest`] of the
+    /// frames the live entities reference, and this uploads just those pages
+    /// instead of every atlas in the pack (chapter end-screens, unused tilesets,
+    /// etc. stay on disk). Pages already uploaded are left untouched.
+    ///
+    /// Returns the number of pages uploaded by this call.
+    pub fn upload_atlas_for(
+        &mut self,
+        atlas: &Atlas,
+        needed: &std::collections::HashSet<String>,
+    ) -> anyhow::Result<usize> {
+        // Which page indices are needed?
+        let mut pages: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        for id in needed {
+            if let Some((pi, _)) = atlas.resolve_frame(id) {
+                pages.insert(pi);
+            }
+        }
+        let creator = self.canvas.texture_creator();
+        let mut uploaded = 0usize;
+        for &pi in &pages {
+            if self.atlas_textures.contains_key(&pi) {
+                continue;
+            }
+            let Some(page) = atlas.pages.get(pi) else {
+                continue;
+            };
+            let mut texture = creator.create_texture(
+                Some(PixelFormat::ABGR8888),
+                TextureAccess::Static,
+                page.width,
+                page.height,
+            )?;
+            texture.set_blend_mode(sdl3::render::BlendMode::Blend);
+            texture.update(None, &page.rgba, (page.width as usize) * 4)?;
+            self.atlas_textures.insert(pi, texture);
+            uploaded += 1;
+        }
+        Ok(uploaded)
     }
 
     /// Crops a backdrop frame out of the atlas into its own texture, so it can
@@ -380,6 +422,9 @@ impl Renderer {
         animator: &mut SpriteAnimator<'_>,
     ) {
         let mut ordered: Vec<_> = world.iter().collect();
+        // Monocle's `EntityList` orders by actual depth.  The ECS stores the
+        // logical depth directly, so use it as a stable key and retain the
+        // iteration order for equal depths.
         ordered.sort_by_key(|e| e.depth);
 
         for entity in ordered {
@@ -622,7 +667,7 @@ impl Renderer {
     /// Sets the SpriteFont used to render plugin-submitted [`Text`] commands.
     /// Plugins draw text relative to the camera, so the renderer needs the
     /// active font; it's set once at startup from the resources root.
-    pub fn set_font(&mut self, font: crate::data::font::SpriteFont) {
+    pub fn set_font(&mut self, font: ruleste_core::data::font::SpriteFont) {
         self.font = Some(font);
     }
 
@@ -633,7 +678,7 @@ impl Renderer {
     /// pages will simply not render.
     pub fn upload_pixel_font(
         &mut self,
-        font: crate::data::font::PixelFont,
+        font: ruleste_core::data::font::PixelFont,
         font_dir: &std::path::Path,
     ) -> anyhow::Result<()> {
         for size in &font.sizes {
@@ -641,7 +686,7 @@ impl Renderer {
                 if self.font_pages.contains_key(page_name) {
                     continue;
                 }
-                let Some(page) = crate::data::font::load_page_png(font_dir, page_name)
+                let Some(page) = ruleste_core::data::font::load_page_png(font_dir, page_name)
                     .map_err(|e| anyhow::anyhow!("{e}"))?
                 else {
                     continue;
@@ -665,7 +710,7 @@ impl Renderer {
     /// Draws plugin-submitted text using the active `PixelFont` (BMFont
     /// pipeline). Falls back to no-op if no font was uploaded. Multi-line
     /// text uses the per-size `line_height`; justify offsets per-line width.
-    pub fn draw_pixel_texts(&mut self, font: &crate::data::font::PixelFont, texts: &[Text]) {
+    pub fn draw_pixel_texts(&mut self, font: &ruleste_core::data::font::PixelFont, texts: &[Text]) {
         if font.sizes.is_empty() {
             return;
         }
@@ -681,12 +726,16 @@ impl Renderer {
                 Some(s) => s,
                 None => continue,
             };
+            // Text commands originate at world coordinates. Use the 320px
+            // logical viewport as the wrap width, matching the original
+            // `PixelFontSize.AutoNewline` behaviour for dialogue text.
+            let wrapped = size.auto_newline(&t.text, 320);
             let line_spacing = size.line_height as f32;
             let x0 = t.x - self.camera.x;
             let y0 = t.y - self.camera.y;
             let mut cursor_y = y0;
             let mut line_start = 0usize;
-            let chars: Vec<char> = t.text.chars().collect();
+            let chars: Vec<char> = wrapped.chars().collect();
             for (i, &c) in chars.iter().enumerate() {
                 if c == '\n' {
                     let line: String = chars[line_start..i].iter().collect();
@@ -715,8 +764,8 @@ impl Renderer {
     #[allow(clippy::too_many_arguments)]
     fn draw_pixel_line(
         &mut self,
-        _font: &crate::data::font::PixelFont,
-        size: &crate::data::font::PixelFontSize,
+        _font: &ruleste_core::data::font::PixelFont,
+        size: &ruleste_core::data::font::PixelFontSize,
         text: &str,
         x: f32,
         y: f32,
@@ -822,7 +871,7 @@ impl Renderer {
 
     fn draw_text_line(
         &mut self,
-        font: &crate::data::font::SpriteFont,
+        font: &ruleste_core::data::font::SpriteFont,
         text: &str,
         x: f32,
         y: f32,
@@ -974,7 +1023,7 @@ impl Renderer {
     /// A production implementation would batch glyphs into a single draw call.
     pub fn draw_text(
         &mut self,
-        font: &crate::data::font::SpriteFont,
+        font: &ruleste_core::data::font::SpriteFont,
         text: &str,
         x: f32,
         y: f32,
@@ -1015,7 +1064,7 @@ impl Renderer {
     /// Draw centered text at the specified position.
     pub fn draw_text_centered(
         &mut self,
-        font: &crate::data::font::SpriteFont,
+        font: &ruleste_core::data::font::SpriteFont,
         text: &str,
         center_x: f32,
         y: f32,
@@ -1029,7 +1078,7 @@ impl Renderer {
     /// Draw right-aligned text.
     pub fn draw_text_right(
         &mut self,
-        font: &crate::data::font::SpriteFont,
+        font: &ruleste_core::data::font::SpriteFont,
         text: &str,
         right_x: f32,
         y: f32,
@@ -1041,7 +1090,7 @@ impl Renderer {
     }
 
     /// Measure text width.
-    pub fn measure_text(font: &crate::data::font::SpriteFont, text: &str) -> f32 {
+    pub fn measure_text(font: &ruleste_core::data::font::SpriteFont, text: &str) -> f32 {
         font.measure_string(text) as f32
     }
 
@@ -1050,7 +1099,7 @@ impl Renderer {
     /// Returns the total height of the rendered text.
     pub fn draw_text_wrapped(
         &mut self,
-        font: &crate::data::font::SpriteFont,
+        font: &ruleste_core::data::font::SpriteFont,
         text: &str,
         x: f32,
         mut y: f32,

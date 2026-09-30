@@ -997,6 +997,16 @@ name = "ruleste"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ruleste-core",
+ "ruleste-plugins-api",
+ "sdl3",
+]
+
+[[package]]
+name = "ruleste-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
  "bytemuck",
  "image",
  "lewton",

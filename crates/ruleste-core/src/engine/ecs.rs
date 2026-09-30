@@ -12,6 +12,10 @@ pub struct SpriteState {
     pub sprite: String,
     pub animation: String,
     pub frame: f32,
+    /// True after a one-shot animation reaches its final frame. The final
+    /// frame remains active and renderable, but the animator does not advance
+    /// it until another `play` call resets the flag.
+    pub finished: bool,
     pub rate: f32,
     pub color: Color,
     pub flip_x: bool,
@@ -24,6 +28,7 @@ impl Default for SpriteState {
             sprite: String::new(),
             animation: String::new(),
             frame: 0.0,
+            finished: false,
             rate: 1.0,
             color: Color::WHITE,
             flip_x: false,

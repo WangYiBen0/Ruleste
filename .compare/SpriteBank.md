@@ -1,106 +1,78 @@
 # SpriteBank 对比分析
 
 > C# 原版: `references/source/Celeste/Monocle/SpriteBank.cs`
-> Rust 实现: `src/data/spritebank.rs`
-
----
+> Rust 实现: `crates/ruleste-core/src/data/spritebank.rs`（307 行）
 
 ## 类型/结构体对应
 
-| C# | Rust | 状态 | 说明 |
-|----|------|------|------|
-| `class SpriteBank` | `struct SpriteBank` | 🟠 部分实现 | C# 是含运行时 Sprite 创建能力的类；Rust 仅是纯数据解析器 |
-| `Atlas Atlas` 字段 | ❌ | 🔴 缺失 | Rust 侧无 Atlas 引用，SpriteBank 纯做 XML 解析 |
-| `XmlDocument XML` 字段 | ❌ | 🔴 缺失 | Rust 用 `roxmltree::Document` 解析后丢弃，不保留 XML |
-| `Dictionary<string, SpriteData> SpriteData` | `HashMap<String, SpriteData> sprites` | ✅ 完全对齐 | 存储结构等价（Rust 侧 Key 为大小写敏感，C# 为 `OrdinalIgnoreCase`） |
-| `SpriteData` 类（Monocle 内置） | `struct SpriteData` | 🟠 部分实现 | Rust 侧是自定义数据结构，包含原版 SpriteData + Animation 的部分字段 |
+| C# | Rust | 状态 |
+|----|------|------|
+| `SpriteData` | `SpriteData` | ✅ |
+| `Animation` | `Animation` | ✅ |
+| `Chooser<string>` | `Chooser`（加权 + PRNG 选择） | ✅ |
+| `MTexture[] Frames` | `Animation.frames: Vec<u32>` + 运行时 `SpriteAnimator::frames` 解析 | 🟠 |
+| `Dictionary<string, AnimationData>`（按 animation id） | `animations: HashMap<String, Animation>` | ✅ |
+| `Atlas`（纹理池） | 不持有；`path` 前缀按需从 `Atlas` 解析 | 🟠 |
 
----
+## 一、数据字段逐项
 
-## 方法/函数逐一对比
+### `SpriteData`
 
-### 构造函数 `SpriteBank(Atlas, XmlDocument)`
+| C# | Rust | 状态 |
+|----|------|------|
+| `name` | `name` | ✅ |
+| `Path` | `path` | ✅ |
+| `Start` | `start` | ✅ |
+| `Origin` | `origin: (i32,i32)` | ✅ |
+| `Center`/`Justify`（`<Center/>`/`<Justify/>`） | `center: bool` / `justify: Option<(f32,f32)>` | ✅ |
+| `useRawDeltaTime` | 缺失（统一 dt） | 🔴 |
+| `Goto`（Sprite 级默认） | 缺失（动画级 goto 有） | 🟠 |
 
-| 方面 | C# | Rust | 状态 |
-|------|----|----|------|
-| 签名 | `SpriteBank(Atlas atlas, XmlDocument xml)` | `SpriteBank::from_xml(xml: &str) -> Result<SpriteBank>` | 🟡 近似 |
-| 存储 Atlas | ✅ `this.Altas = atlas` | ❌ 无 Atlas 参数 | 🔴 缺失 |
-| 存储 XML | ✅ `this.XML = xml` | ❌ 解析后丢弃 | 🔴 缺失 |
-| 遍历 `<Sprites>` 子节点 | ✅ `XML["Sprites"].ChildNodes` | ✅ `root.children().filter(n.is_element())` | ✅ 完全对齐 |
-| 重复名称检测 | ✅ `throw new Exception("Duplicate sprite name...")` | 🟡 覆盖写入（`HashMap::insert` 不报错） | 🟡 近似 |
-| `copy` 属性处理 | ✅ `if (xmlElement.HasAttr("copy")) spriteData.Add(dictionary[xmlElement.Attr("copy")], ...)` | ❌ 未实现 | 🔴 缺失 |
-| 创建 SpriteData 并调用 `.Add(xml)` | ✅ 解析 XML 元素填充 SpriteData | ✅ `parse_sprite(node)` | ✅ 完全对齐（逻辑等价） |
+### `AnimationData` / `Animation`
 
-### 重载构造函数 `SpriteBank(Atlas, string xmlPath)`
+| C# | Rust | 状态 |
+|----|------|------|
+| `FrameRate`（延迟属性） | `delay`（秒/帧；C# `FrameRate` 是帧率） | 🟠 语义换算一致 |
+| `Frames`（`MTexture[]`） | `frames: Vec<u32>` + atlas 前缀解析 | ✅ |
+| `Chooser<string> Goto` | `goto: Option<Chooser>` | ✅ |
+| `Loop` | `is_loop: bool`（`Loop` 元素） | ✅ |
+| `Add`（单次播放 Anim） | `Anim` 元素解析 | ✅ |
+| `Delay` 随机/偏移 | 缺失 | 🟠 |
 
-| 方面 | C# | Rust | 状态 |
-|------|----|----|------|
-| 签名 | `SpriteBank(Atlas atlas, string xmlPath)` | `SpriteBank::load(path: &Path) -> Result<SpriteBank>` | 🟡 近似 |
-| 从文件加载 | ✅ `Calc.LoadContentXML(xmlPath)` | ✅ `std::fs::read_to_string(path)` | ✅ 完全对齐 |
+## 二、`copy` 继承
 
-### 方法 `Has(string id)`
+Rust `parse_sprite` **已实现** `copy="src"`：从已解析 `existing` 克隆源 `SpriteData`，当前元素覆盖 `path/start/origin/center/justify` 并按动画 id 合并（当前覆盖源的同名 id）。对照 C# 的 `SpriteBank.cs`（`CopyData`）逐项：
 
-| 方面 | C# | Rust | 状态 |
-|------|----|----|------|
-| 签名 | `bool Has(string id)` | `SpriteBank::sprite(&self, name: &str) -> Option<&SpriteData>` | 🟠 部分实现 |
-| 功能 | 返回 `bool` | 返回 `Option<&SpriteData>`（可间接判断） | 🟡 近似 |
-| 调用方式 | `bank.Has("player")` | `bank.sprite("player").is_some()` | 语义等价 |
+| 行为 | C# | Rust | 状态 |
+|------|-----|------|------|
+| copy 复制源动画/原点/中心/justify | ✅ | ✅ | ✅ |
+| 当前元素覆盖 path/start/origin | ✅ | ✅（start 覆盖规则见下） | ✅ |
+| 动画合并（当前覆盖同名） | ✅ | ✅ | ✅ |
+| `start` 覆盖语义（含“仅当显式指定时覆盖复制源”） | ✅ | ✅（`el.attribute("start").is_some() || (源非空 && 请求非 idle)`） | ✅ |
 
-### 方法 `Create(string id)`
+**注意**：`copy` 引用的源必须在**之前**出现过（Rust 单遍 `existing`），与原版依赖 XML 中复制目标须先定义一致。
 
-| 方面 | C# | Rust | 状态 |
-|------|----|----|------|
-| 签名 | `Sprite Create(string id)` | ❌ 无对应方法 | 🔴 缺失 |
-| 说明 | 根据 id 从 SpriteData 创建并返回 `Sprite` 实例 | Rust 侧纯数据解析，不涉及运行时 Sprite 对象 | 架构差异 |
+## 三、`Chooser`
 
-### 方法 `CreateOn(Sprite sprite, string id)`
+C# `Chooser.FromString("idle:10,flash:2,blink")` 权重选择；Rust `parse_goto` 同格式，`Chooser::choose` 用宿主 xorshift64 做加权随机。✅ 对齐。
 
-| 方面 | C# | Rust | 状态 |
-|------|----|----|------|
-| 签名 | `Sprite CreateOn(Sprite sprite, string id)` | ❌ 无对应方法 | 🔴 缺失 |
-| 说明 | 在已有 Sprite 上应用动画数据 | Rust 侧无此概念，需由 engine 层的 Sprite 组件实现 | 架构差异 |
+## 四、解析与运行时拆分
 
----
+C# `SpriteBank.CreateOn(entity)` / `Create()` 在统一 Sprite 类上实例化动画。Rust 把**解析（数据）与播放（engine/sprites.rs）分离**：`SpriteBank` 只做静态定义，`SpriteAnimator` 负责帧序号展开（`atlas_subtexture_count`/`subtexture_key`）、delay、loop/goto、随机起始帧。这是架构差异，不是缺陷。
 
-## Rust 侧额外实现（C# 无对应）
+## 五、差异总结
 
-| Rust 方法/结构 | 说明 | 状态 |
-|----------------|------|------|
-| `Animation` 结构体 | 统一建模 `Anim` + `Loop` 元素（`is_loop` 字段区分），含 `id`, `path`, `delay`, `frames`, `goto` | 🟠 部分实现 |
-| `SpriteData::animation(&self, id)` | 按名称查找动画，返回 `Option<&Animation>` | 🟢 C# 侧由 SpriteData 内部处理 |
-| `SpriteData::texture_prefix(&self, anim)` | 拼接 `path + anim.path` 作为图集路径 | 🟢 C# 侧在运行时计算 |
-| `parse_frames(s)` | 解析 `"0,1,2-7"` 格式的帧索引 | 🟢 C# 侧在 SpriteData 内部处理 |
-| `parse_i32` / `parse_f32` | 辅助解析函数 | 🟢 C# 使用内置方法 |
+| 维度 | 状态 | 说明 |
+|------|------|------|
+| copy 继承 | ✅ | 当前实现含在内 |
+| 重复名称检测 | 🟠 | C# 抛异常，Rust 静默覆盖 |
+| 大小写不敏感查找 | 🔴 | C# `OrdinalIgnoreCase`，Rust 精确匹配（原版 XML 实际大小写一致，影响小） |
+| `useRawDeltaTime` | 🔴 | 暂停/慢动作粒子差异 |
+| `reverse`/`PlayOffset` 等运行时 | 在 `Sprite.md` 讨论 | 播放层 |
+| Create/CreateOn | 架构分离合理 | 不在 SpriteBank 层 |
 
----
+## 六、已对齐/待补
 
-## SpriteData 字段对比
-
-| C# SpriteData 字段 | Rust SpriteData 字段 | 状态 |
-|--------------------|---------------------|------|
-| （由 SpriteData.Add(xml) 解析填充，字段不可见于 SpriteBank.cs） | `name: String` | 🟢 Rust 显式暴露 |
-| | `path: String` | 🟢 Rust 显式暴露 |
-| | `start: String` | 🟢 Rust 显式暴露 |
-| | `origin: (i32, i32)` | 🟢 Rust 显式暴露 |
-| | `center: bool` | 🟢 Rust 显式暴露 |
-| | `justify: Option<(f32, f32)>` | 🟢 Rust 显式暴露 |
-| | `animations: HashMap<String, Animation>` | 🟢 Rust 显式暴露 |
-
----
-
-## 总结
-
-| 统计 | 数量 |
-|------|------|
-| ✅ 完全对齐 | 5 |
-| 🟠 部分实现 | 3 |
-| 🟡 近似 | 4 |
-| 🔴 缺失 | 5 |
-
-### 关键差异
-
-1. **`copy` 属性未实现**：原版支持 `<SpriteName copy="OtherSprite" path="..."/>` 继承其他精灵的动画定义，Rust 侧完全忽略了此特性。
-2. **重复名称检测缺失**：原版抛出异常，Rust 静默覆盖。
-3. **大小写不敏感查找**：C# `Dictionary` 使用 `OrdinalIgnoreCase`，Rust `HashMap` 使用精确匹配。原版 XML 中 Sprite 名称通常大小写一致，实际影响较小，但需注意。
-4. **Sprite 创建能力**：`Create()` / `CreateOn()` 在 Rust 侧缺失，这是架构性差异——Rust 的 ECS 体系中 Sprite 由 engine 层的 `SpriteComponent` 处理，而非从 SpriteBank 直接实例化。这是合理的分离，不算缺陷。
-5. **Atlas 引用**：Rust 侧不持有 Atlas，路径前缀在解析阶段确定（`texture_prefix`），运行时按需查找图集。
+- ✅ **全部 XML 属性**：`path/start/copy/center/justify/origin`、`Anim/Loop` 的 `id/path/delay/frames/goto`
+- ✅ 加权 goto 运行时选择
+- 🟠 重复名称、大小写、randomize 属 SPIKE 层

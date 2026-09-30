@@ -111,11 +111,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
             if p.x < pp.x + pw && p.x + st.w > pp.x && p.y < pp.y + ph && p.y + st.h > pp.y {
                 emit(id, event::BOOST, &[]);
                 st.cooldown = 0.1;
-                play_sound(if st.ice_mode {
-                    "event:/game/09_core/icewall_boost"
-                } else {
-                    "event:/game/04_cliffside/wallbooster_boost"
-                });
+                play_sound("event:/game/04_cliffside/greenbooster_dash");
                 break;
             }
         }

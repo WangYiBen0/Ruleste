@@ -63,7 +63,7 @@ pub struct Level {
 /// `room.entities`. The actual rendering is owned by
 /// `ruleste-plugin-decorations`; this engine code only consumes the marker
 /// so gameplay logic stays out of the engine.
-const DECORATION_MARKER: &str = include_str!("../../plugins/decorations/marker.toml");
+const DECORATION_MARKER: &str = include_str!("../../../../plugins/decorations/marker.toml");
 
 fn decoration_set() -> &'static std::collections::HashSet<&'static str> {
     use std::sync::OnceLock;

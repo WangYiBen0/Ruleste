@@ -143,7 +143,7 @@ impl DialogData {
             }
         }
 
-        println!(
+        crate::log_info!(
             "Loaded dialog: {} metadata entries, {} dialog entries",
             metadata.len(),
             entries.len()

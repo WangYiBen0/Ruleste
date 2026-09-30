@@ -32,6 +32,8 @@ use ruleste_plugins_api::ruleste_noop_destroy;
 use ruleste_plugins_api::types::input;
 use ruleste_plugins_api::types::{EntityId, Vec2};
 
+mod hair;
+
 // Intro state movement (IntroWalk/IntroJump/IntroRespawn/IntroMoonJump).
 const INTRO_WALK_SPEED: f32 = 64.0;
 const INTRO_JUMP_RISE_SPEED: f32 = -120.0;
@@ -114,6 +116,30 @@ const DASH_COOLDOWN: f32 = 0.2;
 const DASH_REFILL_COOLDOWN: f32 = 0.1;
 const DASH_ATTACK_TIME: f32 = 0.3;
 const DASH_FLATTEN_MULT: f32 = 1.2;
+/// `DashUpdate` emits a trail particle on this interval, `level.OnInterval(0.02f)`.
+const DASH_PARTICLE_INTERVAL: f32 = 0.02;
+/// The burst's launch speed, the middle of `P_DashA.SpeedMin..SpeedMax`.
+const DASH_PARTICLE_SPEED: f32 = 15.0;
+/// `P_DashA.Acceleration.Y`.
+const DASH_PARTICLE_ACCEL_Y: f32 = 8.0;
+/// The middle of `P_DashA.LifeMin..LifeMax`.
+const DASH_PARTICLE_LIFE: f32 = 1.4;
+/// `P_DashA.Size`.
+const DASH_PARTICLE_SIZE: f32 = 1.0;
+/// `P_DashA` color, `Calc.HexToColor("44B7FF")`.
+const DASH_PARTICLE_A: ruleste_plugins_api::types::Color = ruleste_plugins_api::types::Color {
+    r: 0x44,
+    g: 0xB7,
+    b: 0xFF,
+    a: 0xFF,
+};
+/// `P_DashB` color, `Calc.HexToColor("AC3232")`.
+const DASH_PARTICLE_B: ruleste_plugins_api::types::Color = ruleste_plugins_api::types::Color {
+    r: 0xAC,
+    g: 0x32,
+    b: 0x32,
+    a: 0xFF,
+};
 const SUPER_JUMP_H: f32 = 260.0;
 const SUPER_JUMP_Y: f32 = -105.0;
 const DUCK_SUPER_X_MULT: f32 = 1.25;
@@ -320,6 +346,11 @@ struct PlayerState {
     state: u32,
     /// Last derived state-machine value, used to log transitions in debug mode.
     debug_state: u32,
+    /// The trailing hair chain, mirroring `PlayerHair`.
+    hair: hair::Hair,
+    /// `Player.wasDashB`: which dash particle color to emit next, alternating
+    /// so the trail flickers between the blue and red bursts.
+    was_dash_b: bool,
 }
 
 impl Default for PlayerState {
@@ -382,6 +413,8 @@ impl Default for PlayerState {
             cassette_riding: false,
             state: ST_NORMAL,
             debug_state: ST_NORMAL,
+            hair: hair::Hair::default(),
+            was_dash_b: false,
         }
     }
 }
@@ -393,6 +426,39 @@ thread_local! {
 
 fn state(id: EntityId) -> PlayerState {
     STATES.with(|s| s.borrow().get(id).copied().unwrap_or_default())
+}
+
+/// `PlayerHair.Update` + `PlayerHair.AfterUpdate`: advance the sway phase and
+/// let the chain settle behind the head.
+///
+/// The hair hangs still while the player is hidden (`StIntroRespawn`, the
+/// attract state) and during the death animation, matching the original's
+/// `SimulateMotion = false` cases.
+fn update_hair(entity: &Entity, st: &mut PlayerState, dt: f32) {
+    let simulating = st.state != ST_INTRO_RESPAWN && st.state != ST_HIT_SQUASH;
+    st.hair.simulate_motion = simulating;
+    if simulating {
+        hair::advance_wave(&mut st.hair.wave, dt);
+    }
+    let meta = entity
+        .sprite
+        .frame_meta()
+        .unwrap_or(ruleste_plugins_api::host::FrameMeta {
+            has_hair: false,
+            hair_offset: (0, 0),
+            bangs_frame: 0,
+            carry_y_offset: 0,
+        });
+    if !st.hair.started {
+        st.hair.start(entity.position.get(), st.facing);
+    }
+    st.hair
+        .after_update(entity.position.get(), st.facing, &meta, dt);
+}
+
+/// Borrows just the hair chain, the common case in the draw hook.
+fn with_hair<R>(id: EntityId, f: impl FnOnce(&mut hair::Hair) -> R) -> R {
+    with_state(id, |st| f(&mut st.hair))
 }
 
 fn with_state<R>(id: EntityId, f: impl FnOnce(&mut PlayerState) -> R) -> R {
@@ -581,6 +647,7 @@ pub extern "C" fn ruleste_entity_update(id: EntityId, dt: f32) {
     }
     entity.speed.set(speed);
     publish_resources(id, &st);
+    update_hair(&entity, &mut st, dt);
 
     debug_state_log(id, &st);
     STATES.with(|s| {
@@ -646,6 +713,14 @@ pub extern "C" fn ruleste_entity_draw(id: EntityId) {
 
     if entity.sprite.animation() != anim {
         entity.sprite.play(anim);
+    }
+
+    // `PlayerHair.Render` runs as a component, i.e. before the sprite, so the
+    // strands sit behind Madeline's head. The bangs frame and the hair anchor
+    // both come from the *current* frame's metadata, which is why the hair is
+    // drawn after the animation is selected above.
+    if let Some(meta) = entity.sprite.frame_meta() {
+        with_hair(id, |hair| hair::render(hair, st.facing, &meta));
     }
 }
 
@@ -1051,16 +1126,76 @@ fn dash_update(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, dt: f32)
 
     st.dash_timer -= dt;
     if st.dash_timer <= 0.0 {
-        // `DashCoroutine` end: `Speed = DashDir * 160`, up-dashes get a 0.75x
-        // climb, and the state returns to normal on its own.
-        *speed = Vec2::new(d.x * END_DASH_SPEED, d.y * END_DASH_SPEED);
+        // `DashCoroutine` end. The 160 exit speed is applied *only* when
+        // `DashDir.Y <= 0`:
+        //
+        // ```csharp
+        // if (DashDir.Y <= 0f) { Speed = DashDir * 160f; ... }
+        // if (Speed.Y < 0f) Speed.Y *= 0.75f;
+        // ```
+        //
+        // A downward dash (positive Y) therefore keeps its full 240, which is
+        // what makes the down-dash into a hyper setup work; horizontal and
+        // upward dashes bleed off to 160. The 0.75x climb then applies to any
+        // remaining upward motion.
+        if d.y <= 0.0 {
+            *speed = Vec2::new(d.x * END_DASH_SPEED, d.y * END_DASH_SPEED);
+        }
         if speed.y < 0.0 {
             speed.y *= END_DASH_UP_MULT;
         }
         return ST_NORMAL;
     }
 
+    // `DashUpdate`'s trail: a `P_DashA` / `P_DashB` particle every 0.02s
+    // while the player is actually moving, at the player's center with a
+    // +/-2px jitter, aimed along the dash.
+    if *speed != Vec2::ZERO && ruleste_plugins_api::host::on_interval(DASH_PARTICLE_INTERVAL) {
+        emit_dash_particle(entity, st, d);
+    }
+
     ST_DASH
+}
+
+/// `Player.DashUpdate` particle emission.
+///
+/// ```csharp
+/// if (Speed != Vector2.Zero && level.OnInterval(0.02f))
+///     level.ParticlesFG.Emit(type, Center + Calc.Random.Range(-Vector2.One, Vector2.One), DashDir.Angle());
+/// ```
+///
+/// The type alternates between the blue and red bursts on every emission
+/// (`wasDashB`), which is what gives the dash trail its flickering two-tone
+/// look.
+fn emit_dash_particle(entity: &Entity, st: &mut PlayerState, dash_dir: Vec2) {
+    let color = if st.was_dash_b {
+        DASH_PARTICLE_B
+    } else {
+        DASH_PARTICLE_A
+    };
+    st.was_dash_b = !st.was_dash_b;
+    ruleste_plugins_api::host::emit_particle(
+        entity.position.get().x + jitter(),
+        entity.position.get().y + jitter(),
+        dash_dir.x * DASH_PARTICLE_SPEED,
+        dash_dir.y * DASH_PARTICLE_SPEED,
+        0.0,
+        DASH_PARTICLE_ACCEL_Y,
+        DASH_PARTICLE_LIFE,
+        color,
+        DASH_PARTICLE_SIZE,
+    );
+}
+
+/// A small random offset, standing in for `Calc.Random.Range(-1, 1)`.
+fn jitter() -> f32 {
+    // The plugin has no access to `Calc.Random`; a hash of the current position
+    // is enough to scatter the trail without a shared RNG.
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u32)
+        .unwrap_or(0);
+    ((t.wrapping_mul(2_654_435_761) >> 8) as f32 / 8_388_608.0) - 1.0
 }
 
 /// Emits `EV_CRUSH` toward crush blocks, the payload the dash direction
@@ -1990,11 +2125,13 @@ fn start_dash(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, move_x: f
     } else if !st.ducking && move_y > 0.0 {
         set_ducking(entity, st, true);
     }
-    // `DashCoroutine` first step: `Speed = DashDir * 240`, preserving a faster
-    // pre-dash horizontal run when same-sign.
+    // `DashCoroutine` first step: `Speed = CorrectDashPrecision(lastAim) * 240f`,
+    // then a single X-only momentum exception. The Y axis is *not* subject to
+    // it: a fast pre-dash fall or rise must not carry into the dash, otherwise
+    // an upward dash launched while falling (or a diagonal one) overshoots.
     *speed = Vec2::new(
-        dash_axis(dir.x, st.before_dash_speed.x),
-        dash_axis(dir.y, st.before_dash_speed.y),
+        dash_axis_x(dir.x, st.before_dash_speed.x),
+        dir.y * DASH_SPEED,
     );
     Input::consume(input::DASH);
     ruleste_plugins_api::host::emit(
@@ -2004,14 +2141,40 @@ fn start_dash(entity: &Entity, st: &mut PlayerState, speed: &mut Vec2, move_x: f
     );
 }
 
-/// `DashCoroutine` momentum preservation: if the pre-dash speed is same sign
-/// and faster on this axis, keep the pre-dash speed.
-fn dash_axis(axis: f32, before: f32) -> f32 {
+/// `DashCoroutine`'s momentum exception, which only ever applies to X:
+///
+/// ```csharp
+/// Vector2 speed = value * 240f;
+/// if (Math.Sign(beforeDashSpeed.X) == Math.Sign(speed.X) && Math.Abs(beforeDashSpeed.X) > Math.Abs(speed.X))
+///     speed.X = beforeDashSpeed.X;
+/// ```
+///
+/// So running faster than the dash speed (a hyper setup) keeps its momentum
+/// into the dash, while a slower run does not slow the dash back down. The Y
+/// axis deliberately has no such rule.
+fn dash_axis_x(axis: f32, before_x: f32) -> f32 {
     let target = axis * DASH_SPEED;
-    if before.signum() == axis.signum() && before.abs() > target.abs() {
-        before
+    if csharp_sign(before_x) == csharp_sign(target) && before_x.abs() > target.abs() {
+        before_x
     } else {
         target
+    }
+}
+
+/// `Math.Sign(float)`: returns 0 for a zero input.
+///
+/// This is *not* Rust's `f32::signum`, which returns `1.0` for `+0.0`. The
+/// difference is load-bearing in `dash_axis_x`: a purely vertical dash has
+/// `speed.X == 0`, and with `signum` both sides would read as positive, so
+/// pre-dash horizontal run speed would leak into a vertical dash. C#'s
+/// `Sign(0) == 0` keeps the comparison false there.
+fn csharp_sign(v: f32) -> f32 {
+    if v > 0.0 {
+        1.0
+    } else if v < 0.0 {
+        -1.0
+    } else {
+        0.0
     }
 }
 
@@ -2478,6 +2641,14 @@ pub extern "C" fn ruleste_entity_serialize(id: EntityId, out_len: *mut u32) -> u
     push_f32(&mut buf, st.attract_timer);
     push_f32(&mut buf, st.temple_fall_timer);
     push_u8(&mut buf, u8::from(st.cassette_riding));
+    // Version 9 fields (the hair chain).
+    push_f32(&mut buf, st.hair.wave);
+    push_u8(&mut buf, u8::from(st.hair.started));
+    push_u8(&mut buf, u8::from(st.hair.simulate_motion));
+    for node in st.hair.nodes {
+        push_f32(&mut buf, node.x);
+        push_f32(&mut buf, node.y);
+    }
     unsafe { *out_len = buf.len() as u32 }
     let ptr = buf.as_ptr() as u32;
     SER_BUF.with(|b| *b.borrow_mut() = buf);
@@ -2596,6 +2767,16 @@ fn parse_state(bytes: &[u8]) -> Option<PlayerState> {
         st.temple_fall_timer = r.f32()?;
         st.cassette_riding = r.u8()? != 0;
     }
+    // Version 9 trailing fields (the hair chain: 1 f32 + 2 u8 + 4 * 2 f32).
+    if r.remaining() >= 38 {
+        st.hair.wave = r.f32()?;
+        st.hair.started = r.u8()? != 0;
+        st.hair.simulate_motion = r.u8()? != 0;
+        for node in st.hair.nodes.iter_mut() {
+            node.x = r.f32()?;
+            node.y = r.f32()?;
+        }
+    }
     Some(st)
 }
 
@@ -2665,7 +2846,44 @@ fn dot(a: Vec2, b: Vec2) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    /// A throwaway entity id for the serialization round-trip.
+    const TEST_ID: EntityId = u32::MAX - 1;
+
     use super::*;
+
+    #[test]
+    fn serialize_round_trip_preserves_the_hair_chain() {
+        let mut st = PlayerState::default();
+        st.hair.wave = 1.75;
+        st.hair.started = true;
+        st.hair.simulate_motion = false;
+        for (i, node) in st.hair.nodes.iter_mut().enumerate() {
+            *node = Vec2::new(i as f32 * 1.5 - 3.0, 42.0 - i as f32);
+        }
+
+        // Go through the real export so the test can never drift from the
+        // serializer's field order.
+        STATES.with(|s| {
+            s.borrow_mut().insert(TEST_ID, st);
+        });
+        let mut len = 0u32;
+        ruleste_entity_serialize(TEST_ID, &raw mut len);
+        let bytes = SER_BUF.with(|b| b.borrow().clone());
+        assert_eq!(
+            bytes.len() as u32,
+            len,
+            "the export reports its buffer size"
+        );
+        let back = parse_state(&bytes).expect("round-trips");
+
+        assert!((back.hair.wave - 1.75).abs() < 1e-6);
+        assert!(back.hair.started);
+        assert!(!back.hair.simulate_motion);
+        for (i, (a, b)) in st.hair.nodes.iter().zip(back.hair.nodes.iter()).enumerate() {
+            assert!((a.x - b.x).abs() < 1e-6, "node {i} x: {} vs {}", a.x, b.x);
+            assert!((a.y - b.y).abs() < 1e-6, "node {i} y: {} vs {}", a.y, b.y);
+        }
+    }
 
     #[test]
     fn state_constant_values_match_original() {
@@ -2976,8 +3194,70 @@ mod tests {
         assert!((WALL_JUMP_HSPEED - 130.0).abs() < 1e-6);
         assert!((SUPER_JUMP_H - 260.0).abs() < 1e-6);
         assert!((RED_DASH_SPEED - 240.0).abs() < 1e-6);
+        // `P_DashA`: the trail emitted every 0.02s during a dash.
+        assert!((DASH_PARTICLE_INTERVAL - 0.02).abs() < 1e-6);
+        assert!((DASH_PARTICLE_ACCEL_Y - 8.0).abs() < 1e-6);
+        assert!((DASH_PARTICLE_SIZE - 1.0).abs() < 1e-6);
+        assert_eq!(DASH_PARTICLE_A.r, 0x44);
+        assert_eq!(DASH_PARTICLE_A.g, 0xB7);
+        assert_eq!(DASH_PARTICLE_A.b, 0xFF);
+        assert_eq!(DASH_PARTICLE_B.r, 0xAC);
+        assert_eq!(DASH_PARTICLE_B.g, 0x32);
+        assert_eq!(DASH_PARTICLE_B.b, 0x32);
         assert!((INTRO_WALK_SPEED - 64.0).abs() < 1e-6);
         assert!((INTRO_JUMP_RISE_SPEED - -120.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn dash_momentum_exception_is_x_only() {
+        // `DashCoroutine`: `speed = aim * 240f`, then
+        // `if (Sign(beforeDashSpeed.X) == Sign(speed.X) &&
+        //     Abs(beforeDashSpeed.X) > Abs(speed.X)) speed.X = beforeDashSpeed.X;`
+        // — the exception is horizontal only, so a hyper-speed run carries
+        // into a forward dash...
+        assert!((dash_axis_x(1.0, 300.0) - 300.0).abs() < 1e-6);
+        // ...a slower run does not hold the dash back...
+        assert!((dash_axis_x(1.0, 90.0) - 240.0).abs() < 1e-6);
+        // ...and momentum in the opposite direction is discarded outright.
+        assert!((dash_axis_x(1.0, -300.0) - 240.0).abs() < 1e-6);
+        // A vertical dash has `speed.X == 0`, so `target.abs()` is 0 and no
+        // pre-dash momentum can ever exceed it: the dash keeps its own zero X
+        // velocity instead of inheriting horizontal run speed.
+        assert!((dash_axis_x(0.0, 300.0) - 0.0).abs() < 1e-6);
+        assert!((dash_axis_x(0.0, -300.0) - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn dash_end_speed_keeps_full_velocity_for_downward_dashes() {
+        // Reproduces the end-of-dash rules so the `DashDir.Y <= 0` gate stays
+        // in place: a downward dash keeps its 240 (this is the hyper setup),
+        // while horizontal/upward dashes bleed to 160 and an upward dash then
+        // gets the 0.75x climb.
+        let end_speed = |dir: Vec2, speed: Vec2| -> Vec2 {
+            let mut s = speed;
+            if dir.y <= 0.0 {
+                s = Vec2::new(dir.x * END_DASH_SPEED, dir.y * END_DASH_SPEED);
+            }
+            if s.y < 0.0 {
+                s.y *= END_DASH_UP_MULT;
+            }
+            s
+        };
+
+        // Diagonal down-right: the full dash speed survives, so the player can
+        // still set up a hyper off the ground contact.
+        let down = end_speed(Vec2::new(0.707, 0.707), Vec2::new(170.0, 170.0));
+        assert!(down.x > END_DASH_SPEED, "downward dash kept {down:?}");
+        assert!(down.y > END_DASH_SPEED, "downward dash kept {down:?}");
+
+        // Horizontal: 160 straight ahead.
+        let flat = end_speed(Vec2::new(1.0, 0.0), Vec2::new(240.0, 0.0));
+        assert!((flat.x - END_DASH_SPEED).abs() < 1e-6);
+        assert!((flat.y - 0.0).abs() < 1e-6);
+
+        // Straight up: 160 * 0.75 = 120 of climb.
+        let up = end_speed(Vec2::new(0.0, -1.0), Vec2::new(0.0, -240.0));
+        assert!((up.y - (-120.0)).abs() < 1e-6, "upward climb was {up:?}");
     }
 
     #[test]

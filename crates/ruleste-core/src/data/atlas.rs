@@ -429,8 +429,8 @@ pub fn load_atlas_dir(dir: &Path) -> ReadResult<Atlas> {
         }
     }
     if !failures.is_empty() {
-        eprintln!(
-            "ruleste: failed to load {} atlas(es) from {}: {:?}",
+        crate::log_warn!(
+            "failed to load {} atlas(es) from {}: {:?}",
             failures.len(),
             dir.display(),
             failures

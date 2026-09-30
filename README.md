@@ -49,18 +49,61 @@ cargo run -- <map> <atlas> <sprites> <tiles> <audio> --plugin-path=./my-plugins/
 - `RULESTE_DEBUG=1` — 产出插件调试日志（例如 player 状态机切换：`player {id} state -> DASH (2)`）
 - `RULESTE_DUMP_FRAME=<path.ppm>` + `RULESTE_DUMP_FRAME_AT=<n>` — 第 `n` 帧把渲染缓冲 dump 成 PPM，用于像素级自检
 - `RULESTE_PLAY_SFX=<stream_name>` — 启动时用 AudioBus 播一个样本自检（听声验证音频链路）
+- `RULESTE_LOG_LEVEL=<level>` — 日志级别，等价于 `--log-level`（CLI 优先）
+
+## 日志级别
+
+core 的日志统一走 `crates/ruleste-core/src/log.rs`，写 stderr；`--log-level` 或 `RULESTE_LOG_LEVEL` 决定级别，默认 `info`：
+
+```sh
+cargo run -- --log-level=debug maps/Celeste/0-Intro.bin   # 更啰嗦
+cargo run -- --log-level=warn  maps/Celeste/0-Intro.bin   # 只看问题
+cargo run -- --log-level=off   maps/Celeste/0-Intro.bin   # 全静默
+```
+
+级别：`trace` < `debug` < `info` < `warn` < `error` < `off`（也接受单字母别名 `t/d/i/w/e`）。非法值会打印用法并以退出码 2 结束。
+
+## Headless 运行（无窗口回归测试）
+
+`--headless-*` 让游戏在**不开窗口、不开音频设备**的情况下跑完整模拟——资源解码、Wasm 插件、物理、相机、精灵动画都照常执行，只是不绘制。适合 CI、SSH 以及自动化行为回归：
+
+```sh
+cargo run -- --headless-frames=120 \
+           --headless-input=60:move_right,3:jump \
+           --plugin-path=target/wasm32-unknown-unknown/release \
+           maps/Celeste/0-Intro.bin
+```
+
+输出示例（stdout，报告始终在这里；日志在 stderr）：
+
+```text
+headless: frames=120 dt=0.0167
+headless: player start=(-32.0, 136.0) end=(-32.0, 136.0) delta=(+0.0, +0.0)
+headless: despawns=0 first_despawn_frame=none room_index=1 entities=9
+```
+
+参数：
+- `--headless-frames=<n>` — 模拟帧数（默认 600）
+- `--headless-dt=<secs>` — 固定步长（默认 `1/60`）
+- `--headless-input=<s>` — 脚本输入，逗号分隔的 `<保持帧数>:<动作>`，动作依次执行；可选 `move_left/right/up/down`、`jump`、`dash`、`climb` 等
+- `--headless-stop-on-despawn` — 玩家消失（死亡循环完成）时立即结束
+
+headless 模式默认把日志压到 `warn`（除非显式指定级别），报告不受影响。对应的集成测试在 `tests/headless.rs`。
 
 ## 架构
 
 ```
-src/
-  data/       资源解析器（.bin 地图、.meta 图集、.data 纹理、Sprites.xml、音频 manifest/OGG、pack metadata.json、字体、存档……）
-  engine/     引擎层（ECS、事件总线、输入 + jump buffer、物理 SolidGrid、自动拼接、相机、draw 命令、AudioBus 混音器）
-  hotload/    Wasm 宿主 + mtime 热重载监视器
-  interface/  SDL3 渲染器：320×180 逻辑分辨率、纹理上传、按 depth 排序、letterbox 缩放
-plugins/      Wasm 实体插件（每个一种/一组实体，wasm32 cdylib）
 crates/
+  ruleste-core/  core 库（不含渲染）：模拟 + 插件加载
+    data/        资源解析器（.bin 地图、.meta 图集、.data 纹理、Sprites.xml、音频 manifest/OGG、pack metadata.json、字体、存档……）
+    engine/      引擎层（ECS、事件总线、输入 + jump buffer、物理 SolidGrid、自动拼接、相机、draw 命令、AudioBus 混音器）
+    hotload/     Wasm 宿主 + mtime 热重载监视器
+    resources.rs 资源清单（ResourceManifest）：从实体类型展开需要的帧/tileset/音频，供 client 按需加载
   ruleste-plugins-api/  FFI 头、宏、宿主函数声明（host_input_*、host_draw_*、host_play_sound、host_emit…）
+src/               client（根 crate）：SDL3 渲染前端 + 主循环
+  interface/  SDL3 渲染器：320×180 逻辑分辨率、按需纹理上传、按 depth 排序、letterbox 缩放
+  main.rs     主循环：驱动 core 模拟 → 按 ResourceManifest 上传纹理/音频 → 渲染
+plugins/      Wasm 实体插件（每个一种/一组实体，wasm32 cdylib）
 maps/         关卡包（按 pack_name 分目录）
 resources/    资源包（按 pack_name/namespace 分目录；不参与分发）
 ```

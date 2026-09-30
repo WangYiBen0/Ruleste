@@ -38,6 +38,14 @@ impl Color {
         a: 255,
     };
 
+    /// `Color.Transparent`, used when a particle's fade curve reaches zero.
+    pub const TRANSPARENT: Color = Color {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0,
+    };
+
     #[must_use]
     pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Color {
         Color { r, g, b, a }

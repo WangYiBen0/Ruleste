@@ -77,10 +77,7 @@ fn parse_group(group: &Element, out: &mut Vec<Backdrop>) {
 
 fn parse_backdrop(child: &Element, above: Option<&Element>) -> Option<Backdrop> {
     if !child.name.eq_ignore_ascii_case("parallax") {
-        eprintln!(
-            "ruleste: skipping unsupported backdrop type {:?}",
-            child.name
-        );
+        crate::log_debug!("skipping unsupported backdrop type {:?}", child.name);
         return None;
     }
 

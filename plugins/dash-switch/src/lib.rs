@@ -1,3 +1,4 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 ruleste_plugins_api::ruleste_meta!("dashSwitch");
 ruleste_plugins_api::ruleste_entity_types!("dashSwitchH", "dashSwitchV");
 ruleste_plugins_api::ruleste_noop_destroy!();

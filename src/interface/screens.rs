@@ -8,7 +8,7 @@
 //! - Chapter complete screen
 //! - Dialog/cutscene system
 
-use crate::data::font::SpriteFont;
+use ruleste_core::data::font::SpriteFont;
 
 /// Represents the current UI state of the game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,7 +54,7 @@ impl UiStateMachine {
     }
 
     /// Update the state machine, handling transitions based on input.
-    pub fn update(&mut self, dt: f32, input: &crate::engine::input::Input) {
+    pub fn update(&mut self, dt: f32, input: &ruleste_core::engine::input::Input) {
         use ruleste_plugins_api::types::input as act;
 
         self.timer += dt;
